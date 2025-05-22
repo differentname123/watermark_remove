@@ -1,80 +1,112 @@
+import cv2
 import torch
-from PIL import Image
+import numpy as np
+import time
+import math
+from typing import List
 from ultralytics import YOLO
 
 # -------------------------------------------------
 # 1. 设备与模型初始化
 # -------------------------------------------------
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-print(f"[INFO] Using device: {DEVICE}")
+print(f"[{time.strftime('%H:%M:%S')}] [INFO] Using device: {DEVICE}")
 
-# 加载权重
 yolo_model = YOLO("yolo11x-train28-best.pt")
-
-# 将模型迁移到 GPU，并做推理加速配置
 if DEVICE.startswith("cuda"):
-    yolo_model.to(DEVICE)      # 把权重放入显存
-    yolo_model.fuse()          # 融合 Conv + BN，减少显存访问
-    yolo_model.half()          # FP16 推理（节省显存、加速）
+    yolo_model.to(DEVICE)
+    yolo_model.fuse()
+    yolo_model.half()
+print(f"[{time.strftime('%H:%M:%S')}] [INFO] YOLO model loaded. Classes: {len(yolo_model.names)}")
 
 # -------------------------------------------------
-# 2. 推理函数
+# 2. 批量帧处理函数（屏蔽内置日志）
 # -------------------------------------------------
-@torch.inference_mode()  # 等价于 `with torch.no_grad()`
-def yolo_predict(image: Image.Image) -> Image.Image:
+@torch.inference_mode()
+def yolo_batch_process(frames: List[np.ndarray]) -> List[np.ndarray]:
     """
-    利用 YOLO 模型对图像进行目标检测，
-    在控制台打印每个检测框的位置及信息，
-    并返回绘制了检测框的图像。
+    对一批 BGR 帧做 YOLO 检测并画框，返回 BGR 帧列表。
+    verbose=False 屏蔽 Ultralytics 的内置打印。
     """
-    # 推理
     results = yolo_model(
-        image,
+        frames,
         imgsz=1024,
         augment=True,
-        iou=0.5
+        iou=0.5,
+        verbose=False
     )
-
-    assert len(results) == 1, "Expected one result from YOLO detection."
-    result = results[0]
-
-    # -----------------------------------------------------------------
-    # 打印每个检测框的位置、类别、置信度
-    # -----------------------------------------------------------------
-    # boxes.xyxy 是一个 Tensor of shape (n,4)
-    # boxes.conf 是 (n,), boxes.cls 是 (n,)
-    xyxys  = result.boxes.xyxy.cpu().tolist()
-    confs  = result.boxes.conf.cpu().tolist()
-    classes= result.boxes.cls.cpu().tolist()
-    for i, (xyxy, conf, cls) in enumerate(zip(xyxys, confs, classes)):
-        x1, y1, x2, y2 = xyxy
-        cls = int(cls)
-        class_name = yolo_model.names.get(cls, str(cls))
-        print(f"[INFO] Box {i}: class={class_name} (id={cls}), "
-              f"conf={conf:.2f}, "
-              f"xyxy=[{x1:.1f}, {y1:.1f}, {x2:.1f}, {y2:.1f}]")
-
-    # 获取绘制了检测框的图像 (BGR)
-    im_array = result.plot()
-    # 转为 PIL RGB
-    im_rgb = Image.fromarray(im_array[..., ::-1])
-    return im_rgb
+    return [r.plot() for r in results]
 
 # -------------------------------------------------
-# 3. 主程序：读取图片并另存含检测框的信息图像
+# 3. 视频处理函数（关键日志：视频信息、总帧、预计批次、每批耗时）
+# -------------------------------------------------
+def process_video(input_path: str,
+                  output_path: str,
+                  func,
+                  batch_size: int = 16):
+    cap = cv2.VideoCapture(input_path)
+    if not cap.isOpened():
+        raise FileNotFoundError(f"Cannot open video: {input_path}")
+
+    width        = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height       = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps          = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    total_batches = math.ceil(total_frames / batch_size)
+
+    print(f"[{time.strftime('%H:%M:%S')}] [INFO] Video info:")
+    print(f"    Resolution: {width}x{height}")
+    print(f"    FPS:        {fps:.2f}")
+    print(f"    Total frames:   {total_frames}")
+    print(f"    Batch size:     {batch_size}")
+    print(f"    Estimated batches: {total_batches}")
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out    = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+    buffer     = []
+    frame_idx  = 0
+    batch_idx  = 0
+
+    def flush_buffer():
+        nonlocal frame_idx, batch_idx, buffer
+        batch_idx += 1
+        t0 = time.time()
+        processed = func(buffer)
+        t1 = time.time()
+        print(f"[Batch {batch_idx}/{total_batches}] processed {len(buffer)} frames in {t1-t0:.2f}s")
+        for img in processed:
+            if img.shape[1]!=width or img.shape[0]!=height:
+                img = cv2.resize(img, (width, height))
+            if img.ndim==2 or img.shape[2]==1:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            out.write(img)
+        frame_idx += len(buffer)
+        buffer = []
+
+    print(f"[{time.strftime('%H:%M:%S')}] [INFO] Start processing video...")
+    count = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        buffer.append(frame)
+
+        if len(buffer) >= batch_size:
+            flush_buffer()
+            count += 1
+            if count > 10:
+                break
+
+    if buffer:
+        flush_buffer()
+
+    cap.release()
+    out.release()
+    print(f"[{time.strftime('%H:%M:%S')}] [INFO] Done. Total frames written: {frame_idx}. Output: {output_path}")
+
+# -------------------------------------------------
+# 4. 主程序
 # -------------------------------------------------
 if __name__ == "__main__":
-    # 修改为你的输入图片路径
-    input_image_path = "../inpainting/input.jpg"
-    # 修改为你希望保存输出图片的路径
-    output_image_path = "../inpainting/output.jpg"
-
-    # 打开输入图片
-    image_input = Image.open(input_image_path)
-
-    # 调用预测函数
-    result_image = yolo_predict(image_input)
-
-    # 保存带有检测框的图片
-    result_image.save(output_image_path)
-    print(f"[INFO] Saved output image at: {output_image_path}")
+    process_video("test1.mp4", "test_out.mp4", yolo_batch_process, batch_size=32)
