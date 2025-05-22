@@ -188,8 +188,9 @@ def process_video(input_video, output_video, batch_size=10, max_workers=4, max_f
             detection_by_text[text] = detection
 
     sorted_texts = sorted(text_counts.items(), key=lambda x: x[1], reverse=True)
+    print("Top 5识别文本及其出现次数:", sorted_texts)
+
     top5 = sorted_texts[:5]
-    print("Top 5识别文本及其出现次数:", top5)
 
     # 在首帧上绘制 Top5 检测框
     if first_frame is not None:
