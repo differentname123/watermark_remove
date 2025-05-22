@@ -126,7 +126,7 @@ def main():
     output_video_path = 'output_video.mp4'
     batch_size = 50
     max_workers = 4
-    process_video(input_video_path, output_video_path, batch_size, max_workers)
+    process_video(input_video_path, output_video_path, batch_size, max_workers, max_frames=1000000)
 
 
 if __name__ == '__main__':
