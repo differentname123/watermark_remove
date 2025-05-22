@@ -1,4 +1,3 @@
-帮我调整下面的代码，我想使用PaddleOCR来代替easyocr，请给我修改适配后的完整代码：
 import time
 import cv2
 import easyocr
