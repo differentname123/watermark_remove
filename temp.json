@@ -1,77 +1,132 @@
-有没有办法进一步的优化inpaint_batch和inpaint的性能，给我优化后的完整代码：
-import os
-import torch
+下面代码有没有可以优化的地方，比如先生成所有的帧，再进行预测，会不会减小进程池子的创建：
+import time
+
+import cv2
+import easyocr
 import numpy as np
-from PIL import Image
-from simple_lama_inpainting.utils.util import prepare_img_and_mask, download_model
-
-LAMA_MODEL_URL = os.environ.get(
-    "LAMA_MODEL_URL",
-    "https://github.com/enesmsahin/simple-lama-inpainting/releases/download/v0.1.0/big-lama.pt",
-)
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-class SimpleLama:
-    def __init__(
-        self,
-        device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-    ) -> None:
-        if os.environ.get("LAMA_MODEL"):
-            model_path = os.environ.get("LAMA_MODEL")
-            if not os.path.exists(model_path):
-                raise FileNotFoundError(f"lama torchscript model not found: {model_path}")
-        else:
-            model_path = download_model(LAMA_MODEL_URL)
+def process_frame(frame, reader):
+    """
+    对单帧图像进行 OCR 识别和绘制识别结果。
+    """
+    # 使用 EasyOCR 识别文本
+    results = reader.readtext(frame, detail=1)
 
-        self.model = torch.jit.load(model_path, map_location=device)
-        self.model.eval()
-        self.model.to(device)
-        self.device = device
-        print(f"Model loaded to {self.device}.")
+    # 在图像上绘制识别框和文字
+    for bbox, text, confidence in results:
+        # bbox 为四个顶点 (左上, 右上, 右下, 左下)
+        pts = np.array(bbox, dtype=np.int32).reshape((-1, 1, 2))
+        cv2.polylines(frame, [pts], isClosed=True, color=(0, 255, 0), thickness=2)
+
+        # 在框的左上角上方显示识别文本
+        top_left = bbox[0]
+        org = (int(top_left[0]), int(top_left[1]) - 10)
+        cv2.putText(frame, text, org,
+                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                    fontScale=0.5,
+                    color=(0, 0, 255),
+                    thickness=1,
+                    lineType=cv2.LINE_AA)
+    return frame
 
 
-    def __call__(self, image: Image.Image | np.ndarray, mask: Image.Image | np.ndarray):
-        # 单图片预处理
-        image, mask = prepare_img_and_mask(image, mask, self.device)
-        with torch.inference_mode():
-            inpainted = self.model(image, mask)
-            # 取出第一个batch元素进行后处理
-            cur_res = inpainted[0].permute(1, 2, 0).detach().cpu().numpy()
-            cur_res = np.clip(cur_res * 255, 0, 255).astype(np.uint8)
-            cur_res = Image.fromarray(cur_res)
-            return cur_res
+def process_batch(frames, reader, max_workers=4):
+    """
+    对一批图像帧进行 OCR 处理，并返回处理后的图像帧列表。
+    使用多线程并行处理每一帧。
+    """
+    processed_frames = [None] * len(frames)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # 提交所有帧的处理任务，并保持帧序
+        futures = {executor.submit(process_frame, frame, reader): i for i, frame in enumerate(frames)}
+        for future in as_completed(futures):
+            index = futures[future]
+            processed_frames[index] = future.result()
+    return processed_frames
 
-    def inpaint(self, image: Image.Image | np.ndarray, mask: Image.Image | np.ndarray):
-        """
-        单图片修复接口，与 __call__ 方法效果一致。
-        """
-        return self.__call__(image, mask)
 
-    def inpaint_batch(self, images: list[Image.Image | np.ndarray], masks: list[Image.Image | np.ndarray]):
-        """
-        批处理接口：
-        1. 对每个 image 和 mask 使用 prepare_img_and_mask 进行预处理（假定返回的 tensor 均为形状 [1, C, H, W]）。
-        2. 通过 torch.cat 拼接成一个批次张量，然后传入模型。
-        3. 将模型输出的每个修复结果转换为 PIL Image，存储在列表中返回。
-        """
-        prepped_images = []
-        prepped_masks = []
-        for image, mask in zip(images, masks):
-            img_tensor, mask_tensor = prepare_img_and_mask(image, mask, self.device)
-            prepped_images.append(img_tensor)
-            prepped_masks.append(mask_tensor)
+def process_video(input_video, output_video, batch_size=10, max_workers=4):
+    """
+    从输入视频读取帧，并批量调用 OCR 识别，再将结果合成新视频输出。
 
-        # 将单张图片的 batch 维度 (1, C, H, W) 拼接成 (N, C, H, W)
-        images_tensor = torch.cat(prepped_images, dim=0)
-        masks_tensor = torch.cat(prepped_masks, dim=0)
+    参数：
+      input_video  - 输入视频路径
+      output_video - 输出视频路径
+      batch_size   - 每批处理的帧数
+      max_workers  - 使用的线程数，可根据电脑配置调整
+    """
+    # 打开视频文件
+    cap = cv2.VideoCapture(input_video)
+    if not cap.isOpened():
+        print(f"无法打开视频文件: {input_video}")
+        return
 
-        with torch.inference_mode():
-            inpainted_batch = self.model(images_tensor, masks_tensor)
+    # 获取视频属性（帧率、帧尺寸、总帧数）
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    print(f"视频信息 --> 帧率: {fps}, 分辨率: {width}x{height}, 总帧数: {total_frames}")
 
-        result_images = []
-        # 遍历批次输出，并还原为 PIL Image
-        for i in range(inpainted_batch.shape[0]):
-            out_img = inpainted_batch[i].permute(1, 2, 0).detach().cpu().numpy()
-            out_img = np.clip(out_img * 255, 0, 255).astype(np.uint8)
-            result_images.append(Image.fromarray(out_img))
-        return result_images
+    # 初始化视频写入器（mp4v 编码）
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_video, fourcc, fps, (width, height))
+
+    # 初始化 OCR 识别器（只需创建一次，使用 GPU 进行推理）
+    reader = easyocr.Reader(['ch_sim', 'en'], gpu=True)
+
+    frame_count = 0
+    batch_frames = []
+    batch_counter = 1
+    start_time = time.time()
+    print("开始视频处理...")
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        batch_frames.append(frame)
+        frame_count += 1
+        if frame_count > 100:
+            break
+
+        # 达到预设的批次大小时处理该批次
+        if len(batch_frames) >= batch_size:
+            print(f"处理第 {batch_counter} 批: 本批次 {len(batch_frames)} 帧，累计处理帧数: {frame_count}")
+            processed_frames = process_batch(batch_frames, reader, max_workers)
+            for pf in processed_frames:
+                out.write(pf)
+            batch_frames = []  # 清空当前批次
+            batch_counter += 1
+
+    # 处理剩余不足一批的帧
+    if batch_frames:
+        print(f"处理最后一批: {len(batch_frames)} 帧，累计处理帧数: {frame_count}")
+        processed_frames = process_batch(batch_frames, reader, max_workers)
+        for pf in processed_frames:
+            out.write(pf)
+
+    # 释放资源
+    cap.release()
+    out.release()
+
+    print(f"视频处理完成，总共处理帧数: {frame_count}")
+    print(f"生成视频存储路径: {output_video}")
+    print(f"处理时间: {time.time() - start_time:.2f} 秒")
+
+
+def main():
+    """
+    主函数：设置参数后调用视频处理入口。
+    """
+    input_video_path = 'test.mp4'         # 修改为你的输入视频路径
+    output_video_path = 'output_video.mp4'  # 修改为你期望的输出视频路径
+    batch_size = 20                       # 批量处理的帧数，可根据需要调整
+    max_workers = 4                       # 使用的线程数，根据硬件性能调整
+
+    process_video(input_video_path, output_video_path, batch_size, max_workers)
+
+
+if __name__ == '__main__':
+    main()
