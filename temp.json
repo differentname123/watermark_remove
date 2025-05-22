@@ -1,114 +1,77 @@
-帮我调整下面的代码，现在已经为每一帧识别出了多个方框，我希望收集每个方框，以及方框对应的图像，方便我后续的处理。后续的处理逻辑如下：
-1.统计每种框的出现次数。相似度大于0.8的就被认为是同一种框。最后输出一张图片，图片是首帧，然后添加所有种的框，并且标记上次数。
-import cv2
+有没有办法进一步的优化inpaint_batch和inpaint的性能，给我优化后的完整代码：
+import os
 import torch
 import numpy as np
-import time
-import math
-from typing import List
-from ultralytics import YOLO
+from PIL import Image
+from simple_lama_inpainting.utils.util import prepare_img_and_mask, download_model
 
-# -------------------------------------------------
-# 1. 设备与模型初始化
-# -------------------------------------------------
-DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-print(f"[{time.strftime('%H:%M:%S')}] [INFO] Using device: {DEVICE}")
+LAMA_MODEL_URL = os.environ.get(
+    "LAMA_MODEL_URL",
+    "https://github.com/enesmsahin/simple-lama-inpainting/releases/download/v0.1.0/big-lama.pt",
+)
 
-yolo_model = YOLO("yolo11x-train28-best.pt")
-if DEVICE.startswith("cuda"):
-    yolo_model.to(DEVICE)
-    yolo_model.fuse()
-    yolo_model.half()
-print(f"[{time.strftime('%H:%M:%S')}] [INFO] YOLO model loaded. Classes: {len(yolo_model.names)}")
 
-# -------------------------------------------------
-# 2. 批量帧处理函数（屏蔽内置日志）
-# -------------------------------------------------
-@torch.inference_mode()
-def yolo_batch_process(frames: List[np.ndarray]) -> List[np.ndarray]:
-    """
-    对一批 BGR 帧做 YOLO 检测并画框，返回 BGR 帧列表。
-    verbose=False 屏蔽 Ultralytics 的内置打印。
-    """
-    results = yolo_model(
-        frames,
-        imgsz=1024,
-        augment=True,
-        iou=0.5,
-        verbose=False
-    )
-    return [r.plot() for r in results]
+class SimpleLama:
+    def __init__(
+        self,
+        device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    ) -> None:
+        if os.environ.get("LAMA_MODEL"):
+            model_path = os.environ.get("LAMA_MODEL")
+            if not os.path.exists(model_path):
+                raise FileNotFoundError(f"lama torchscript model not found: {model_path}")
+        else:
+            model_path = download_model(LAMA_MODEL_URL)
 
-# -------------------------------------------------
-# 3. 视频处理函数（关键日志：视频信息、总帧、预计批次、每批耗时）
-# -------------------------------------------------
-def process_video(input_path: str,
-                  output_path: str,
-                  func,
-                  batch_size: int = 16):
-    cap = cv2.VideoCapture(input_path)
-    if not cap.isOpened():
-        raise FileNotFoundError(f"Cannot open video: {input_path}")
+        self.model = torch.jit.load(model_path, map_location=device)
+        self.model.eval()
+        self.model.to(device)
+        self.device = device
+        print(f"Model loaded to {self.device}.")
 
-    width        = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height       = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps          = cap.get(cv2.CAP_PROP_FPS)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    total_batches = math.ceil(total_frames / batch_size)
 
-    print(f"[{time.strftime('%H:%M:%S')}] [INFO] Video info:")
-    print(f"    Resolution: {width}x{height}")
-    print(f"    FPS:        {fps:.2f}")
-    print(f"    Total frames:   {total_frames}")
-    print(f"    Batch size:     {batch_size}")
-    print(f"    Estimated batches: {total_batches}")
+    def __call__(self, image: Image.Image | np.ndarray, mask: Image.Image | np.ndarray):
+        # 单图片预处理
+        image, mask = prepare_img_and_mask(image, mask, self.device)
+        with torch.inference_mode():
+            inpainted = self.model(image, mask)
+            # 取出第一个batch元素进行后处理
+            cur_res = inpainted[0].permute(1, 2, 0).detach().cpu().numpy()
+            cur_res = np.clip(cur_res * 255, 0, 255).astype(np.uint8)
+            cur_res = Image.fromarray(cur_res)
+            return cur_res
 
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out    = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    def inpaint(self, image: Image.Image | np.ndarray, mask: Image.Image | np.ndarray):
+        """
+        单图片修复接口，与 __call__ 方法效果一致。
+        """
+        return self.__call__(image, mask)
 
-    buffer     = []
-    frame_idx  = 0
-    batch_idx  = 0
+    def inpaint_batch(self, images: list[Image.Image | np.ndarray], masks: list[Image.Image | np.ndarray]):
+        """
+        批处理接口：
+        1. 对每个 image 和 mask 使用 prepare_img_and_mask 进行预处理（假定返回的 tensor 均为形状 [1, C, H, W]）。
+        2. 通过 torch.cat 拼接成一个批次张量，然后传入模型。
+        3. 将模型输出的每个修复结果转换为 PIL Image，存储在列表中返回。
+        """
+        prepped_images = []
+        prepped_masks = []
+        for image, mask in zip(images, masks):
+            img_tensor, mask_tensor = prepare_img_and_mask(image, mask, self.device)
+            prepped_images.append(img_tensor)
+            prepped_masks.append(mask_tensor)
 
-    def flush_buffer():
-        nonlocal frame_idx, batch_idx, buffer
-        batch_idx += 1
-        t0 = time.time()
-        processed = func(buffer)
-        t1 = time.time()
-        print(f"[Batch {batch_idx}/{total_batches}] processed {len(buffer)} frames in {t1-t0:.2f}s")
-        for img in processed:
-            if img.shape[1]!=width or img.shape[0]!=height:
-                img = cv2.resize(img, (width, height))
-            if img.ndim==2 or img.shape[2]==1:
-                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-            out.write(img)
-        frame_idx += len(buffer)
-        buffer = []
+        # 将单张图片的 batch 维度 (1, C, H, W) 拼接成 (N, C, H, W)
+        images_tensor = torch.cat(prepped_images, dim=0)
+        masks_tensor = torch.cat(prepped_masks, dim=0)
 
-    print(f"[{time.strftime('%H:%M:%S')}] [INFO] Start processing video...")
-    count = 0
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        buffer.append(frame)
+        with torch.inference_mode():
+            inpainted_batch = self.model(images_tensor, masks_tensor)
 
-        if len(buffer) >= batch_size:
-            flush_buffer()
-            count += 1
-            if count > 10:
-                break
-
-    if buffer:
-        flush_buffer()
-
-    cap.release()
-    out.release()
-    print(f"[{time.strftime('%H:%M:%S')}] [INFO] Done. Total frames written: {frame_idx}. Output: {output_path}")
-
-# -------------------------------------------------
-# 4. 主程序
-# -------------------------------------------------
-if __name__ == "__main__":
-    process_video("test1.mp4", "test_out.mp4", yolo_batch_process, batch_size=32)
+        result_images = []
+        # 遍历批次输出，并还原为 PIL Image
+        for i in range(inpainted_batch.shape[0]):
+            out_img = inpainted_batch[i].permute(1, 2, 0).detach().cpu().numpy()
+            out_img = np.clip(out_img * 255, 0, 255).astype(np.uint8)
+            result_images.append(Image.fromarray(out_img))
+        return result_images
