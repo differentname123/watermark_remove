@@ -99,7 +99,7 @@ def select_region_and_create_mask(image_path, window_width=800, window_height=60
 
 
 if __name__ == "__main__":
-    image_path = "../inpainting/a1.jpg"  # 请替换为你的图片文件路径
+    image_path = "../inpainting/a.jpg"  # 请替换为你的图片文件路径
     mask_image = select_region_and_create_mask(image_path, window_width=800, window_height=600)
 
     if mask_image is not None:

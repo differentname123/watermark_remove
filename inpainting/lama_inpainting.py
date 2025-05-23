@@ -9,7 +9,7 @@ from PIL import Image
 
 if __name__ == "__main__":
     lama = SimpleLama()  # 或者 SimpleLama(device=torch.device("cuda")) 如果有GPU
-    images = [Image.open('a1.jpg')]
+    images = [Image.open('a.jpg')]
     masks = [Image.open('mask_image.jpg')]
 
     # 复制images便于测试
