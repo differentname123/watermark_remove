@@ -21,7 +21,7 @@ if __name__ == "__main__":
         image = images[i]
         mask = masks[i]
         result = lama.inpaint(image, mask)
-        result.save(f"output/result_{i + 1}.jpg")
+        result.save(f"output/result_{i + 2}.jpg")
     print("Batch processing time:", time.time() - start_time)
 
 
@@ -29,5 +29,5 @@ if __name__ == "__main__":
     start_time = time.time()
     result_images = lama.inpaint_batch(images, masks)
     for idx, res in enumerate(result_images):
-        res.save(f"output/result_{idx + 1}_batch.jpg")
+        res.save(f"output/result_{idx + 2}_batch.jpg")
     print("Batch processing time:", time.time() - start_time)
