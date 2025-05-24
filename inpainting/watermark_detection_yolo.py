@@ -254,7 +254,7 @@ def create_summary_image(base_frame, clusters, output_path="summary.png"):
 # -------------------------------------------------
 if __name__ == "__main__":
     # 修改下面的视频路径和输出视频路径
-    input_video = "test1.mp4"
+    input_video = "test2.mp4"
     output_video = "test_out.mp4"
 
     # 处理视频：检测、绘制框并生成输出视频
