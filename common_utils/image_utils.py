@@ -1,6 +1,29 @@
 import cv2
 import numpy as np
 
+def denormalize_bbox(bbox_norm, image_width, image_height, to_int=True):
+    """
+    将归一化的边界框坐标转换为实际图像坐标。
+
+    参数：
+        bbox_norm: list or tuple, 归一化坐标 [x_min, y_min, x_max, y_max]，取值范围在 0~1 之间
+        image_width: int, 图像的实际宽度
+        image_height: int, 图像的实际高度
+        to_int: bool, 是否将输出坐标转换为整数，默认 True
+
+    返回：
+        list: 实际图像坐标 [x_min, y_min, x_max, y_max]
+    """
+    x_min = bbox_norm[0] * image_width
+    y_min = bbox_norm[1] * image_height
+    x_max = bbox_norm[2] * image_width
+    y_max = bbox_norm[3] * image_height
+
+    if to_int:
+        return [int(round(x_min)), int(round(y_min)), int(round(x_max)), int(round(y_max))]
+    else:
+        return [x_min, y_min, x_max, y_max]
+
 
 def select_region_and_create_mask(image_path, window_width=800, window_height=600):
     """
@@ -89,6 +112,17 @@ def select_region_and_create_mask(image_path, window_width=800, window_height=60
     y1 = int(min(y1_disp, y2_disp) / scale)
     x2 = int(max(x1_disp, x2_disp) / scale)
     y2 = int(max(y1_disp, y2_disp) / scale)
+
+    bbox_norm = [0.800000, 0.168000, 0.871000, 0.225000]
+    width = 1037
+    height = 1247
+
+    bbox_pixel = denormalize_bbox(bbox_norm, width, height)
+
+    x1,y1,x2,y2 = bbox_pixel
+
+
+
     print(f"映射回原图的ROI坐标: ({x1}, {y1}) 到 ({x2}, {y2})")
 
     # 生成与原图尺寸一致的 mask，选择区域像素设置为 255，其余为 0
