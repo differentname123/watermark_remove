@@ -115,7 +115,7 @@ def process_and_save_frame(frame_tuple, video_name, output_dir, reader):
 
     # 保存绘制了 OCR 结果的图片
     cv2.imwrite(image_path, processed_frame)
-    print(f"已保存: {json_path} 和 {image_path}")
+    # print(f"已保存: {json_path} 和 {image_path}")
 
     return result_grouped
 
@@ -131,19 +131,19 @@ def json_converter(o):
     raise TypeError(f"类型 {type(o)} 无法序列化")
 
 
-def detection_watermark(input_video_path='test1.mp4',
-                        output_dir="output",
-                        num_sample_frames=10):
+def detection_watermark_ocr(video_file='test1.mp4',
+                        output_dir="output_frames",
+                        num_frames=10):
     # 确保输出目录存在
     os.makedirs(output_dir, exist_ok=True)
 
     start_time = time.time()
-    video_name = os.path.splitext(os.path.basename(input_video_path))[0]
+    video_name = os.path.splitext(os.path.basename(video_file))[0]
     print(
-        f"正在处理视频: {input_video_path} 开始时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
+        f"正在处理视频: {video_file} 开始时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
 
     # 采集视频帧（这里假设 extract_frames_from_video 已返回 (frame_index, PIL Image) 格式的帧）
-    sampled_frames = extract_frames_from_video(input_video_path, num_sample_frames)
+    sampled_frames = extract_frames_from_video(video_file, num_frames)
     if not sampled_frames:
         print("未能采集到视频帧。")
         return []
@@ -176,10 +176,10 @@ def detection_watermark(input_video_path='test1.mp4',
         cluster_img.save(os.path.join(output_dir, f"{video_name}_{first_frame_index}_clusters.png"))
 
     clusters_text = [c["text"] for c in clusters]
-    print(f"{input_video_path} 提取 {len(sampled_frames)} 帧，处理时间: {time.time() - start_time:.2f}s；"
+    print(f"{video_file} 提取 {len(sampled_frames)} 帧，处理时间: {time.time() - start_time:.2f}s；"
           f"检测到水印种类: {len(clusters)}；内容: {clusters_text}")
     return clusters
 
 
 if __name__ == '__main__':
-    detection_watermark()
+    detection_watermark_ocr()

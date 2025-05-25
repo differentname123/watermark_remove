@@ -161,7 +161,7 @@ def process_video(video_path: str, output_dir: str, num_frames: int = 3, max_wor
     return clusters
 
 
-def detection_watermark(video_file="../inpainting/test2.mp4",
+def detection_watermark_llm(video_file="../inpainting/test2.mp4",
                         output_dir="output_frames",
                         num_frames=10):
     try:
@@ -172,4 +172,4 @@ def detection_watermark(video_file="../inpainting/test2.mp4",
 
 
 if __name__ == "__main__":
-    detection_watermark()
+    detection_watermark_llm()
