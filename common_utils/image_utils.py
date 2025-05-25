@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
 import difflib
 
@@ -56,6 +57,48 @@ def compute_enclosing_box(boxes):
     max_bottom = max(box[3] for box in boxes)
     return [min_left, min_top, max_right, max_bottom]
 
+def annotate_clusters_on_image(image: Image.Image, clusters: list) -> Image.Image:
+    draw = ImageDraw.Draw(image)
+    width, height = image.size
+    try:
+        font = ImageFont.truetype("arial.ttf", 15)
+    except Exception:
+        font = ImageFont.load_default()
+
+    for cluster in clusters:
+        text = cluster.get("text", "")
+        count = cluster.get("count", 0)
+        enclosing_box = cluster.get("enclosing_box", None)
+        if enclosing_box and isinstance(enclosing_box, list) and len(enclosing_box) == 4:
+            x0, y0, x1, y1 = [int(coord * dim) for coord, dim in zip(enclosing_box, (width, height, width, height))]
+            draw.rectangle([x0, y0, x1, y1], outline="blue", width=2)
+            annotation_text = f"{text} ({count})"
+            text_y = y0 - 20 if y0 - 20 > 0 else y0 + 5
+            draw.text((x0, text_y), annotation_text, fill="blue", font=font)
+    return image
+
+
+def extract_frames_from_video(video_path: str, num_frames: int = 3) -> list:
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise FileNotFoundError(f"无法打开视频文件: {video_path}")
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total_frames <= 0:
+        raise ValueError("视频中无帧可处理")
+
+    frame_indices = [round(i * (total_frames - 1) / (num_frames - 1)) for i in range(num_frames)] if num_frames > 1 else [0]
+
+    frames = []
+    for idx in frame_indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ret, frame = cap.read()
+        if ret:
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frames.append((idx, Image.fromarray(frame_rgb)))
+        else:
+            print(f"读取帧 {idx} 失败")
+    cap.release()
+    return frames
 
 def count_box_occurrences(images, overlap_threshold=0.5, content_threshold=0.5):
     """

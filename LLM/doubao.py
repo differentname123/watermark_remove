@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from volcenginesdkarkruntime import Ark
 from common_utils.common_utils import get_config
-from common_utils.image_utils import count_box_occurrences
+from common_utils.image_utils import count_box_occurrences, annotate_clusters_on_image, extract_frames_from_video
 
 # 全局配置，获取 Ark API Key
 ARK_API_KEY = get_config("doubao_api_key")
@@ -81,50 +81,6 @@ def annotate_watermarks_on_image(image: Image.Image, watermark_data: dict) -> Im
             draw.rectangle([x0, y0, x1, y1], outline="red", width=2)
             text_y = y0 - 20 if y0 - 20 > 0 else y0 + 5
             draw.text((x0, text_y), label, fill="red", font=font)
-    return image
-
-
-def extract_frames_from_video(video_path: str, num_frames: int = 3) -> list:
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        raise FileNotFoundError(f"无法打开视频文件: {video_path}")
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    if total_frames <= 0:
-        raise ValueError("视频中无帧可处理")
-
-    frame_indices = [round(i * (total_frames - 1) / (num_frames - 1)) for i in range(num_frames)] if num_frames > 1 else [0]
-
-    frames = []
-    for idx in frame_indices:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-        ret, frame = cap.read()
-        if ret:
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frames.append((idx, Image.fromarray(frame_rgb)))
-        else:
-            print(f"读取帧 {idx} 失败")
-    cap.release()
-    return frames
-
-
-def annotate_clusters_on_image(image: Image.Image, clusters: list) -> Image.Image:
-    draw = ImageDraw.Draw(image)
-    width, height = image.size
-    try:
-        font = ImageFont.truetype("arial.ttf", 15)
-    except Exception:
-        font = ImageFont.load_default()
-
-    for cluster in clusters:
-        text = cluster.get("text", "")
-        count = cluster.get("count", 0)
-        enclosing_box = cluster.get("enclosing_box", None)
-        if enclosing_box and isinstance(enclosing_box, list) and len(enclosing_box) == 4:
-            x0, y0, x1, y1 = [int(coord * dim) for coord, dim in zip(enclosing_box, (width, height, width, height))]
-            draw.rectangle([x0, y0, x1, y1], outline="blue", width=2)
-            annotation_text = f"{text} ({count})"
-            text_y = y0 - 20 if y0 - 20 > 0 else y0 + 5
-            draw.text((x0, text_y), annotation_text, fill="blue", font=font)
     return image
 
 

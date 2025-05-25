@@ -36,5 +36,6 @@
     已完成:
         1.完成doubao-1-5-thinking-vision-pro大模型 + lama 的水印去除
         2.增加声音的添加
+        3.完成ocr的水印检测
     待完成：
-        1.完成ocr + lama 的水印去除
+        1.内容平台api的探索
