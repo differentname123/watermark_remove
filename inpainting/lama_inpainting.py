@@ -66,7 +66,7 @@ def inpating_video(video_path, box_list, output_video_path=None, batch_size=10, 
                 # 将 PIL 图像转换为 OpenCV BGR 格式并写入视频
                 res_img_cv = cv2.cvtColor(np.array(res_img), cv2.COLOR_RGB2BGR)
                 out.write(res_img_cv)
-            print(f"已处理 {frame_count} 帧")
+            print(f"\r已处理 {frame_count} / {total_frames} 帧", end="", flush=True)
             images_batch.clear()
             masks_batch.clear()
 

@@ -4,6 +4,7 @@ import json
 import os
 import time
 from io import BytesIO
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import cv2
 from PIL import Image, ImageDraw, ImageFont
@@ -17,23 +18,12 @@ ARK_API_KEY = get_config("doubao_api_key")
 
 
 def encode_image_to_base64(img: Image.Image, fmt: str = "jpeg") -> str:
-    """
-    将 PIL Image 转换为 Base64 编码的字符串
-    """
     bio = BytesIO()
     img.save(bio, format=fmt)
     return base64.b64encode(bio.getvalue()).decode("utf-8")
 
 
 def detect_watermarks(image: Image.Image, ark_client: Ark) -> dict:
-    """
-    调用 Ark API 检测图像中的水印，返回一个字典，例如：
-    {
-        "Company © 2024": [0.134, 0.245, 0.356, 0.469],
-        "icon_watermark": [0.500, 0.600, 0.700, 0.800]
-    }
-    坐标均为归一化数值（0–1，保留 3 位小数），无检测时返回 {}.
-    """
     b64 = encode_image_to_base64(image)
     data_uri = f"data:image/jpeg;base64,{b64}"
     prompt = """
@@ -78,9 +68,6 @@ def detect_watermarks(image: Image.Image, ark_client: Ark) -> dict:
 
 
 def annotate_watermarks_on_image(image: Image.Image, watermark_data: dict) -> Image.Image:
-    """
-    根据 watermark_data 在图像上绘制检测到的水印框（红色），标注水印文本
-    """
     draw = ImageDraw.Draw(image)
     width, height = image.size
     try:
@@ -90,21 +77,14 @@ def annotate_watermarks_on_image(image: Image.Image, watermark_data: dict) -> Im
 
     for label, coords in watermark_data.items():
         if isinstance(coords, list) and len(coords) == 4:
-            # 将归一化坐标转换为实际像素
             x0, y0, x1, y1 = [int(c * s) for c, s in zip(coords, (width, height, width, height))]
             draw.rectangle([x0, y0, x1, y1], outline="red", width=2)
             text_y = y0 - 20 if y0 - 20 > 0 else y0 + 5
             draw.text((x0, text_y), label, fill="red", font=font)
-            # print(f"检测到水印: {label} at [{x0}, {y0}, {x1}, {y1}]")
     return image
 
 
 def extract_frames_from_video(video_path: str, num_frames: int = 3) -> list:
-    """
-    从视频中均匀提取指定数量的帧。
-    返回值为列表，每个元素为 (帧索引, PIL.Image)。
-    帧的命名中将使用绝对帧数。
-    """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise FileNotFoundError(f"无法打开视频文件: {video_path}")
@@ -112,11 +92,7 @@ def extract_frames_from_video(video_path: str, num_frames: int = 3) -> list:
     if total_frames <= 0:
         raise ValueError("视频中无帧可处理")
 
-    # 均匀选取帧索引，当 num_frames==1 时，直接选第一帧
-    if num_frames == 1:
-        frame_indices = [0]
-    else:
-        frame_indices = [round(i * (total_frames - 1) / (num_frames - 1)) for i in range(num_frames)]
+    frame_indices = [round(i * (total_frames - 1) / (num_frames - 1)) for i in range(num_frames)] if num_frames > 1 else [0]
 
     frames = []
     for idx in frame_indices:
@@ -132,10 +108,6 @@ def extract_frames_from_video(video_path: str, num_frames: int = 3) -> list:
 
 
 def annotate_clusters_on_image(image: Image.Image, clusters: list) -> Image.Image:
-    """
-    在图像上绘制聚类统计结果。
-    对每个聚类，绘制最小包围框（蓝色）以及统计文本（水印文本及出现次数）。
-    """
     draw = ImageDraw.Draw(image)
     width, height = image.size
     try:
@@ -148,68 +120,96 @@ def annotate_clusters_on_image(image: Image.Image, clusters: list) -> Image.Imag
         count = cluster.get("count", 0)
         enclosing_box = cluster.get("enclosing_box", None)
         if enclosing_box and isinstance(enclosing_box, list) and len(enclosing_box) == 4:
-            # 将归一化坐标转换为像素数值
             x0, y0, x1, y1 = [int(coord * dim) for coord, dim in zip(enclosing_box, (width, height, width, height))]
             draw.rectangle([x0, y0, x1, y1], outline="blue", width=2)
             annotation_text = f"{text} ({count})"
             text_y = y0 - 20 if y0 - 20 > 0 else y0 + 5
             draw.text((x0, text_y), annotation_text, fill="blue", font=font)
-            # print(f"聚类统计: {annotation_text} - 包围框: [{x0}, {y0}, {x1}, {y1}]")
     return image
 
 
-def process_video(video_path: str, output_dir: str, ark_client: Ark, num_frames: int = 3):
+def _detect_task(args):
     """
-    处理视频：
-    1. 均匀提取指定数量的帧。
-    2. 对每帧调用 API 检测水印，并保存 JSON 文件。
-    3. 对每帧图像标注水印检测结果，并保存图片。
-    4. 统计所有帧的水印数据聚类信息，并在第一帧上绘制聚类结果，保存图片。
+    单线程任务封装：创建独立 Ark 客户端并调用 detect_watermarks
+    返回 (frame_label, watermark_data)
+    """
+    frame_label, image = args
+    ark_client = Ark(api_key=ARK_API_KEY)   # 每个线程各自实例化
+    return frame_label, detect_watermarks(image, ark_client)
+
+
+def process_video(video_path: str, output_dir: str, num_frames: int = 3, max_workers: int = 30):
+    """
+    处理视频：先提取帧，再用多线程并行检测水印。
     """
     start_time = time.time()
     os.makedirs(output_dir, exist_ok=True)
     base_name = os.path.basename(video_path)
-    wm_data_list = []
 
     frames = extract_frames_from_video(video_path, num_frames)
+
+    # 1. 先加载已存在的 JSON，剩余的帧异步检测
+    wm_data_dict = {}
+    tasks_to_run = []   # [(frame_label, Image), ...]
+
     for frame_index, image in frames:
-        # 使用视频名和帧的绝对帧数构造唯一标识
         frame_label = f"{base_name}_{frame_index}"
         json_path = os.path.join(output_dir, f"{frame_label}.json")
-
-        # 如果 JSON 文件已存在，则加载，否则调用 API 检测水印
         if os.path.exists(json_path):
             with open(json_path, "r", encoding="utf-8") as f:
-                watermark_data = json.load(f)
+                wm_data_dict[frame_label] = json.load(f)
         else:
-            watermark_data = detect_watermarks(image, ark_client)
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(watermark_data, f, ensure_ascii=False, indent=2)
+            tasks_to_run.append((frame_label, image))
+
+    # 2. 并行调用 detect_watermarks
+    if tasks_to_run:
+        workers = min(max_workers, len(tasks_to_run))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            future_to_label = {executor.submit(_detect_task, task): task[0] for task in tasks_to_run}
+            for future in as_completed(future_to_label):
+                frame_label = future_to_label[future]
+                try:
+                    frame_label_ret, wm_data = future.result()
+                    assert frame_label_ret == frame_label
+                except Exception as exc:
+                    print(f"{frame_label} 处理失败: {exc}")
+                    wm_data = {}
+                wm_data_dict[frame_label] = wm_data
+                # 落盘 JSON
+                json_path = os.path.join(output_dir, f"{frame_label}.json")
+                with open(json_path, "w", encoding="utf-8") as f:
+                    json.dump(wm_data, f, ensure_ascii=False, indent=2)
+
+    # 3. 标注图片并组装 wm_data_list（保持与 frames 顺序一致）
+    wm_data_list = []
+    for frame_index, image in frames:
+        frame_label = f"{base_name}_{frame_index}"
+        watermark_data = wm_data_dict.get(frame_label, {})
         wm_data_list.append(watermark_data)
 
-        # 在图像上标注检测到的水印并保存结果图
         annotated_image = annotate_watermarks_on_image(image.copy(), watermark_data)
-        output_image_path = os.path.join(output_dir, f"{frame_label}.png")
-        annotated_image.save(output_image_path)
+        annotated_image.save(os.path.join(output_dir, f"{frame_label}.png"))
 
-    # 统计所有帧的水印检测数据的聚类情况
+    # 4. 聚类统计
     clusters = count_box_occurrences(wm_data_list)
-    # 过滤出count大于1的聚类
-    clusters = [cluster for cluster in clusters if cluster.get("count", 0) > 2]
+    clusters = [c for c in clusters if c.get("count", 0) > 2]
+
     if frames:
         first_frame_index, first_image = frames[0]
-        annotated_clusters_image = annotate_clusters_on_image(first_image.copy(), clusters)
-        cluster_output_path = os.path.join(output_dir, f"{base_name}_{first_frame_index}_clusters.png")
-        annotated_clusters_image.save(cluster_output_path)
-    clusters_text = [cluster["text"] for cluster in clusters]
-    print(f"{video_path} 提取 {len(frames)} 帧，处理时间: {time.time() - start_time:.2f} 秒 水印个数: {len(clusters)} 水印内容为: {clusters_text}")
+        cluster_img = annotate_clusters_on_image(first_image.copy(), clusters)
+        cluster_img.save(os.path.join(output_dir, f"{base_name}_{first_frame_index}_clusters.png"))
+
+    clusters_text = [c["text"] for c in clusters]
+    print(f"{video_path} 提取 {len(frames)} 帧，处理时间: {time.time() - start_time:.2f}s；"
+          f"检测到水印种类: {len(clusters)}；内容: {clusters_text}")
     return clusters
 
 
-def detection_watermark(video_file="../inpainting/test2.mp4",output_dir="output_frames", num_frames=10):
-    ark_client = Ark(api_key=ARK_API_KEY)
+def detection_watermark(video_file="../inpainting/test2.mp4",
+                        output_dir="output_frames",
+                        num_frames=10):
     try:
-        return process_video(video_file, output_dir, ark_client, num_frames=num_frames)
+        return process_video(video_file, output_dir, num_frames=num_frames)
     except Exception as e:
         print("处理过程中出错:", e)
     return None
