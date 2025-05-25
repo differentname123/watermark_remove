@@ -35,7 +35,7 @@ def merge_audio_ffmpeg(original_video_path, processed_video_path, final_output_p
         print("FFmpeg合成音频过程中出错:", e)
     return final_output_path
 
-def inpating_video(video_path, box_list, output_video_path=None, batch_size=10, max_frames=100000):
+def inpating_video(video_path, box_list, output_video_path=None, batch_size=10, max_frames=100):
     # 打开视频文件
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
