@@ -1,6 +1,102 @@
 import cv2
 import numpy as np
 
+import difflib
+
+
+def compute_iou(box1, box2):
+    """
+    计算两个框之间的交并比 (IoU)。
+    框格式：[left, top, right, bottom]
+    """
+    # 计算交集区域
+    left_inter = max(box1[0], box2[0])
+    top_inter = max(box1[1], box2[1])
+    right_inter = min(box1[2], box2[2])
+    bottom_inter = min(box1[3], box2[3])
+
+    if right_inter < left_inter or bottom_inter < top_inter:
+        return 0.0  # 无交集
+    area_inter = (right_inter - left_inter) * (bottom_inter - top_inter)
+    area_box1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area_box2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+
+    # IoU = 交集面积 / (两框并集面积)
+    iou = area_inter / (area_box1 + area_box2 - area_inter)
+    return iou
+
+
+def compute_text_similarity(text1, text2):
+    """
+    利用 difflib 计算两个文本的相似度，返回值范围 0.0～1.0
+    """
+    return difflib.SequenceMatcher(None, text1, text2).ratio()
+
+
+def is_same_box(box1, text1, box2, text2, overlap_threshold=0.8, content_threshold=0.8):
+    """
+    判断两个框是否为同一框：
+      1. IoU 大于 overlap_threshold
+      2. 文本相似度 大于 content_threshold
+    """
+    iou = compute_iou(box1, box2)
+    sim = compute_text_similarity(text1, text2)
+    # 调试信息（可选）
+    # print(f"IoU: {iou:.2f}, 文本相似度: {sim:.2f}")
+    return iou >= overlap_threshold and sim >= content_threshold
+
+
+def compute_enclosing_box(boxes):
+    """
+    给定多个框，计算能框住所有框的最小边界框
+    """
+    min_left = min(box[0] for box in boxes)
+    min_top = min(box[1] for box in boxes)
+    max_right = max(box[2] for box in boxes)
+    max_bottom = max(box[3] for box in boxes)
+    return [min_left, min_top, max_right, max_bottom]
+
+
+def count_box_occurrences(images, overlap_threshold=0.5, content_threshold=0.5):
+    """
+    统计不同图片中“同一框”出现的次数，并收集所有匹配的框信息以及计算最小包围框
+    输入:
+      images: 列表，每个元素代表一张图片的检测结果，格式为字典
+              键为文本，值为框的坐标 [left, top, right, bottom]
+    输出:
+      clusters: 每一项为一个聚类结果，包含：
+                - text: 代表文本信息（可作为聚类标识）
+                - boxes: 列表，包含该聚类下所有的框信息
+                - count: 出现次数
+                - enclosing_box: 能框住所有框的最小边界框信息
+    """
+    clusters = []
+
+    for image in images:
+        for text, box in image.items():
+            matched = False
+            for cluster in clusters:
+                if is_same_box(cluster["box"], cluster["text"], box, text, overlap_threshold, content_threshold):
+                    cluster["count"] += 1
+                    cluster["boxes"].append(box)
+                    matched = True
+                    break
+            if not matched:
+                # 创建新一条聚类记录，保存文本、初始化一个 boxes 列表
+                clusters.append({
+                    "text": text,
+                    "box": box,  # 保存第一个出现的框，可用于快速比较
+                    "boxes": [box],  # 保存所有匹配到的框
+                    "count": 1
+                })
+
+    # 对每个聚类计算能够包住所有框的最小边界框
+    for cluster in clusters:
+        cluster["enclosing_box"] = compute_enclosing_box(cluster["boxes"])
+
+    return clusters
+
+
 def denormalize_bbox(bbox_norm, image_width, image_height, to_int=True):
     """
     将归一化的边界框坐标转换为实际图像坐标。
