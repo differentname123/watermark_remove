@@ -1,173 +1,149 @@
 import base64
-import os
 import json
+import os
+from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
+import cv2
 from volcenginesdkarkruntime import Ark
 
-# 建议将API Key设为环境变量或从配置文件读取，而不是硬编码
-# ARK_API_KEY = os.environ.get("VOLC_ARK_API_KEY")
-# 如果你在测试时仍想使用硬编码的密钥，可以取消下面一行的注释
-ARK_API_KEY = "f65249de-2f94-4f9c-b654-8a4de76ad288"  # 你的API Key
+from common_utils.common_utils import get_config
+
+ARK_API_KEY = get_config("doubao_api_key")
 
 
-# 初始化Ark客户端
-# 最好在主程序中初始化一次，然后传递给函数，避免重复初始化
-# 如果这个函数会被频繁调用，可以将client作为参数传入
-# client = Ark(api_key=ARK_API_KEY)
-
-def encode_image_to_base64(image_path):
-    """将图片文件编码为Base64字符串"""
-    with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode('utf-8')
+def encode_image(img: Image.Image, fmt="jpeg") -> str:
+    """将PIL Image转换为Base64字符串"""
+    bio = BytesIO()
+    img.save(bio, format=fmt)
+    return base64.b64encode(bio.getvalue()).decode("utf-8")
 
 
-def detect_and_draw_watermarks(image_path: str, client: Ark) -> Image.Image:
+def detect_watermarks_api(img: Image.Image, client: Ark) -> dict:
     """
-    检测图片中的水印并在图片上绘制边界框。
-
-    Args:
-        image_path (str): 输入图片的路径。
-        client (Ark): 初始化好的Ark客户端实例。
-
-    Returns:
-        PIL.Image.Image: 绘制了水印边界框的图片对象。
-                         如果未检测到水印或发生错误，则返回原始图片。
+    通过调用API检测图像中水印，返回结果为一个字典，
+    格式形如：{"文本或图标": [x_min, y_min, x_max, y_max]}
+    坐标归一化到0-1（保留6位小数），无检测时返回 {}。
     """
-    if not os.path.exists(image_path):
-        raise FileNotFoundError(f"图片文件未找到: {image_path}")
-
-    # 1. 准备图片数据
-    base64_image = encode_image_to_base64(image_path)
-
-    # 从文件扩展名推断图片类型
-    _, ext = os.path.splitext(image_path)
-    image_type = ext.lower().replace('.', '')
-    if image_type == 'jpg':
-        image_type = 'jpeg'  # API可能期望jpeg
-
-    data_uri = f"data:image/{image_type};base64,{base64_image}"
-
-    # 2. 构建prompt (与原代码一致)
+    b64 = encode_image(img)
+    data_uri = f"data:image/jpeg;base64,{b64}"
     prompt = f"""
-请分析输入图像，检测所有水印（包括文字和图标）。
-
-要求：
-1. 仅返回一个 JSON 对象，禁止输出任何额外说明。
-2. JSON 对象的键为水印标识：文字水印直接用检测到的文本（UTF-8，双引号包裹）；图标水印请生成唯一标识（如 "icon_watermark"，若有多个依次命名为 "icon_watermark_1"，"icon_watermark_2" 等）。
-3. 每个键对应的值为一个浮点数组 [x_min, y_min, x_max, y_max]，表示水印框边界，坐标已根据图像尺寸归一化到 0–1，保留 6 位小数。
-4. 无检测时返回 {{}}。
-
-示例：
-{{
-  "Company © 2024": [0.123456, 0.234567, 0.345678, 0.456789],
-  "icon_watermark": [0.500000, 0.600000, 0.700000, 0.800000]
-}}
-"""
-
-    # 3. 调用API
+    请分析输入图像，检测所有水印（包括文字和图标）。
+    要求：
+    1. 仅返回一个 JSON 对象，禁止输出任何额外说明。
+    2. JSON 对象的键为水印标识：文字水印直接用检测到的文本（UTF-8，双引号包裹）；图标水印请生成唯一标识（如 "icon_watermark"，若有多个依次命名为 "icon_watermark_1"，"icon_watermark_2" 等）。
+    3. 每个键对应的值为一个浮点数组 [x_min, y_min, x_max, y_max]，表示水印框边界，坐标已根据图像尺寸归一化到 0–1，保留 3 位小数。
+    4. 无检测时返回 {{}}。
+    示例：
+    {{
+      "Company © 2024": [0.134, 0.245, 0.356, 0.469],
+      "icon_watermark": [0.500, 0.600, 0.700, 0.500]
+    }}
+    """
     try:
-        response = client.chat.completions.create(
+        resp = client.chat.completions.create(
             model="doubao-1-5-thinking-vision-pro-250428",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": data_uri}
-                        },
-                        {
-                            "type": "text",
-                            "text": prompt
-                        },
-                    ],
-                }
-            ],
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": data_uri}},
+                    {"type": "text", "text": prompt}
+                ]
+            }],
             extra_headers={'x-is-encrypted': 'true'},
             temperature=0,
             top_p=0.7,
             max_tokens=4096,
         )
-        response_content = response.choices[0].message.content
+        res_content = resp.choices[0].message.content
     except Exception as e:
-        print(f"调用API时发生错误: {e}")
-        # 发生错误时，返回原始图片或抛出异常
-        return Image.open(image_path)
+        print("调用API出错:", e)
+        return {}
 
-    # 4. 解析JSON响应
     try:
-        watermark_data = json.loads(response_content)
-        if not isinstance(watermark_data, dict):
-            print(f"API返回的不是有效的JSON对象: {response_content}")
-            return Image.open(image_path)
-    except json.JSONDecodeError:
-        print(f"无法解析API返回的JSON: {response_content}")
-        return Image.open(image_path)
+        wm_data = json.loads(res_content)
+    except Exception:
+        print("JSON解析失败:", res_content)
+        wm_data = {}
+    return wm_data
 
-    # 5. 加载图片并准备绘图
-    img = Image.open(image_path).convert("RGB")  # 确保是RGB格式以便绘图
+
+def annotate_image(img: Image.Image, wm_data: dict) -> Image.Image:
+    """
+    根据wm_data在图像上绘制检测到的水印边界框，
+    坐标为归一化数据，根据图像实际尺寸还原到像素位置。
+    """
     draw = ImageDraw.Draw(img)
-    img_width, img_height = img.size
-
-    # (可选) 加载字体用于绘制标签
+    width, height = img.size
     try:
-        # 尝试加载一个常用字体，你可能需要根据你的系统调整字体文件路径或名称
         font = ImageFont.truetype("arial.ttf", 15)
-    except IOError:
-        font = ImageFont.load_default()  # Fallback to default font
-
-    # 6. 绘制边界框
-    if not watermark_data:
-        print("未检测到水印。")
-        return img  # 返回原始图片
-
-    for label, normalized_coords in watermark_data.items():
-        if not (isinstance(normalized_coords, list) and len(normalized_coords) == 4):
-            print(f"水印 '{label}' 的坐标格式不正确: {normalized_coords}")
-            continue
-
-        nx_min, ny_min, nx_max, ny_max = normalized_coords
-
-        # 还原坐标
-        x_min = int(nx_min * img_width)
-        y_min = int(ny_min * img_height)
-        x_max = int(nx_max * img_width)
-        y_max = int(ny_max * img_height)
-
-        # 绘制矩形框
-        draw.rectangle([x_min, y_min, x_max, y_max], outline="red", width=2)
-
-        # (可选) 绘制标签
-        text_position = (x_min, y_min - 20 if y_min - 20 > 0 else y_min + 5)
-        draw.text(text_position, label, fill="red", font=font)
-        print(f"检测到水印: {label} at [{x_min}, {y_min}, {x_max}, {y_max}]")
-
+    except Exception:
+        font = ImageFont.load_default()
+    for label, coords in wm_data.items():
+        if isinstance(coords, list) and len(coords) == 4:
+            # 坐标归一化，这里转换为实际像素
+            x0, y0, x1, y1 = [int(c * s) for c, s in zip(coords, (width, height, width, height))]
+            draw.rectangle([x0, y0, x1, y1], outline="red", width=2)
+            text_pos = (x0, y0 - 20 if y0 - 20 > 0 else y0 + 5)
+            draw.text(text_pos, label, fill="red", font=font)
+            print(f"检测到水印: {label} at [{x0}, {y0}, {x1}, {y1}]")
     return img
 
 
-# --- 主程序示例 ---
+def extract_frames(video_path: str):
+    """
+    从视频中提取第一帧、中间帧和最后一帧，
+    返回列表，每个元素为 (帧位置, PIL.Image)。
+    """
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise FileNotFoundError(f"无法打开视频文件: {video_path}")
+    count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if count <= 0:
+        raise ValueError("视频中无帧可处理")
+    positions = [0, count // 2, count - 1]
+    frames = []
+    for pos in positions:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, pos)
+        ret, frame = cap.read()
+        if ret:
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frames.append((pos, Image.fromarray(frame_rgb)))
+        else:
+            print(f"读取帧 {pos} 失败")
+    cap.release()
+    return frames
+
+
 if __name__ == "__main__":
-    # 确保你有一个名为 "a3.png" 的图片在脚本同目录下，或者修改为你的图片路径
-    # 你也可以使用其他的图片，如 "test_image_with_watermark.jpg"
-    input_image_path = "a3.png"
-    output_image_path = "a3_watermarked_output.png"
+    video_file = "../inpainting/test.mp4"  # 输入视频文件路径
+    base_name = os.path.basename(video_file)
+    output_dir = "output_frames"  # 输出目录，既保存结果图片，也保存坐标JSON文件
+    os.makedirs(output_dir, exist_ok=True)
 
-    if not ARK_API_KEY or ARK_API_KEY == "YOUR_API_KEY":
-        print("请设置您的火山引擎ARK API Key (VOLC_ARK_API_KEY)")
-    else:
-        # 在这里初始化客户端
-        ark_client = Ark(api_key=ARK_API_KEY)
+    # 初始化Ark客户端
+    ark_client = Ark(api_key=ARK_API_KEY)
 
-        try:
-            # 调用函数
-            processed_image = detect_and_draw_watermarks(input_image_path, ark_client)
+    try:
+        frames = extract_frames(video_file)
+        labels = [f"{base_name}_first_frame", f"{base_name}_middle_frame", f"{base_name}_last_frame"]
+        for i, (pos, img) in enumerate(frames):
+            # 坐标数据存储文件，例如 first_frame.json
+            json_filename = os.path.join(output_dir, f"{labels[i]}.json")
 
-            # 显示或保存图片
-            processed_image.show()  # 显示图片
-            processed_image.save(output_image_path)  # 保存图片
-            print(f"处理后的图片已保存到: {output_image_path}")
+            if os.path.exists(json_filename):
+                with open(json_filename, "r", encoding="utf-8") as f:
+                    wm_data = json.load(f)
+                print(f"{labels[i]} 水印数据已加载")
+            else:
+                wm_data = detect_watermarks_api(img, ark_client)
+                with open(json_filename, "w", encoding="utf-8") as f:
+                    json.dump(wm_data, f, ensure_ascii=False, indent=2)
+                print(f"{labels[i]} 水印数据已保存至 {json_filename}")
 
-        except FileNotFoundError as e:
-            print(e)
-        except Exception as e:
-            print(f"处理图片时发生意外错误: {e}")
+            # 使用加载或新检测到的水印数据进行图像标注
+            annotated_img = annotate_image(img.copy(), wm_data)
+            output_path = os.path.join(output_dir, f"{labels[i]}.png")
+            annotated_img.save(output_path)
+            print("保存处理结果到:", output_path)
+    except Exception as e:
+        print("处理过程中出错:", e)
