@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 from simple_lama_inpainting import SimpleLama  # 确保这个包已安装，如果有GPU可以修改为 SimpleLama(device=torch.device("cuda"))
 
-def inpating_video(video_path, box_list, output_video_path, batch_size=10, max_frames=1000000):
+def inpating_video(video_path, box_list, output_video_path=None, batch_size=10, max_frames=100):
     # 打开视频文件
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
