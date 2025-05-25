@@ -113,9 +113,9 @@ def select_region_and_create_mask(image_path, window_width=800, window_height=60
     x2 = int(max(x1_disp, x2_disp) / scale)
     y2 = int(max(y1_disp, y2_disp) / scale)
 
-    bbox_norm = [0.800000, 0.168000, 0.871000, 0.225000]
-    width = 1037
-    height = 1247
+    bbox_norm = [0.793, 0.041, 0.841, 0.087]
+    width = orig_w
+    height = orig_h
 
     bbox_pixel = denormalize_bbox(bbox_norm, width, height)
 
@@ -133,7 +133,7 @@ def select_region_and_create_mask(image_path, window_width=800, window_height=60
 
 
 if __name__ == "__main__":
-    image_path = "../inpainting/a.jpg"  # 请替换为你的图片文件路径
+    image_path = "../inpainting/a3.png"  # 请替换为你的图片文件路径
     mask_image = select_region_and_create_mask(image_path, window_width=800, window_height=600)
 
     if mask_image is not None:
