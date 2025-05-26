@@ -117,35 +117,17 @@ def compress_jpeg_with_pillow(input_path, output_path, quality=90, optimize=True
     try:
         img = Image.open(input_path)
         original_size = os.path.getsize(input_path)
-
-        # 确保输出目录存在
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
-        # JPEG 不支持透明度 (Alpha 通道) 或调色板模式 (P)
-        # 如果原图是 RGBA (如带透明的PNG) 或 P (如GIF)，需要转换为 RGB
         if img.mode in ("RGBA", "P"):
             print(f"信息: 输入图片模式为 {img.mode}，将转换为 RGB 模式以保存为 JPEG。")
             img = img.convert("RGB")
         elif img.mode != "RGB" and img.mode != "L": # L 是灰度模式，JPEG 支持
             print(f"警告: 输入图片模式为 {img.mode}，可能不是JPEG直接支持的。尝试直接保存...")
-
-
-        # Pillow 保存 JPEG 的参数：
-        # quality: 0-100 (但通常建议 1-95，Pillow 内部可能会对非常高或非常低的值进行调整)
-        # optimize: 进行额外的优化遍，尝试找到更好的霍夫曼编码。
-        # progressive: 生成渐进式 JPEG。
-        # icc_profile: 可以用来保留色彩配置文件。
-        # exif: 可以用来保留 EXIF 数据。
         img.save(output_path,
                  "JPEG",
                  quality=quality,
                  optimize=optimize,
                  progressive=progressive)
-                 # 你还可以通过 img.info.get('icc_profile') 和 img.info.get('exif')
-                 # 来获取原图的这些信息并传递给 save 方法，如果需要保留的话：
-                 # icc_profile=img.info.get('icc_profile'),
-                 # exif=img.info.get('exif')
-
         compressed_size = os.path.getsize(output_path)
         reduction = original_size - compressed_size
         percentage = (reduction / original_size) * 100 if original_size > 0 else 0

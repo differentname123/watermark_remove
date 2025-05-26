@@ -17,7 +17,7 @@ from inpainting.watermark_detection_ocr import detection_watermark_ocr
 
 def run():
     start_time = time.time()
-    video_name = "test1.mp4"
+    video_name = "test.mp4"
     clusters = detection_watermark_llm(video_file=video_name, num_frames=10)
     # clusters = detection_watermark_ocr(video_file=video_name, num_frames=10)
 

@@ -1,9 +1,13 @@
+import os
+import tempfile
 import time
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 from simple_lama_inpainting import SimpleLama  # 确保这个包已安装，如果有GPU可以修改为 SimpleLama(device=torch.device("cuda"))
 import subprocess
+
+from inpainting.image_super_resolution import super_resolution_image
 
 
 def merge_audio_ffmpeg(original_video_path, processed_video_path, final_output_path=None):
@@ -41,8 +45,10 @@ def inpating_video(video_path, box_list, output_video_path=None, batch_size=10, 
     if not cap.isOpened():
         print("无法打开视频文件:", video_path)
         return
+
     if output_video_path is None:
         output_video_path = video_path.replace(".mp4", "_inpainted.mp4")
+
     # 获取视频属性
     fps = cap.get(cv2.CAP_PROP_FPS)
     width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -55,7 +61,7 @@ def inpating_video(video_path, box_list, output_video_path=None, batch_size=10, 
     out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
 
     # 初始化 Lama inpainting 模块
-    lama = SimpleLama()  # 如有GPU支持，可改为 SimpleLama(device=torch.device("cuda"))
+    lama = SimpleLama()  # 如果有GPU支持，可改为 SimpleLama(device=torch.device("cuda"))
 
     images_batch = []
     masks_batch = []
@@ -67,16 +73,17 @@ def inpating_video(video_path, box_list, output_video_path=None, batch_size=10, 
         ret, frame = cap.read()
         if not ret:
             break
+
         if frame_count > max_frames:
-            print(f"达到最大帧数{max_frames}限制，停止处理")
+            print(f"达到最大帧数 {max_frames} 限制，停止处理")
             break
 
-        # 将帧从BGR转换为RGB，并转换为 PIL Image
+        # 将帧从 BGR 转换为 RGB，并转换为 PIL Image
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         pil_frame = Image.fromarray(frame_rgb)
         images_batch.append(pil_frame)
 
-        # 创建与帧同尺寸的纯黑 mask (灰度图)，然后依据 box_list 将区域涂白
+        # 创建与帧同尺寸的纯黑 mask (灰度图)，依据 box_list 将区域涂白
         mask = Image.new("L", (width, height), 0)
         draw = ImageDraw.Draw(mask)
         for box in box_list:
@@ -90,13 +97,26 @@ def inpating_video(video_path, box_list, output_video_path=None, batch_size=10, 
 
         frame_count += 1
 
-        # 达到一个批次的帧数时进行处理
+        # 达到一批帧时进行处理
         if len(images_batch) == batch_size:
             result_images = lama.inpaint_batch(images_batch, masks_batch)
             for res_img in result_images:
+                # 首先保存临时输入图片
+                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_input:
+                    input_file = tmp_input.name
+                    res_img.save(input_file)
+                # 定义临时输出文件名
+                output_file = input_file.replace(".jpg", "_sr.jpg")
+                # 对该图片进行超分辨率处理
+                super_resolution_image(input_file, output_file)
+                # 读取超分辨率处理后的图像
+                enhanced_img = Image.open(output_file)
                 # 将 PIL 图像转换为 OpenCV BGR 格式并写入视频
-                res_img_cv = cv2.cvtColor(np.array(res_img), cv2.COLOR_RGB2BGR)
-                out.write(res_img_cv)
+                enhanced_img_cv = cv2.cvtColor(np.array(enhanced_img), cv2.COLOR_RGB2BGR)
+                out.write(enhanced_img_cv)
+                # 删除临时文件
+                os.remove(input_file)
+                os.remove(output_file)
             print(f"\r已处理 {frame_count} / {total_frames} 帧", end="", flush=True)
             images_batch.clear()
             masks_batch.clear()
@@ -105,13 +125,22 @@ def inpating_video(video_path, box_list, output_video_path=None, batch_size=10, 
     if images_batch:
         result_images = lama.inpaint_batch(images_batch, masks_batch)
         for res_img in result_images:
-            res_img_cv = cv2.cvtColor(np.array(res_img), cv2.COLOR_RGB2BGR)
-            out.write(res_img_cv)
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_input:
+                input_file = tmp_input.name
+                res_img.save(input_file)
+            output_file = input_file.replace(".jpg", "_sr.jpg")
+            super_resolution_image(input_file, output_file)
+            enhanced_img = Image.open(output_file)
+            enhanced_img_cv = cv2.cvtColor(np.array(enhanced_img), cv2.COLOR_RGB2BGR)
+            out.write(enhanced_img_cv)
+            os.remove(input_file)
+            os.remove(output_file)
         print(f"已处理 {frame_count} 帧 (最后一批)")
 
     cap.release()
     out.release()
-    print("总耗时: {:.2f} 秒".format(time.time() - start_time))
+    total_time = time.time() - start_time
+    print("总耗时: {:.2f} 秒".format(total_time))
 
     final_video = merge_audio_ffmpeg(video_path, output_video_path)
     print("最终处理后的视频(包含声音)已保存为:", final_video)
