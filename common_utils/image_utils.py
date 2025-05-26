@@ -1,3 +1,5 @@
+import os
+
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -99,6 +101,65 @@ def extract_frames_from_video(video_path: str, num_frames: int = 3) -> list:
             print(f"读取帧 {idx} 失败")
     cap.release()
     return frames
+
+def compress_jpeg_with_pillow(input_path, output_path, quality=90, optimize=True, progressive=True):
+    """
+    使用 Pillow 压缩 JPEG 图片。
+    如果输入是 PNG 等带透明通道的格式，会先转换为 RGB。
+
+    :param input_path: 输入图片路径 (可以是 JPEG, PNG 等)
+    :param output_path: 输出压缩后的 JPEG 图片路径
+    :param quality: 压缩质量 (1-95)。Squoosh 的 MozJPEG 默认75是一个不错的起点。
+                    值越低，文件越小，质量损失越大。
+    :param optimize: 是否优化霍夫曼表 (True/False)。True 可以稍微减小文件大小，但会增加压缩时间。
+    :param progressive: 是否生成渐进式 JPEG (True/False)。渐进式 JPEG 通常文件稍小，且在网络加载时体验更好。
+    """
+    try:
+        img = Image.open(input_path)
+        original_size = os.path.getsize(input_path)
+
+        # 确保输出目录存在
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        # JPEG 不支持透明度 (Alpha 通道) 或调色板模式 (P)
+        # 如果原图是 RGBA (如带透明的PNG) 或 P (如GIF)，需要转换为 RGB
+        if img.mode in ("RGBA", "P"):
+            print(f"信息: 输入图片模式为 {img.mode}，将转换为 RGB 模式以保存为 JPEG。")
+            img = img.convert("RGB")
+        elif img.mode != "RGB" and img.mode != "L": # L 是灰度模式，JPEG 支持
+            print(f"警告: 输入图片模式为 {img.mode}，可能不是JPEG直接支持的。尝试直接保存...")
+
+
+        # Pillow 保存 JPEG 的参数：
+        # quality: 0-100 (但通常建议 1-95，Pillow 内部可能会对非常高或非常低的值进行调整)
+        # optimize: 进行额外的优化遍，尝试找到更好的霍夫曼编码。
+        # progressive: 生成渐进式 JPEG。
+        # icc_profile: 可以用来保留色彩配置文件。
+        # exif: 可以用来保留 EXIF 数据。
+        img.save(output_path,
+                 "JPEG",
+                 quality=quality,
+                 optimize=optimize,
+                 progressive=progressive)
+                 # 你还可以通过 img.info.get('icc_profile') 和 img.info.get('exif')
+                 # 来获取原图的这些信息并传递给 save 方法，如果需要保留的话：
+                 # icc_profile=img.info.get('icc_profile'),
+                 # exif=img.info.get('exif')
+
+        compressed_size = os.path.getsize(output_path)
+        reduction = original_size - compressed_size
+        percentage = (reduction / original_size) * 100 if original_size > 0 else 0
+
+        print(f"Pillow JPEG 压缩完成: {input_path} -> {output_path}")
+        print(f"  参数: quality={quality}, optimize={optimize}, progressive={progressive}")
+        print(f"原始大小: {original_size / 1024:.2f} KB")
+        print(f"压缩后大小: {compressed_size / 1024:.2f} KB")
+        print(f"减少体积: {reduction / 1024:.2f} KB ({percentage:.2f}%)")
+
+    except FileNotFoundError:
+        print(f"错误: 输入图片 '{input_path}' 未找到。")
+    except Exception as e:
+        print(f"Pillow 压缩 JPEG 时发生错误: {e}")
 
 def count_box_occurrences(images, overlap_threshold=0.5, content_threshold=0.5):
     """
@@ -271,27 +332,29 @@ def select_region_and_create_mask(image_path, window_width=800, window_height=60
 
 
 if __name__ == "__main__":
-    image_path = "../inpainting/a.jpg"  # 请替换为你的图片文件路径
-    mask_image = select_region_and_create_mask(image_path, window_width=800, window_height=600)
+    image_path = "../inpainting/output1.png"  # 请替换为你的图片文件路径
+    compress_jpeg_with_pillow(image_path, "../inpainting/optimized_a.png")
 
-    if mask_image is not None:
-        # 显示并保存mask图
-        cv2.imshow("Mask", mask_image)
-        cv2.imwrite("../inpainting/mask_image.jpg", mask_image)
-        print("mask_image.jpg 已保存。")
-
-        # 生成原图上掩码位置涂白后的图片
-        original_img = cv2.imread(image_path)
-        if original_img is None:
-            print("错误：无法加载原始图片！")
-        else:
-            white_masked_image = original_img.copy()
-            # 将掩码区域的像素全部设置为白色（BGR格式下白色为 [255, 255, 255]）
-            white_masked_image[mask_image == 255] = [255, 255, 255]
-            cv2.imshow("White Masked Image", white_masked_image)
-            cv2.imwrite("../inpainting/white_masked_image.jpg", white_masked_image)
-            print("white_masked_image.jpg 已保存。")
-
-        print("按任意键退出。")
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+    # mask_image = select_region_and_create_mask(image_path, window_width=800, window_height=600)
+    #
+    # if mask_image is not None:
+    #     # 显示并保存mask图
+    #     cv2.imshow("Mask", mask_image)
+    #     cv2.imwrite("../inpainting/mask_image.jpg", mask_image)
+    #     print("mask_image.jpg 已保存。")
+    #
+    #     # 生成原图上掩码位置涂白后的图片
+    #     original_img = cv2.imread(image_path)
+    #     if original_img is None:
+    #         print("错误：无法加载原始图片！")
+    #     else:
+    #         white_masked_image = original_img.copy()
+    #         # 将掩码区域的像素全部设置为白色（BGR格式下白色为 [255, 255, 255]）
+    #         white_masked_image[mask_image == 255] = [255, 255, 255]
+    #         cv2.imshow("White Masked Image", white_masked_image)
+    #         cv2.imwrite("../inpainting/white_masked_image.jpg", white_masked_image)
+    #         print("white_masked_image.jpg 已保存。")
+    #
+    #     print("按任意键退出。")
+    #     cv2.waitKey(0)
+    #     cv2.destroyAllWindows()
