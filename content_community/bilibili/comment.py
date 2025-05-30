@@ -13,7 +13,7 @@ import requests
 from common_utils.common_utils import get_config
 
 # --- 需要您填写的参数 ---
-oid = "BV19SjKzcEwf"  # 例如: "860478472" (这是一个示例oid)
+oid = "BV18e7pzgE49"  # 例如: "860478472" (这是一个示例oid)
 type_code = 1  # 目标类型，1 一般代表视频
 message_content = "这个视频质量真高，特别喜欢"
 

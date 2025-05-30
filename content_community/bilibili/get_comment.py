@@ -2,7 +2,7 @@ import requests
 import time
 
 # --- 需要您填写的参数 ---
-bvid = "BV19SjKzcEwf" # 您提供的BV号
+bvid = "BV1Mq7pzMEW3" # 您提供的BV号
 
 # --- 请求头，模拟浏览器 ---
 headers = {
