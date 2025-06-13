@@ -1,100 +1,122 @@
 import requests
 import time
 
-# --- 需要您填写的参数 ---
-bvid = "BV1Mq7pzMEW3" # 您提供的BV号
 
-# --- 请求头，模拟浏览器 ---
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Referer": f"https://www.bilibili.com/video/{bvid}" # 有时加上 Referer 也有帮助
-}
+def get_bilibili_comments(bvid: str):
+    """
+    根据 Bilibili BV号获取视频评论。
 
-# 1. 通过 bvid 获取 aid
-try:
+    参数：
+      bvid: 视频对应的 BV号（例如 "BV1ecMnzQEUX"）
+
+    返回：
+      如果成功，返回评论列表（列表中的每个元素为单条评论的字典数据）；
+      如果没有评论或者发生错误，则返回 None。
+    """
+    # 模拟浏览器请求头
+    headers = {
+        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/91.0.4472.124 Safari/537.36"),
+        "Referer": f"https://www.bilibili.com/video/{bvid}"
+    }
+
+    # --- 1. 通过 bvid 获取视频的 aid ---
     view_url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
-    # 在请求中加入 headers
-    view_response = requests.get(view_url, headers=headers)
-    view_response.raise_for_status() # 这会捕获 4xx 和 5xx 错误
-    view_data = view_response.json()
-    if view_data.get("code") == 0 and view_data.get("data"):
-        oid_val = view_data["data"]["aid"]
-        print(f"获取到视频 aid: {oid_val}")
+    try:
+        view_response = requests.get(view_url, headers=headers)
+        view_response.raise_for_status()  # 捕获 HTTP 错误
+        view_data = view_response.json()
+    except requests.exceptions.HTTPError as http_err:
+        print(f"HTTP error occurred while fetching video info: {http_err}")
+        print(f"Response: {view_response.content}")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"请求视频信息时发生错误: {e}")
+        return None
+    except Exception as e:
+        print(f"解析视频信息时发生错误: {e}")
+        return None
+
+    if view_data.get("code") != 0 or not view_data.get("data"):
+        print(f"获取 aid 失败: {view_data.get('message', '未知错误')}")
+        print(f"完整返回数据: {view_data}")
+        return None
+
+    aid = view_data["data"]["aid"]
+    print(f"获取到视频 aid: {aid}")
+
+    # --- 2. 根据 aid 获取评论 ---
+    type_code = 1  # 具体含义参考 API 文档
+    sort_mode = 3  # 具体含义参考 API 文档
+    reply_url = "https://api.bilibili.com/x/v2/reply/main"
+    params = {
+        "oid": aid,
+        "type": type_code,
+        "mode": sort_mode,
+        "next": 0,
+    }
+
+    try:
+        comment_response = requests.get(reply_url, headers=headers, params=params)
+        comment_response.raise_for_status()
+        comment_data = comment_response.json()
+    except requests.exceptions.HTTPError as http_err:
+        print(f"获取评论时发生 HTTP 错误: {http_err}")
+        print(f"Response: {comment_response.content}")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"请求评论时发生错误: {e}")
+        return None
+    except Exception as e:
+        print(f"解析评论数据时发生错误: {e}")
+        return None
+
+    if comment_data.get("code") != 0:
+        print(f"获取评论失败，错误码：{comment_data.get('code')}, 错误信息：{comment_data.get('message')}")
+        print(f"完整返回数据: {comment_data}")
+        return None
+
+    # --- 3. 解析评论数据 ---
+    if comment_data.get("data"):
+        if comment_data["data"].get("replies"):
+            replies_list = comment_data["data"]["replies"]
+            # 按照点赞数量排序，reverse=False 表示从低到高排序（可根据需要调整）
+            replies_list.sort(key=lambda x: x.get("like", 0), reverse=False)
+            return replies_list
+        elif comment_data["data"].get("top_replies"):
+            # 当返回置顶/热门评论时，可自行处理，这里直接返回
+            return comment_data["data"]["top_replies"]
+
+    print("该视频可能还没有评论，或者返回的数据结构未能解析。")
+    if comment_data.get("data") and comment_data["data"].get("notice"):
+        print(f"评论区提示: {comment_data['data']['notice']['content']}")
+    return None
+
+
+if __name__ == "__main__":
+    # 示例：输入 BV号 获取对应视频的评论
+    bvid = "BV1ecMnzQEUX"  # 请替换成需要查询的 BV 号
+    comments = get_bilibili_comments(bvid)
+
+    if comments:
+        print("成功获取评论，下面为评论详情：")
+        for i, reply in enumerate(comments):
+            print(f"\n评论 #{i + 1}:")
+            print(f"  用户: {reply['member']['uname']} (UID: {reply['member']['mid']})")
+            print(f"  内容: {reply['content']['message']}")
+            print(f"  时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(reply['ctime']))}")
+            print(f"  点赞数: {reply['like']}")
+            print(f"  回复数: {reply['count']}")
+            if reply.get("replies"):
+                print("    --- 楼中楼回复 ---")
+                for j, sub_reply in enumerate(reply["replies"]):
+                    print(f"      回复 #{j + 1}:")
+                    print(f"        用户: {sub_reply['member']['uname']}")
+                    print(f"        内容: {sub_reply['content']['message']}")
+                    print(f"        点赞数: {sub_reply['like']}")
+                print("    ------------------")
+
+        # 如果需要获取分页信息，可查看 comment_data 中的 cursor 字段
     else:
-        print(f"获取 aid 失败: {view_data.get('message', '未知错误，未返回message')}")
-        print(f"完整返回数据: {view_data}") # 打印完整返回数据以便调试
-        exit()
-except requests.exceptions.HTTPError as http_err:
-    print(f"HTTP error occurred: {http_err}")  # HTTP错误
-    print(f"Response content: {view_response.content}") # 打印服务器返回的原始错误内容
-    exit()
-except requests.exceptions.RequestException as e:
-    print(f"请求 aid 时发生错误: {e}")
-    exit()
-except Exception as e:
-    print(f"解析 aid 数据时发生错误: {e}")
-    exit()
-
-# --- 后续获取评论的代码保持不变 ---
-type_code = 1
-sort_mode = 3
-reply_url = "https://api.bilibili.com/x/v2/reply/main"
-
-params = {
-    "oid": oid_val,
-    "type": type_code,
-    "mode": sort_mode,
-    "next": 0,
-}
-
-# --- 发送GET请求获取评论 ---
-try:
-    response = requests.get(reply_url, headers=headers, params=params) # 复用上面的headers
-    response.raise_for_status()
-    data = response.json()
-
-    if data.get("code") == 0:
-        print(f"成功获取评论 (模式: {sort_mode})")
-        if data.get("data") and data["data"].get("replies"):
-            replies_list = data["data"]["replies"]
-            print(f"\n--- 评论列表 (第 {data.get('data', {}).get('cursor', {}).get('current_pn', 1)} 页) ---")
-            for i, reply in enumerate(replies_list):
-                print(f"\n评论 #{i+1}:")
-                print(f"  用户: {reply['member']['uname']} (UID: {reply['member']['mid']})")
-                print(f"  内容: {reply['content']['message']}")
-                print(f"  时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(reply['ctime']))}")
-                print(f"  点赞数: {reply['like']}")
-                print(f"  回复数: {reply['count']}")
-                if reply.get("replies") and len(reply["replies"]) > 0:
-                    print("    --- 楼中楼回复 ---")
-                    for j, sub_reply in enumerate(reply["replies"]):
-                        print(f"      回复 #{j+1}:")
-                        print(f"        用户: {sub_reply['member']['uname']}")
-                        print(f"        内容: {sub_reply['content']['message']}")
-                        print(f"        点赞数: {sub_reply['like']}")
-                    print("    ------------------")
-            cursor = data["data"].get("cursor", {})
-            if not cursor.get("is_end"):
-                print(f"\n可以获取下一页，将 next 参数设置为: {cursor.get('next')}")
-            else:
-                print("\n已经是最后一页评论了。")
-        elif data.get("data") and data["data"].get("top_replies"):
-            print("\n--- 置顶/热门评论 ---")
-            # (处理 top_replies 的逻辑，与上面 replies_list 类似)
-        else:
-            print("该视频可能还没有评论，或者返回的数据结构未能解析。")
-            if data.get("data") and data["data"].get("notice"):
-                print(f"评论区提示: {data['data']['notice']['content']}")
-    else:
-        print(f"获取评论失败，错误码：{data.get('code')}, 错误信息：{data.get('message')}")
-        print(f"完整返回数据: {data}")
-
-except requests.exceptions.HTTPError as http_err:
-    print(f"HTTP error occurred while fetching comments: {http_err}")
-    print(f"Response content: {response.content}")
-except requests.exceptions.RequestException as e:
-    print(f"请求评论时发生错误：{e}")
-except Exception as e:
-    print(f"发生未知错误：{e}")
-    if 'data' in locals():
-        print(f"原始返回数据 (评论): {data}")
+        print("没有获取到评论或者获取评论失败。")
