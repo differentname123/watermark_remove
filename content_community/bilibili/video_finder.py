@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import random
 
 import requests
 import time
@@ -60,7 +61,7 @@ def send_request(url, params=None):
         'Cookie': CONFIG['COOKIE']
     }
     try:
-        time.sleep(CONFIG['REQUEST_DELAY'])
+        time.sleep(random.uniform(1.5, 3.5))  # 每次API请求前，随机暂停1.5到3.5秒
         response = requests.get(url, headers=headers, params=params, timeout=CONFIG['REQUEST_TIMEOUT'])
         response.raise_for_status()
         data = response.json()
@@ -255,7 +256,7 @@ def video_fetcher_worker():
         else:
             logging.info("本次未获取到新视频。")
         logging.info(f'本次获取到 {len(new_videos)} 个新视频，已添加到队列中。队列当前长度：{videos_queue.qsize()}')
-        time.sleep(120)
+        time.sleep(random.uniform(120, 180))  # 每次拉取大循环，随机暂停2到3分钟
 
 
 def comment_worker():
@@ -273,10 +274,13 @@ def comment_worker():
         if not bvid:
             continue
         # 此处使用时间戳对评论列表取余选取评论内容
-        comment_text = comment_list[int(time.time()) % len(comment_list)]
+        comment_text = random.choice(comment_list)  # 更简单，更随机
+
+        # comment_text = comment_list[int(time.time()) % len(comment_list)]
         success = commenter.post_comment(bvid, comment_text, 1)
         logging.info(f"开始处理视频评论：BVID {bvid} 标题：{video.get('title')} 评论内容：{comment_text} 成功：{success}")
-        time.sleep(10)
+        # 将video_duration映射到10到30秒之间
+        time.sleep(random.uniform(5, 30))  # 每次评论后，随机暂停15到45秒，这个间隔要拉长，评论太快是高危行为
 
 
 if __name__ == '__main__':
