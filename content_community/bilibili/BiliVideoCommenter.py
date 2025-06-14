@@ -256,7 +256,7 @@ def video_fetcher_worker():
         else:
             logging.info("本次未获取到新视频。")
         logging.info(f'本次获取到 {len(new_videos)} 个新视频，已添加到队列中。队列当前长度：{videos_queue.qsize()}')
-        time.sleep(random.uniform(120, 180))  # 每次拉取大循环，随机暂停2到3分钟
+        time.sleep(random.uniform(1200, 1800))  # 每次拉取大循环，随机暂停2到3分钟
 
 
 def comment_worker():
