@@ -340,7 +340,7 @@ def comment_worker():
         success = commenter.post_comment(bvid, comment_text, 1)
         logging.info(f"开始处理视频评论：BVID {bvid} 标题：{video.get('title')} 评论内容：{comment_text} 成功：{success}")
         # 将video_duration映射到10到30秒之间
-        time.sleep(random.uniform(5, 30))  # 每次评论后，随机暂停15到45秒，这个间隔要拉长，评论太快是高危行为
+        time.sleep(random.uniform(10, 60))  # 每次评论后，随机暂停15到45秒，这个间隔要拉长，评论太快是高危行为
 
 
 if __name__ == '__main__':
