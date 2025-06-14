@@ -242,7 +242,7 @@ class BilibiliCommenter:
         :param type_code: 目标类型，1 通常代表视频。
         :return: 评论是否成功。
         """
-        print(f"尝试评论视频 BV 号：{bvid}，内容：'{message_content}'")
+        # print(f"尝试评论视频 BV 号：{bvid}，内容：'{message_content}'")
 
         # 1. 获取 AID
         oid = self._get_aid_from_bvid(bvid)
@@ -292,10 +292,11 @@ class BilibiliCommenter:
             result = response.json()
 
             if result.get("code") == 0:
-                print("评论发送成功！")
+                # print("评论发送成功！")
                 if result.get("data") and result["data"].get("reply"):
-                    print(f"评论ID (rpid): {result['data']['reply']['rpid']}")
-                print(f"Bilibili 返回消息: {result.get('message')}")
+                    pass
+                    # print(f"评论ID (rpid): {result['data']['reply']['rpid']}")
+                # print(f"Bilibili 返回消息: {result.get('message')}")
                 return True
             else:
                 print(f"评论发送失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}")
