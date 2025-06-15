@@ -32,19 +32,63 @@ CONFIG = {
         "443415885",
         "10330740",
     ],
-    "TARGET_KEYWORDS": [  # 用于搜索视频的关键词
+    "TARGET_KEYWORDS": [
         "互关",
         "互粉",
         "互赞",
         "互助",
         "新人UP主",
+        "回关",
+        "回粉",
+        "互暖",
+        "互评",
+        "互捞",
+        "三连",
+        "求三连",
+        "互三连",
+        "互币",
+        "电磁力",
+        "新人报道",
+        "新人up",
+        "小UP主",
+        "萌新UP",
+        "底层UP主",
+        "小透明",
+        "涨粉",
+        "求关注",
+        "求抱团",
+        "抱团取暖",
+        "一起加油",
+        "挑战100粉",
+        "冲击千粉",
+        "有粉必回",
+        "有赞必回",
+        "在线秒回",
+        "已关求回"
     ],
-    "FOLLOW_KEYWORDS": [  # 用于判断是否要关注的关键词
+    "FOLLOW_KEYWORDS": [
         "互关",
         "互粉",
         "回关",
         "互赞",
         "互助",
+        "回粉",
+        "互",
+        "必回",
+        "必回关",
+        "有粉必回",
+        "有访必回",
+        "诚信互关",
+        "诚信互粉",
+        "永不取关",
+        "不取关",
+        "赞评必回",
+        "互赞互评",
+        "互三连",
+        "互币",
+        "关我必回",
+        "私信秒回",
+        "你关我就关"
     ],
     "MAX_VIDEOS_PER_SOURCE": 20,  # 每次搜索可以多拉取一些
     "PROCESSED_VIDEOS_FILE": "processed_bvideos.json",
@@ -247,8 +291,8 @@ def fetch_videos():
     all_found_videos = []
     if CONFIG['STRATEGIES']['popular']:
         all_found_videos.extend(fetch_from_popular())
-    if CONFIG['STRATEGIES']['following']:
-        all_found_videos.extend(fetch_from_following())
+    # if CONFIG['STRATEGIES']['following']:
+    #     all_found_videos.extend(fetch_from_following())
     if CONFIG['STRATEGIES']['search']:
         all_found_videos.extend(fetch_from_search())
 
