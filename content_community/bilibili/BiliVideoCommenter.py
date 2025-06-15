@@ -90,7 +90,7 @@ CONFIG = {
         "私信秒回",
         "你关我就关"
     ],
-    "MAX_VIDEOS_PER_SOURCE": 40,  # 每次搜索可以多拉取一些
+    "MAX_VIDEOS_PER_SOURCE": 100,  # 每次搜索可以多拉取一些
     "PROCESSED_VIDEOS_FILE": "processed_bvideos.json",
     "PROCESSED_FIDS_FILE": "processed_fids.json",  # 新增：记录已处理的用户ID
     "REQUEST_TIMEOUT": 10,
@@ -301,7 +301,7 @@ def fetch_from_search():
         logging.info(
             f"  > 关键词 '{keyword}' 搜索完成，总共获取 {videos_fetched_for_keyword} 个视频 (目标 {CONFIG['MAX_VIDEOS_PER_SOURCE']})。")
         logging.info("-" * 50)  # 分隔线
-
+    CONFIG['MAX_VIDEOS_PER_SOURCE'] = 20 # 重置为每页20个，避免影响后续搜索，因为不会更新这么快速
     return video_list
 
 

@@ -9,7 +9,7 @@ from content_community.bilibili.BiliVideoCommenter import load_processed_set
 # 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-total_cookie = get_config("mama_bilibili_total_cookie")
+total_cookie = get_config("nana_bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为
