@@ -90,7 +90,7 @@ CONFIG = {
         "私信秒回",
         "你关我就关"
     ],
-    "MAX_VIDEOS_PER_SOURCE": 20,  # 每次搜索可以多拉取一些
+    "MAX_VIDEOS_PER_SOURCE": 40,  # 每次搜索可以多拉取一些
     "PROCESSED_VIDEOS_FILE": "processed_bvideos.json",
     "PROCESSED_FIDS_FILE": "processed_fids.json",  # 新增：记录已处理的用户ID
     "REQUEST_TIMEOUT": 10,
@@ -232,33 +232,76 @@ def fetch_from_search():
     if not CONFIG['TARGET_KEYWORDS']:
         logging.warning("  > 未配置目标关键词，跳过此策略。")
         return []
+
     video_list = []
     url = "https://api.bilibili.com/x/web-interface/search/type"
+
+    # 定义每页获取的数据量
+    PAGE_SIZE = 20
+
     for keyword in CONFIG['TARGET_KEYWORDS']:
         logging.info(f"  > 正在搜索关键词 '{keyword}'...")
-        params = {
-            'search_type': 'video',
-            'keyword': keyword,
-            'order': 'pubdate',  # 按最新发布排序
-            'page': 1,
-            'ps': CONFIG['MAX_VIDEOS_PER_SOURCE']
-        }
-        data = send_get_request(url, params=params)
-        if data and 'result' in data:
-            found_count = 0
+
+        current_page = 1
+        videos_fetched_for_keyword = 0  # 记录当前关键词已获取的视频数量
+
+        while videos_fetched_for_keyword < CONFIG['MAX_VIDEOS_PER_SOURCE']:
+            params = {
+                'search_type': 'video',
+                'keyword': keyword,
+                'order': 'pubdate',  # 按最新发布排序
+                'page': current_page,
+                'ps': PAGE_SIZE  # 固定每页20个
+            }
+
+            logging.info(f"    - 请求第 {current_page} 页，目标获取 {PAGE_SIZE} 个视频...")
+            data = send_get_request(url, params=params)
+
+            if not data or 'result' not in data:
+                logging.warning(
+                    f"      - 未能获取到关键词 '{keyword}' 第 {current_page} 页的数据，或数据格式不正确。停止此关键词的搜索。")
+                break  # 无法获取数据，停止当前关键词的搜索
+
             search_results = data.get('result', [])
             # 兼容老版本和新版本API的返回格式
             if not isinstance(search_results, list):
                 search_results = data.get('result', {}).get('video', [])
 
+            if not search_results:
+                logging.info(f"      - 关键词 '{keyword}' 第 {current_page} 页没有更多视频了。")
+                break  # 当前页没有数据，说明已经到头了
+
+            page_videos_added = 0  # 记录当前页实际添加的视频数量
             for item in search_results:
                 if item.get('type') == 'video' and 'bvid' in item:
                     if 'title' in item:
                         item['title'] = item['title'].replace('<em class="keyword">', '').replace('</em>', '')
                     item['_source_strategy'] = 'search'
                     video_list.append(item)
-                    found_count += 1
-            logging.info(f"    - 从关键词 '{keyword}' 处获取 {found_count} 个视频。")
+                    videos_fetched_for_keyword += 1
+                    page_videos_added += 1
+
+                    # 如果已经达到或超过了目标数量，就停止
+                    if videos_fetched_for_keyword >= CONFIG['MAX_VIDEOS_PER_SOURCE']:
+                        break  # 跳出 inner loop (for item in search_results)
+
+            logging.info(
+                f"      - 从关键词 '{keyword}' 第 {current_page} 页获取 {page_videos_added} 个视频，当前关键词累计 {videos_fetched_for_keyword} 个。")
+
+            # 如果当前页获取的视频数量少于PAGE_SIZE，说明已经是最后一页了，或者没有更多符合条件的视频了
+            if page_videos_added < PAGE_SIZE:
+                logging.info(f"      - 关键词 '{keyword}' 已获取完所有可用视频（不足 {PAGE_SIZE} 个）。")
+                break  # 跳出 outer loop (while videos_fetched_for_keyword < CONFIG.MAX_VIDEOS_PER_SOURCE)
+
+            current_page += 1
+
+            # 添加延迟，避免请求过快被封禁
+            time.sleep(1)  # 建议延迟1秒，可根据需要调整
+
+        logging.info(
+            f"  > 关键词 '{keyword}' 搜索完成，总共获取 {videos_fetched_for_keyword} 个视频 (目标 {CONFIG['MAX_VIDEOS_PER_SOURCE']})。")
+        logging.info("-" * 50)  # 分隔线
+
     return video_list
 
 

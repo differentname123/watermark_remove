@@ -4,19 +4,20 @@ import random
 import re  # 用于解析Cookie
 import logging
 from common_utils.common_utils import get_config
+from content_community.bilibili.BiliVideoCommenter import load_processed_set
 
 # 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-total_cookie = get_config("bilibili_total_cookie")
+total_cookie = get_config("mama_bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 # 每次操作（关注或取消关注）之间的延迟范围（秒）
-MIN_OPERATION_DELAY_SEC = 3
-MAX_OPERATION_DELAY_SEC = 8
+MIN_OPERATION_DELAY_SEC = 20
+MAX_OPERATION_DELAY_SEC = 45
 
 # 获取列表时每页的数量 (最大50)
 PAGE_SIZE = 50
@@ -179,42 +180,43 @@ def main_task():
         logging.error("无法获取您的 UID，本次任务终止。")
         return
 
-    # --- 阶段 1: 清理非互关用户 ---
-    logging.info("\n--- 阶段 1: 开始清理非互关用户 ---")
-    followers_set = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
-    followings_set = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
-    non_mutual_followings = followings_set - followers_set
-
-    if not non_mutual_followings:
-        logging.info("您当前关注的人都已关注您，阶段 1 无需清理。")
-    else:
-        logging.info(f"--- 发现 {len(non_mutual_followings)} 位您已关注但未回关的用户 ---")
-        non_mutual_followings_list = list(non_mutual_followings)
-        random.shuffle(non_mutual_followings_list)
-        logging.info("自动开始取消关注操作。")
-
-        successful_unfollows = 0
-        failed_unfollows = 0
-        for i, fid in enumerate(non_mutual_followings_list):
-            logging.info(f"\n正在取消关注第 {i + 1}/{len(non_mutual_followings_list)} 位用户 (UID: {fid})...")
-            if modify_relation(fid, 2):  # 2 代表取消关注
-                successful_unfollows += 1
-            else:
-                failed_unfollows += 1
-
-            delay = random.uniform(MIN_OPERATION_DELAY_SEC, MAX_OPERATION_DELAY_SEC)
-            logging.info(f"等待 {delay:.2f} 秒...")
-            time.sleep(delay)
-
-        logging.info("\n--- 阶段 1: 清理操作完成 ---")
-        logging.info(f"总计尝试取消关注: {len(non_mutual_followings_list)} 人")
-        logging.info(f"成功取消关注: {successful_unfollows} 人, 失败: {failed_unfollows} 人")
+    # # --- 阶段 1: 清理非互关用户 ---
+    # logging.info("\n--- 阶段 1: 开始清理非互关用户 ---")
+    # followers_set = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
+    # followings_set = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
+    # non_mutual_followings = followings_set - followers_set
+    #
+    # if not non_mutual_followings:
+    #     logging.info("您当前关注的人都已关注您，阶段 1 无需清理。")
+    # else:
+    #     logging.info(f"--- 发现 {len(non_mutual_followings)} 位您已关注但未回关的用户 ---")
+    #     non_mutual_followings_list = list(non_mutual_followings)
+    #     random.shuffle(non_mutual_followings_list)
+    #     logging.info("自动开始取消关注操作。")
+    #
+    #     successful_unfollows = 0
+    #     failed_unfollows = 0
+    #     for i, fid in enumerate(non_mutual_followings_list):
+    #         logging.info(f"\n正在取消关注第 {i + 1}/{len(non_mutual_followings_list)} 位用户 (UID: {fid})...")
+    #         if modify_relation(fid, 2):  # 2 代表取消关注
+    #             successful_unfollows += 1
+    #         else:
+    #             failed_unfollows += 1
+    #
+    #         delay = random.uniform(MIN_OPERATION_DELAY_SEC, MAX_OPERATION_DELAY_SEC)
+    #         logging.info(f"等待 {delay:.2f} 秒...")
+    #         time.sleep(delay)
+    #
+    #     logging.info("\n--- 阶段 1: 清理操作完成 ---")
+    #     logging.info(f"总计尝试取消关注: {len(non_mutual_followings_list)} 人")
+    #     logging.info(f"成功取消关注: {successful_unfollows} 人, 失败: {failed_unfollows} 人")
 
     # --- 阶段 2: 回关粉丝 ---
     logging.info("\n--- 阶段 2: 开始回关新粉丝 ---")
     # 重新获取最新的列表，因为阶段1可能已经更改了关注状态
     new_followers_set = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
     new_followings_set = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
+    new_followers_set.update(load_processed_set("processed_fids.json"))
     followers_to_follow = new_followers_set - new_followings_set
 
     if not followers_to_follow:
