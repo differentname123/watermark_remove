@@ -371,8 +371,7 @@ def follower_worker(csrf_token):
                 f"发现目标用户: {author_name} (UID: {author_id}) | 来源: BVID {video.get('bvid')} | 标题: {title}")
 
             # 随机暂停一段时间再执行关注，模拟人类行为
-            time.sleep(random.uniform(5, 15))
-
+            time.sleep(random.uniform(20, 45))
             success = modify_relation(author_id, 1, csrf_token)
 
             # 无论成功与否（包括已关注/被拉黑等情况），都将其标记为已处理，避免重复请求
