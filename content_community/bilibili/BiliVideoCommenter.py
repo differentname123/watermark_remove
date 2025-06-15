@@ -350,7 +350,7 @@ def video_fetcher_worker():
             logging.info("本次未获取到新视频。")
         logging.info(f'本次获取到 {len(new_videos)} 个新视频。队列当前长度：{videos_queue.qsize()}')
         # 每次拉取大循环，随机暂停20到30分钟
-        sleep_time = random.uniform(120, 180)
+        sleep_time = random.uniform(1200, 1800)
         logging.info(f"视频拉取线程休眠 {int(sleep_time / 60)} 分钟...")
         time.sleep(sleep_time)
 
