@@ -332,8 +332,8 @@ def fetch_videos():
     all_found_videos = []
     if CONFIG['STRATEGIES']['popular']:
         all_found_videos.extend(fetch_from_popular())
-    # if CONFIG['STRATEGIES']['following']:
-    #     all_found_videos.extend(fetch_from_following())
+    if CONFIG['STRATEGIES']['following']:
+        all_found_videos.extend(fetch_from_following())
     if CONFIG['STRATEGIES']['search']:
         all_found_videos.extend(fetch_from_search())
 
@@ -354,6 +354,7 @@ def fetch_videos():
 
 # --- 8. 并发执行逻辑 ---
 videos_queue = Queue()
+comment_videos_queue = Queue()
 
 # (评论功能保留，暂不启用)
 comment_list = [
@@ -387,6 +388,7 @@ def video_fetcher_worker():
             random.shuffle(new_videos)
             for video in new_videos:
                 videos_queue.put(video)
+                comment_videos_queue.put(video)  # 如果评论功能启用，这里也可以放入评论队列
         else:
             logging.info("本次未获取到新视频。")
         logging.info(f'本次获取到 {len(new_videos)} 个新视频。队列当前长度：{videos_queue.qsize()}')
@@ -402,7 +404,7 @@ def comment_worker():
     commenter = BilibiliCommenter(CONFIG['COOKIE'], CONFIG['CSRF_TOKEN'])
     while True:
         try:
-            video = videos_queue.get(timeout=30)
+            video = comment_videos_queue.get(timeout=30)
         except Empty:
             continue
         bvid = video.get('bvid')
@@ -498,7 +500,7 @@ if __name__ == '__main__':
     # 保持主线程运行
     try:
         while True:
-            logging.info(f"主线程运行中... 当前待处理视频队列长度: {videos_queue.qsize()}")
+            logging.info(f"主线程运行中... 当前待处理视频队列长度: {videos_queue.qsize()} comment_videos_queue长度: {comment_videos_queue.qsize()}")
             time.sleep(60)
     except KeyboardInterrupt:
         print("\n程序被用户中断，正在退出...")
