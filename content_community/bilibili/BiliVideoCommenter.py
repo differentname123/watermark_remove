@@ -47,7 +47,6 @@ CONFIG = {
         "求三连",
         "互三连",
         "互币",
-        "电磁力",
         "新人报道",
         "新人up",
         "小UP主",
@@ -73,7 +72,6 @@ CONFIG = {
         "互赞",
         "互助",
         "回粉",
-        "互",
         "必回",
         "必回关",
         "有粉必回",
@@ -417,7 +415,7 @@ def comment_worker():
             logging.info(f"  > 评论成功: '{comment_text}'")
         else:
             logging.error(f"  > 评论失败。")
-        time.sleep(random.uniform(20, 45))
+        time.sleep(random.uniform(100, 200))
 
 
 # (新功能)
@@ -493,9 +491,9 @@ if __name__ == '__main__':
     follower_thread.start()
 
     # --- 评论线程已暂停 ---
-    # logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
-    # comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
-    # comment_thread.start()
+    logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
+    comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
+    comment_thread.start()
 
     # 保持主线程运行
     try:
