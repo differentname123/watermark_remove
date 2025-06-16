@@ -197,8 +197,9 @@ def save_followers_set(filename, followers_set):
 def update_followers(new_followers_set):
     # 加载之前保存的粉丝列表（如果存在）
     previous_followers_set = load_followers_set("followers_fids.json")
-    # 取并集，更新已有的粉丝列表
-    updated_followers_set = previous_followers_set.union(new_followers_set)
+    # 取交集
+    updated_followers_set = previous_followers_set.intersection(new_followers_set)
+    logging.info(f"之前的粉丝列表中有 {len(previous_followers_set)} 条记录，最新的粉丝列表中有 {len(new_followers_set)} 条记录。 合并之后的粉丝列表中有 {len(updated_followers_set)} 条记录。")
     # 保存更新后的粉丝列表到文件
     save_followers_set("followers_fids.json", updated_followers_set)
 
