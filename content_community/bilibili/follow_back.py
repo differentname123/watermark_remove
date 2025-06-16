@@ -1,3 +1,5 @@
+import json
+
 import requests
 import time
 import random
@@ -9,7 +11,7 @@ from content_community.bilibili.BiliVideoCommenter import load_processed_set
 # 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-total_cookie = get_config("nana_bilibili_total_cookie")
+total_cookie = get_config("mama_bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为
@@ -169,6 +171,37 @@ def modify_relation(fid, action_type):
         logging.error(f"  ❌ {action_text} UID: {fid} 响应内容不是有效的 JSON。")
         return False
 
+def load_followers_set(filename):
+    """尝试从指定的 JSON 文件中加载之前的粉丝列表，返回 set"""
+    try:
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            logging.info(f"已加载 {filename} 中的 {len(data)} 条记录。")
+            return set(data)
+    except FileNotFoundError:
+        logging.info(f"{filename} 不存在，返回空集合。")
+        return set()
+    except json.JSONDecodeError as e:
+        logging.error(f"加载 {filename} 时发生 JSON 解析错误: {e}")
+        return set()
+
+def save_followers_set(filename, followers_set):
+    """保存粉丝列表到指定的 JSON 文件中（覆盖写入）"""
+    try:
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(list(followers_set), f, ensure_ascii=False, indent=4)
+        logging.info(f"粉丝列表已成功保存到 {filename}")
+    except Exception as e:
+        logging.error(f"保存粉丝列表到 {filename} 失败: {e}")
+
+def update_followers(new_followers_set):
+    # 加载之前保存的粉丝列表（如果存在）
+    previous_followers_set = load_followers_set("followers_fids.json")
+    # 取并集，更新已有的粉丝列表
+    updated_followers_set = previous_followers_set.union(new_followers_set)
+    # 保存更新后的粉丝列表到文件
+    save_followers_set("followers_fids.json", updated_followers_set)
+
 def main_task():
     """
     主任务：先清理非互关用户，再回关新粉丝
@@ -183,6 +216,7 @@ def main_task():
     # # --- 阶段 1: 清理非互关用户 ---
     # logging.info("\n--- 阶段 1: 开始清理非互关用户 ---")
     # followers_set = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
+    # update_followers(followers_set)
     # followings_set = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
     # non_mutual_followings = followings_set - followers_set
     #
@@ -215,6 +249,7 @@ def main_task():
     logging.info("\n--- 阶段 2: 开始回关新粉丝 ---")
     # 重新获取最新的列表，因为阶段1可能已经更改了关注状态
     new_followers_set = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
+    update_followers(new_followers_set)  # 更新粉丝列表
     new_followings_set = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
     new_followers_set.update(load_processed_set("processed_fids.json"))
     followers_to_follow = new_followers_set - new_followings_set
