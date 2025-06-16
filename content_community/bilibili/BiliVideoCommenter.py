@@ -401,22 +401,33 @@ def video_fetcher_worker():
 # (评论功能保留，暂不启用)
 def comment_worker():
     """评论线程：从队列获取视频并发表评论。"""
-    commenter = BilibiliCommenter(CONFIG['COOKIE'], CONFIG['CSRF_TOKEN'])
+    base_commenter = BilibiliCommenter(CONFIG['COOKIE'], CONFIG['CSRF_TOKEN'])
+    nana_total_cookie = get_config("nana_bilibili_total_cookie")
+    nana_csrf_token = get_config("nana_bilibili_csrf_token")
+    nana_commenter = BilibiliCommenter(nana_total_cookie, nana_csrf_token)
+
+    mama_total_cookie = get_config("mama_bilibili_total_cookie")
+    mama_csrf_token = get_config("mama_bilibili_csrf_token")
+    mama_commenter = BilibiliCommenter(mama_total_cookie, mama_csrf_token)
+    commenter_list = [base_commenter, nana_commenter, mama_commenter]
+
+
     while True:
-        try:
-            video = comment_videos_queue.get(timeout=30)
-        except Empty:
-            continue
-        bvid = video.get('bvid')
-        if not bvid:
-            continue
-        comment_text = random.choice(comment_list)
-        logging.info(f"准备评论视频：BVID {bvid} | 标题：{video.get('title')}")
-        success = commenter.post_comment(bvid, comment_text, 1)
-        if success:
-            logging.info(f"  > 评论成功: '{comment_text}'")
-        else:
-            logging.error(f"  > 评论失败。")
+        for commenter in commenter_list:
+            try:
+                video = comment_videos_queue.get(timeout=30)
+            except Empty:
+                continue
+            bvid = video.get('bvid')
+            if not bvid:
+                continue
+            comment_text = random.choice(comment_list)
+            logging.info(f"准备评论视频：BVID {bvid} | 标题：{video.get('title')}")
+            success = commenter.post_comment(bvid, comment_text, 1)
+            if success:
+                logging.info(f"  > 评论成功: '{comment_text}'")
+            else:
+                logging.error(f"  > 评论失败。")
         time.sleep(random.uniform(100, 200))
 
 
