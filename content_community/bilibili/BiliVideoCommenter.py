@@ -8,7 +8,7 @@ import os
 import json
 import threading
 from queue import Queue, Empty
-
+from  content_community.bilibili.get_comment import get_bilibili_comments
 from common_utils.common_utils import get_config
 # 评论相关代码保留，但暂时不使用
 from content_community.bilibili.comment import BilibiliCommenter
@@ -409,7 +409,7 @@ def comment_worker():
     mama_total_cookie = get_config("mama_bilibili_total_cookie")
     mama_csrf_token = get_config("mama_bilibili_csrf_token")
     mama_commenter = BilibiliCommenter(mama_total_cookie, mama_csrf_token)
-    commenter_list = [base_commenter, nana_commenter, mama_commenter]
+    commenter_list = [base_commenter]
 
     while True:
         for commenter in commenter_list:
@@ -452,6 +452,21 @@ def comment_worker():
         # 每轮所有评论者执行完后随机休眠一段时间
         time.sleep(random.uniform(100, 200))
 
+def get_comment_user(bvid):
+    result_id_list = []
+    try:
+        comments = get_bilibili_comments(bvid)
+        for i, reply in enumerate(comments):
+            UID = reply['member']['mid']
+            message = reply['content']['message']
+            should_follow = any(keyword.lower() in message for keyword in CONFIG['FOLLOW_KEYWORDS'])
+            if should_follow:
+                result_id_list.append(UID)
+    except Exception as e:
+        logging.error(f"获取评论失败: {e}")
+        return result_id_list
+    return result_id_list
+
 
 # (新功能)
 def follower_worker(csrf_token):
@@ -484,20 +499,25 @@ def follower_worker(csrf_token):
         # 检查标题或描述是否包含关注关键词
         text_to_check = f"{title} {desc}".lower()
         should_follow = any(keyword.lower() in text_to_check for keyword in CONFIG['FOLLOW_KEYWORDS'])
-
+        result_id_list = [author_id]
         if should_follow:
+            result_id_list.extend(get_comment_user(bvid=video.get('bvid')))
             author_name = video.get('author') or (video.get('owner') and video['owner'].get('name'))
-            logging.info(
-                f"发现目标用户: {author_name} (UID: {author_id}) | 来源: BVID {video.get('bvid')} | 标题: {title}")
+            result_id_list = list(set(result_id_list))
+            logging.info(f"发现目标用户: {author_name} (UID: {author_id}) | 来源: BVID {video.get('bvid')} | 标题: {title} 连带评论有 {len(result_id_list)} 个用户需要关注。")
+            for fid in result_id_list:
+                if fid in processed_fids:
+                    logging.debug(f"用户 UID {fid} 已在处理列表，跳过。")
+                    continue
+                else:
+                    # 随机暂停一段时间再执行关注，模拟人类行为
+                    time.sleep(random.uniform(20, 45))
+                    success = modify_relation(author_id, 1, csrf_token)
 
-            # 随机暂停一段时间再执行关注，模拟人类行为
-            time.sleep(random.uniform(20, 45))
-            success = modify_relation(author_id, 1, csrf_token)
-
-            # 无论成功与否（包括已关注/被拉黑等情况），都将其标记为已处理，避免重复请求
-            if success:
-                processed_fids.add(author_id)
-                save_processed_set(processed_fids, CONFIG['PROCESSED_FIDS_FILE'])
+                    # 无论成功与否（包括已关注/被拉黑等情况），都将其标记为已处理，避免重复请求
+                    if success:
+                        processed_fids.add(author_id)
+                        save_processed_set(processed_fids, CONFIG['PROCESSED_FIDS_FILE'])
         else:
             # 即使不关注，也标记为已处理，避免重复检查该用户
             processed_fids.add(author_id)
@@ -525,10 +545,10 @@ if __name__ == '__main__':
                                        daemon=True)
     follower_thread.start()
 
-    # --- 评论线程已暂停 ---
-    logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
-    comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
-    comment_thread.start()
+    # # --- 评论线程已暂停 ---
+    # logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
+    # comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
+    # comment_thread.start()
 
     # 保持主线程运行
     try:
