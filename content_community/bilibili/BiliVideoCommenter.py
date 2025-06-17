@@ -411,23 +411,45 @@ def comment_worker():
     mama_commenter = BilibiliCommenter(mama_total_cookie, mama_csrf_token)
     commenter_list = [base_commenter, nana_commenter, mama_commenter]
 
-
     while True:
         for commenter in commenter_list:
-            try:
-                video = comment_videos_queue.get(timeout=30)
-            except Empty:
+            valid_video = None
+            start_time = time.time()
+            # 尝试在最多30秒内获取一条有效视频
+            while time.time() - start_time < 30:
+                try:
+                    candidate = comment_videos_queue.get(timeout=5)
+                except Empty:
+                    logging.warning("评论视频队列为空，本评论者暂时跳过。")
+                    break
+                # 判断视频是否有效
+                bvid = candidate.get('bvid')
+                if not bvid:
+                    logging.warning("获取视频无效，bvid为空，跳过该视频。")
+                    # 可选：如果认为该视频以后可能恢复，就放回队列
+                    # comment_videos_queue.put(candidate)
+                    continue
+                else:
+                    valid_video = candidate
+                    break
+
+            # 如果没有获取到有效视频则跳过当前评论者
+            if not valid_video:
                 continue
-            bvid = video.get('bvid')
-            if not bvid:
-                continue
+
+            # 准备评论
+            bvid = valid_video.get('bvid')
             comment_text = random.choice(comment_list)
-            logging.info(f"准备评论视频：BVID {bvid} | 标题：{video.get('title')}")
+            title = valid_video.get('title', '无标题')
+            logging.info(f"准备评论视频：BVID {bvid} | 标题：{title}")
+
             success = commenter.post_comment(bvid, comment_text, 1)
             if success:
                 logging.info(f"  > 评论成功: '{comment_text}'")
             else:
-                logging.error(f"  > 评论失败。")
+                logging.error("  > 评论失败。")
+
+        # 每轮所有评论者执行完后随机休眠一段时间
         time.sleep(random.uniform(100, 200))
 
 
