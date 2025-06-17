@@ -327,6 +327,10 @@ def save_processed_set(data_set, filepath):
 def fetch_videos():
     logging.info("==================== 开始获取待处理视频 ====================")
     processed_bvideos = load_processed_set(CONFIG['PROCESSED_VIDEOS_FILE'])
+    # 丢弃最新的1000个processed_bvideos
+    if len(processed_bvideos) > 1000:
+        processed_bvideos = set(list(processed_bvideos)[:-1000])
+
     logging.info(f"已加载 {len(processed_bvideos)} 个已处理的视频记录。")
 
     all_found_videos = []
@@ -409,7 +413,7 @@ def comment_worker():
     mama_total_cookie = get_config("mama_bilibili_total_cookie")
     mama_csrf_token = get_config("mama_bilibili_csrf_token")
     mama_commenter = BilibiliCommenter(mama_total_cookie, mama_csrf_token)
-    commenter_list = [base_commenter]
+    commenter_list = [base_commenter, nana_commenter, mama_commenter]
 
     while True:
         for commenter in commenter_list:
@@ -545,10 +549,10 @@ if __name__ == '__main__':
                                        daemon=True)
     follower_thread.start()
 
-    # # --- 评论线程已暂停 ---
-    # logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
-    # comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
-    # comment_thread.start()
+    # --- 评论线程已暂停 ---
+    logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
+    comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
+    comment_thread.start()
 
     # 保持主线程运行
     try:
