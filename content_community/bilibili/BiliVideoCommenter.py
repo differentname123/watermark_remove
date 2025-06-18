@@ -413,7 +413,7 @@ def comment_worker():
     mama_total_cookie = get_config("mama_bilibili_total_cookie")
     mama_csrf_token = get_config("mama_bilibili_csrf_token")
     mama_commenter = BilibiliCommenter(mama_total_cookie, mama_csrf_token)
-    commenter_list = [base_commenter, nana_commenter, mama_commenter]
+    commenter_list = [nana_commenter, mama_commenter]
 
     while True:
         for commenter in commenter_list:
@@ -549,10 +549,10 @@ if __name__ == '__main__':
                                        daemon=True)
     follower_thread.start()
 
-    # --- 评论线程已暂停 ---
-    logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
-    comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
-    comment_thread.start()
+    # # --- 评论线程已暂停 ---
+    # logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
+    # comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
+    # comment_thread.start()
 
     # 保持主线程运行
     try:
