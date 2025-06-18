@@ -3,6 +3,11 @@ import xml.etree.ElementTree as ET
 import re
 from collections import Counter
 import math
+from datetime import datetime
+import json
+
+from LLM.gemini import get_llm_content
+from content_community.bilibili.get_comment import get_bilibili_comments
 
 # --- 配置项 ---
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
@@ -18,9 +23,195 @@ DANMAKU_TYPE_MAP = {
     6: '逆向弹幕', 7: '特殊弹幕', 8: '高级弹幕', 9: '脚本弹幕',
 }
 
+TRANSLATION_MAP = {
+    # --- 顶层核心信息 ---
+    "bvid": "BVID",
+    "aid": "稿件ID (aid)",
+    "videos": "视频分P总数",
+    "tid": "分区ID",
+    "tname": "分区名称",
+    "copyright": {
+        "key": "版权类型",
+        "handler": lambda x: "原创" if x == 1 else "转载"
+    },
+    "pic": "封面图片URL",
+    "title": "标题",
+    "pubdate": {
+        "key": "发布时间",
+        "handler": lambda ts: datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+    },
+    "ctime": {
+        "key": "创建时间",
+        "handler": lambda ts: datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+    },
+    "desc": "视频简介",
+    "state": "视频状态",
+    "duration": {
+        "key": "总时长",
+        "handler": lambda
+            s: f"{s // 3600:02d}:{s % 3600 // 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60:02d}:{s % 60:02d}"
+    },
+    "dynamic": "视频动态文字",
+    "cid": "弹幕ID (cid)",
+
+    # --- UP主信息 (owner) ---
+    "owner": {
+        "key": "UP主信息",
+        "handler": {
+            "mid": "UP主MID",
+            "name": "UP主昵称",
+            "face": "UP主头像URL"
+        }
+    },
+
+    # --- 数据统计 (stat) ---
+    "stat": {
+        "key": "数据统计",
+        "handler": {
+            "aid": "稿件ID (aid)",
+            "view": "播放数",
+            "danmaku": "弹幕数",
+            "reply": "评论数",
+            "favorite": "收藏数",
+            "coin": "投币数",
+            "share": "分享数",
+            "now_rank": "当前排名",
+            "his_rank": "历史最高排名",
+            "like": "点赞数",
+            "dislike": "点踩数"
+        }
+    },
+
+    # --- 视频分P信息 (pages) ---
+    "pages": {
+        "key": "分P信息列表",
+        "handler": lambda pages: [
+            {
+                "分P序号": p['page'],
+                "分P标题": p['part'],
+                "弹幕ID (cid)": p['cid'],
+                "时长": f"{p['duration'] // 60:02d}:{p['duration'] % 60:02d}"
+            } for p in pages
+        ]
+    },
+
+    # --- 合作成员信息 (staff) ---
+    "staff": {
+        "key": "合作成员",
+        "handler": lambda staff_list: [
+            {
+                "成员MID": s['mid'],
+                "成员昵称": s['title'],
+                "职位": s['name'],
+                "头像URL": s['face'],
+            } for s in staff_list
+        ] if staff_list else "无"
+    },
+
+    # --- 视频标签 (tags) ---
+    "tags": {
+        "key": "视频标签",
+        "handler": lambda tags_list: [tag['tag_name'] for tag in tags_list] if tags_list else []
+    }
+}
+
+
+def translate_info(data: dict, translation_map: dict) -> dict:
+    """
+    根据翻译映射表，递归地翻译和处理API返回的数据。
+    """
+    translated_dict = {}
+    for key, value in data.items():
+        if key in translation_map:
+            rule = translation_map[key]
+            # 如果规则是字典，表示需要进一步处理
+            if isinstance(rule, dict):
+                new_key = rule['key']
+                handler = rule['handler']
+                # 如果处理器是函数，直接调用
+                if callable(handler):
+                    translated_dict[new_key] = handler(value)
+                # 如果处理器是字典，表示是嵌套对象，递归处理
+                elif isinstance(handler, dict):
+                    translated_dict[new_key] = translate_info(value, handler)
+            # 如果规则是简单的字符串，直接用作新的键
+            else:
+                translated_dict[rule] = value
+
+    return translated_dict
+
+def get_bilibili_video_info_full(bvid: str):
+    """
+    通过Bilibili API获取视频的完整详细信息，并进行中文化和格式化。
+
+    :param bvid: 视频的BV号 (例如: "BV1hK4y19799")
+    :return: 包含视频完整信息的字典，如果失败则返回None
+    """
+    url = "https://api.bilibili.com/x/web-interface/view"
+    params = {"bvid": bvid}
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Referer': f'https://www.bilibili.com/video/{bvid}'
+    }
+
+    try:
+        response = requests.get(url, params=params, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+
+        if data['code'] == 0:
+            video_data = data['data']
+            # 使用翻译函数处理整个数据对象
+            return translate_info(video_data, TRANSLATION_MAP)
+        else:
+            print(f"API请求失败: {data['message']} (code: {data['code']})")
+            # 特殊处理视频不存在的情况
+            if data['code'] == -404 or data['code'] == 62002:
+                print(f"错误原因：视频 (BVID: {bvid}) 不存在或已被删除。")
+            return None
+
+    except requests.exceptions.RequestException as e:
+        print(f"网络请求错误: {e}")
+        return None
+    except (KeyError, json.JSONDecodeError) as e:
+        print(f"解析返回数据时出错: {e}，可能是API结构已更改或返回内容非标准JSON。")
+        return None
 
 # --- 辅助函数：获取CID 和 弹幕 ---
 def get_cid_from_bvid(bvid: str, p_index: int = 0) -> int | None:
+    """
+    通过视频的 BVID 获取指定分P的 CID。
+    :param bvid: 视频的 BVID (例如: 'BV1vx411c7Xh')
+    :param p_index: 分P的索引，0表示第一个P，1表示第二个P，以此类推。
+    :return: 对应的 CID 或 None (如果获取失败)
+    """
+    params = {'bvid': bvid}
+    print(f"正在获取 BVID '{bvid}' 的视频信息以获取 CID...")
+    try:
+        response = requests.get(BVID_TO_CID_API, params=params, headers=HEADERS)
+        response.raise_for_status()
+        data = response.json()
+
+        if data['code'] == 0:
+            pages = data['data']['pages']
+            if p_index < len(pages):
+                cid = pages[p_index]['cid']
+                print(f"成功获取到 BVID '{bvid}' 第 {p_index + 1} 个分P的 CID: {cid}")
+                return cid
+            else:
+                print(f"错误: BVID '{bvid}' 没有第 {p_index + 1} 个分P。该视频共有 {len(pages)} 个分P。")
+                return None
+        else:
+            print(f"获取视频信息失败，错误码: {data['code']}, 消息: {data['message']}")
+            return None
+    except requests.exceptions.RequestException as e:
+        print(f"网络请求错误: {e}")
+        return None
+    except KeyError as e:
+        print(f"解析视频信息JSON失败，缺少键: {e}. 响应内容: {response.text}")
+        return None
+
+def get_video_info_from_bvid(bvid: str, p_index: int = 0) -> int | None:
     """
     通过视频的 BVID 获取指定分P的 CID。
     :param bvid: 视频的 BVID (例如: 'BV1vx411c7Xh')
@@ -226,11 +417,53 @@ def analyze_similar_danmaku_frequency(
     print(f"分析完成，共识别出 {len(result)} 组相似弹幕。")
     return result
 
+def get_sorted_danmu(cid):
+    top_similar_danmakus = []
+    all_danmakus = get_danmaku(cid)
+    if all_danmakus:
+        # 分析并获取频率最高的相似弹幕
+        top_similar_danmakus = analyze_similar_danmaku_frequency(
+            all_danmakus,
+            similarity_threshold=0.5,  # 调整这个阈值可以控制相似度宽松程度
+            ngram_size=2,  # 调整n-gram大小，2-3对中文短语较好
+            min_danmaku_length=1  # 过滤掉标准化后长度小于1的弹幕
+        )
+    # 最多只获取前100个top_similar_danmakus
+    top_similar_danmakus = top_similar_danmakus[:100] if top_similar_danmakus else []
+    return top_similar_danmakus
+
+def gen_proper_comment(bvid):
+    """
+    生成适合的评论内容。
+    这里可以根据需要实现更复杂的逻辑。
+    """
+    video_info = get_bilibili_video_info_full(bvid)
+
+    if video_info:
+        print("\n--- 视频信息获取成功 ---")
+        title = video_info.get('标题', '未知标题')
+        desc = video_info.get('视频简介', '无简介')
+        tag = video_info.get('视频标签', [])
+        tname = video_info.get('分区名称', '未知分区')
+        comment_count = video_info.get('数据统计', {}).get('评论数', 0)
+        if comment_count > 2:
+            comments = get_bilibili_comments(bvid)
+
+        danmu_count = video_info.get('数据统计', {}).get('弹幕数', 0)
+        if danmu_count > 2:
+            cid = video_info.get('弹幕ID (cid)', None)
+            get_sorted_danmu(cid)
+    else:
+        print("\n--- 视频信息获取失败 ---")
+
+    result = get_llm_content(prompt='你好')
+
+    return result
 
 # --- 主执行部分 ---
 if __name__ == "__main__":
     # 替换为你想要获取弹幕的视频 BVID
-    video_bvid = 'BV1GaMczfEE4'  # 一个有较多弹幕的鬼畜视频
+    video_bvid = 'BV1kJMtzQEfs'  # 一个有较多弹幕的鬼畜视频
     # video_bvid = 'BV1Vf4y1P7oD' # 另一个例子
     part_index = 0  # 视频分P，0表示第一个P
 
@@ -243,7 +476,7 @@ if __name__ == "__main__":
             # 分析并获取频率最高的相似弹幕
             top_similar_danmakus = analyze_similar_danmaku_frequency(
                 all_danmakus,
-                similarity_threshold=0.7,  # 调整这个阈值可以控制相似度宽松程度
+                similarity_threshold=0.5,  # 调整这个阈值可以控制相似度宽松程度
                 ngram_size=2,  # 调整n-gram大小，2-3对中文短语较好
                 min_danmaku_length=1  # 过滤掉标准化后长度小于1的弹幕
             )
