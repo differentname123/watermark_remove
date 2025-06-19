@@ -174,7 +174,7 @@ def modify_relation(fid, action_type, csrf_token):
 
 
 # --- 5. 视频获取策略实现 ---
-def fetch_from_popular(max_count=40):
+def fetch_from_popular(max_count=400):
     """
     循环获取B站热门榜单的视频，直到没有更多数据为止。
     """
@@ -375,7 +375,7 @@ def save_processed_dict(data_dict, filepath):
 def fetch_videos():
     logging.info("==================== 开始获取待处理视频 ====================")
     processed_bvideos = load_processed_set(CONFIG['PROCESSED_VIDEOS_FILE'])
-    processed_bvideos = set()
+    # processed_bvideos = set()
     logging.info(f"已加载 {len(processed_bvideos)} 个已处理的视频记录。")
 
     all_found_videos = []
@@ -497,6 +497,13 @@ def get_comment_user(bvid):
 def gen_comment():
     """关注线程：从队列获取视频，判断是否需要关注作者。"""
     detail_video_info_map = load_processed_dict(CONFIG['GEN_PROCESSED_VIDEOS_FILE'])
+    processed_bvideos = load_processed_set(CONFIG['PROCESSED_VIDEOS_FILE'])
+    for bvid in processed_bvideos:
+        if bvid not in detail_video_info_map:
+            temp_dict = {}
+            temp_dict['bvid'] = bvid
+            videos_queue.put(temp_dict)
+
 
     logging.info(f"已加载 {len(detail_video_info_map)} 个已生成的记录。")
 
