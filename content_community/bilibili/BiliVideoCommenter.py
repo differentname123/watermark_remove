@@ -328,9 +328,6 @@ def save_processed_set(data_set, filepath):
 def fetch_videos():
     logging.info("==================== 开始获取待处理视频 ====================")
     processed_bvideos = load_processed_set(CONFIG['PROCESSED_VIDEOS_FILE'])
-    # 丢弃最新的1000个processed_bvideos
-    if len(processed_bvideos) > 1000:
-        processed_bvideos = set(list(processed_bvideos)[:-1000])
 
     logging.info(f"已加载 {len(processed_bvideos)} 个已处理的视频记录。")
 

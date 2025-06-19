@@ -442,6 +442,8 @@ def comment_worker():
 
     commented_video = load_processed_set(CONFIG['COMMENTED_PROCESSED_VIDEOS_FILE'])
     detail_video_info_map = load_processed_dict(CONFIG['GEN_PROCESSED_VIDEOS_FILE'])
+    detail_video_info_map = {bvid: info for bvid, info in detail_video_info_map.items() if info.get('gen_comment')}
+
     for video_info in detail_video_info_map.values():
         bvid = video_info.get('BVID')
         if bvid and bvid not in commented_video:
@@ -516,7 +518,7 @@ def comment_worker():
 
             # 每轮所有评论者执行完后随机休眠一段时间
             time.sleep(random.uniform(100, 200))
-        except KeyboardInterrupt:
+        except Exception as e:
             logging.info("评论线程被用户中断，正在退出...")
             traceback.print_exc()
             continue
@@ -542,6 +544,9 @@ def gen_comment():
     """关注线程：从队列获取视频，判断是否需要关注作者。"""
     detail_video_info_map = load_processed_dict(CONFIG['GEN_PROCESSED_VIDEOS_FILE'])
     processed_bvideos = load_processed_set(CONFIG['PROCESSED_VIDEOS_FILE'])
+    # 只保留processed_bvideos中gen_comment不为空的视频
+    detail_video_info_map = {bvid: info for bvid, info in detail_video_info_map.items() if info.get('gen_comment')}
+
     for bvid in processed_bvideos:
         if bvid not in detail_video_info_map:
             temp_dict = {}

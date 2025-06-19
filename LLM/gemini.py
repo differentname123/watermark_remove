@@ -55,17 +55,16 @@ def get_llm_content(API_KEY=get_config("gemini_api_key"),
             ),
             response_mime_type="text/plain",
         )
-
-        # 尝试首次调用指定的模型生成内容
-        response = client.models.generate_content(
-            model=model_name,
-            contents=contents,
-            config=generate_content_config,
-        )
-        generated_text = response.text
-
-        # 如果首次生成内容失败，则使用备用模型尝试
-        if not generated_text:
+        try:
+            # 尝试首次调用指定的模型生成内容
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=generate_content_config,
+            )
+            generated_text = response.text
+        except Exception as e:
+            # 如果首次生成内容失败，则使用备用模型尝试
             print("首次生成内容失败，尝试使用备用模型 gemini-2.5-flash-lite-preview-06-17...")
             response = client.models.generate_content(
                 model="gemini-2.5-flash-lite-preview-06-17",
