@@ -250,6 +250,86 @@ class BilibiliCommenter:
         if not (self.img_key and self.sub_key):
             print("警告：未能成功加载 WBI Keys，评论或点赞请求可能失败或被风控。")
 
+    # =========================================================================
+    # ====================== 新增的方法：回复指定评论 ==========================
+    # =========================================================================
+    def reply_to_comment(self, bvid: str, message_content: str, root_rpid: int, parent_rpid: int, type_code: int = 1) -> int | None:
+        """
+        回复指定的 Bilibili 评论 (发送楼中楼评论)。
+        在发送回复前，此方法会先尝试为被回复的评论（父评论）点赞。
+
+        :param bvid: 视频 BV 号。
+        :param message_content: 回复内容。
+        :param root_rpid: 根评论的 ID (顶级评论的 rpid)。
+        :param parent_rpid: 直接回复的评论 ID (父评论的 rpid)。
+        :param type_code: 目标类型，1 通常代表视频。
+        :return: 新回复的 rpid (评论ID) 如果成功，否则返回 None。
+        """
+        oid = self._get_aid_from_bvid(bvid)
+        if not oid:
+            print("回复失败：无法获取有效的 AID。")
+            return None
+
+        # --- 新增逻辑：在回复前，先为父评论点赞 ---
+        print(f"准备回复 rpid={parent_rpid} 的评论，先尝试为其点赞...")
+        # 点赞操作是“尽力而为”，无论成功与否，都继续执行回复
+        self.like_comment(oid=oid, rpid=parent_rpid, type_code=type_code)
+        # ----------------------------------------
+
+        # 准备 POST 请求的 Body 数据，增加了 root 和 parent 参数
+        post_body_data_unsigned = {
+            "plat": 1,
+            "oid": oid,
+            "type": type_code,
+            "message": message_content,
+            "root": root_rpid,       # <-- 关键参数: 根评论ID
+            "parent": parent_rpid,   # <-- 关键参数: 父评论ID
+            "at_name_to_mid": "{}",
+            "gaia_source": "main_web",
+            "csrf": self.csrf_token,
+            "statistics": '{"appId":100,"platform":5}',
+            "dm_img_list": json.dumps(self._DM_IMG_LIST),
+            "dm_img_str": self._DM_IMG_STR,
+            "dm_cover_img_str": self._DM_COVER_IMG_STR,
+            "dm_img_inter": self._DM_IMG_INTER,
+        }
+
+        try:
+            signed_post_body_data = self._sign_params_for_wbi(post_body_data_unsigned)
+        except ValueError as e:
+            print(f"回复失败：{e}")
+            return None
+
+        full_url = self._COMMENT_ADD_API_URL
+        self.session.headers.update({
+            "Referer": f"https://www.bilibili.com/video/{bvid}/"
+        })
+
+        try:
+            response = self.session.post(full_url, data=signed_post_body_data)
+            response.raise_for_status()
+            result = response.json()
+
+            if result.get("code") == 0:
+                print(f"回复成功！内容：'{message_content}'")
+                rpid = None
+                if result.get("data") and result["data"].get("reply"):
+                    rpid = result["data"]["reply"]["rpid"]
+                    print(f"获取到新回复的 rpid: {rpid}")
+                    # 默认情况下，发送评论后也会为自己的新评论点赞
+                    time.sleep(5)
+                    self.like_comment(oid=oid, rpid=rpid, type_code=1)
+                return rpid
+            else:
+                print(f"回复失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}")
+                return None
+        except requests.exceptions.RequestException as e:
+            print(f"请求发生错误：{e}")
+            return None
+        except Exception as e:
+            print(f"发生未知错误：{e}")
+            return None
+
     def post_comment(self, bvid: str, message_content: str, type_code: int = 1) -> int | None:
         """
         发送 Bilibili 评论。
@@ -399,42 +479,56 @@ class BilibiliCommenter:
 
 # --- 主逻辑 ---
 if __name__ == "__main__":
-    # --- 从配置中获取敏感信息 ---
-    # 确保您的 common_utils.common_utils.get_config 函数能够正确返回这些值
-    # 或者直接在这里硬编码 (不推荐敏感信息)
     csrf_token = get_config("bilibili_csrf_token")
-    # total_cookie 应该是一个包含 SESSDATA 和 bili_jct 的完整字符串
-    # 例如："SESSDATA=xxxxxxxxxxxx; bili_jct=yyyyyyyyyyyy"
     total_cookie = get_config("bilibili_total_cookie")
 
     if not csrf_token or not total_cookie or "YOUR_CSRF_TOKEN" in csrf_token or "YOUR_SESSDATA" in total_cookie:
         print("\n!!!!!!!!! 配置错误 !!!!!!!!!")
-        print("请编辑脚本，替换 common_utils.common_utils.get_config 返回的值，")
-        print("或者直接修改这里的 csrf_token 和 total_cookie 变量，填写您的实际信息。")
-        print("csrf_token 就是您的 bili_jct cookie 的值。")
-        print("total_cookie 是完整的 Cookie 字符串，包含 SESSDATA 和 bili_jct 等。")
-        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n")
+        print("请编辑脚本，替换 YOUR_CSRF_TOKEN 和 YOUR_SESSDATA 为您的实际信息。")
         exit()
-
 
     # --- 评论和点赞配置 ---
-    target_bvid = "BV1Sz4y1S7bx"  # 视频 BV 号
-    comment_text = f"操作很好" # 评论内容 (增加时间戳，方便观察新评论)
+    target_bvid = "BV1Sz4y1S7bx"  # 目标视频 BV 号
+    comment_text = f"这是一条由脚本发送的顶级评论! [{time.strftime('%Y-%m-%d %H:%M:%S')}]"  # 顶级评论内容
     comment_type = 1  # 目标类型，1 一般代表视频
 
-    # 在评论前获取 AID (oid)，因为点赞也需要
-    print(f"尝试获取视频 {target_bvid} 的 AID...")
+    # 初始化 BilibiliCommenter
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
-    oid = commenter._get_aid_from_bvid(target_bvid) # 调用内部方法获取AID
-    if not oid:
-        print(f"无法获取视频 {target_bvid} 的 AID，无法继续评论和点赞。")
-        exit()
-    print(f"视频 {target_bvid} 的 AID 是 {oid}")
 
-
-    # --- 执行评论 ---
-    print("-" * 20)
-    print("开始执行评论操作...")
-
-
+    # --- 步骤 1: 发送一条顶级评论 ---
+    print("-" * 30)
+    print("步骤 1: 尝试发送一条顶级评论...")
     posted_rpid = commenter.post_comment(target_bvid, comment_text, comment_type)
+
+    # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
+    if posted_rpid:
+        print("-" * 30)
+        print(f"步骤 2: 顶级评论发送成功，rpid 为 {posted_rpid}。现在尝试回复这条评论...")
+
+        # 稍作等待，避免操作过快
+        time.sleep(3)
+
+        # 回复内容
+        reply_text = f"这是对 rpid={posted_rpid} 的回复。[{time.strftime('%Y-%m-%d %H:%M:%S')}]"
+
+        # 因为我们是回复刚刚发送的顶级评论，所以 root 和 parent 的 rpid 相同
+        root_comment_id = posted_rpid
+        parent_comment_id = posted_rpid
+
+        # 调用新方法进行回复
+        reply_rpid = commenter.reply_to_comment(
+            bvid=target_bvid,
+            message_content=reply_text,
+            root_rpid=root_comment_id,
+            parent_rpid=parent_comment_id,
+            type_code=comment_type
+        )
+
+        if reply_rpid:
+            print("\n回复操作成功完成！")
+        else:
+            print("\n回复操作失败。")
+
+    else:
+        print("-" * 30)
+        print("顶级评论发送失败，无法进行回复操作。")

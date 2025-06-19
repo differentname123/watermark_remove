@@ -478,13 +478,37 @@ def comment_worker():
             bvid = valid_video.get('BVID')
             comment_list = valid_video.get('gen_comment', [])
             comment_text = random.choice(comment_list)
+            # 删除comment_list中的comment_text
+            comment_list.remove(comment_text)
             title = valid_video.get('标题', '无标题')
 
             success = commenter.post_comment(bvid, comment_text, 1)
             if success:
-                logging.info(f"  > 评论成功: '{comment_text}  'BVID {bvid} | 标题：{title}")
+                logging.info(f"  > 主评论成功: '{comment_text}' BVID {bvid} | 标题：{title}")
+
+                available_replies = comment_list.copy()
+                random.shuffle(available_replies)
+
+                # 2. 筛选出需要进行回复的评论者 (排除主评论者自己)
+                sub_commenters_to_reply = [sc for sc in commenter_list if sc != commenter]
+
+                for sub_commenter, reply_message in zip(sub_commenters_to_reply, available_replies):
+                    # 其他评论者回复主评论
+                    reply_rpid = sub_commenter.reply_to_comment(
+                        bvid=bvid,
+                        message_content=reply_message,  # <-- 使用配对好的、不重复的回复
+                        root_rpid=success,
+                        parent_rpid=success,
+                        type_code=1
+                    )
+                    if reply_rpid:
+                        # 优化日志：记录实际回复的内容，而不是主评论内容
+                        logging.info(f"  >  回复成功: '{reply_message}' BVID {bvid} | 标题：{title}")
+                    else:
+                        logging.error(f"  > 回复失败: '{reply_message}' BVID {bvid} | 标题：{title}")
+
             else:
-                logging.error(f"  > 评论失败。BVID {bvid} | 标题：{title}")
+                logging.error(f"  > 主评论失败。BVID {bvid} | 标题：{title}")
 
         # 每轮所有评论者执行完后随机休眠一段时间
         time.sleep(random.uniform(100, 200))
