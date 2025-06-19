@@ -214,37 +214,41 @@ def main_task():
         logging.error("无法获取您的 UID，本次任务终止。")
         return
 
-    # # --- 阶段 1: 清理非互关用户 ---
-    # logging.info("\n--- 阶段 1: 开始清理非互关用户 ---")
-    # followers_set = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
-    # update_followers(followers_set)
-    # followings_set = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
-    # non_mutual_followings = followings_set - followers_set
-    #
-    # if not non_mutual_followings:
-    #     logging.info("您当前关注的人都已关注您，阶段 1 无需清理。")
-    # else:
-    #     logging.info(f"--- 发现 {len(non_mutual_followings)} 位您已关注但未回关的用户 ---")
-    #     non_mutual_followings_list = list(non_mutual_followings)
-    #     random.shuffle(non_mutual_followings_list)
-    #     logging.info("自动开始取消关注操作。")
-    #
-    #     successful_unfollows = 0
-    #     failed_unfollows = 0
-    #     for i, fid in enumerate(non_mutual_followings_list):
-    #         logging.info(f"\n正在取消关注第 {i + 1}/{len(non_mutual_followings_list)} 位用户 (UID: {fid})...")
-    #         if modify_relation(fid, 2):  # 2 代表取消关注
-    #             successful_unfollows += 1
-    #         else:
-    #             failed_unfollows += 1
-    #
-    #         delay = random.uniform(MIN_OPERATION_DELAY_SEC, MAX_OPERATION_DELAY_SEC)
-    #         logging.info(f"等待 {delay:.2f} 秒...")
-    #         time.sleep(delay)
-    #
-    #     logging.info("\n--- 阶段 1: 清理操作完成 ---")
-    #     logging.info(f"总计尝试取消关注: {len(non_mutual_followings_list)} 人")
-    #     logging.info(f"成功取消关注: {successful_unfollows} 人, 失败: {failed_unfollows} 人")
+    # --- 阶段 1: 清理非互关用户 ---
+    logging.info("\n--- 阶段 1: 开始清理非互关用户 ---")
+    followers_set = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
+    update_followers(followers_set)
+    followings_set = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
+    non_mutual_followings = followings_set - followers_set
+
+    if not non_mutual_followings:
+        logging.info("您当前关注的人都已关注您，阶段 1 无需清理。")
+    else:
+        logging.info(f"--- 发现 {len(non_mutual_followings)} 位您已关注但未回关的用户 ---")
+        non_mutual_followings_list = list(non_mutual_followings)
+        random.shuffle(non_mutual_followings_list)
+        logging.info("自动开始取消关注操作。")
+
+        successful_unfollows = 0
+        failed_unfollows = 0
+        for i, fid in enumerate(non_mutual_followings_list):
+            logging.info(f"\n正在取消关注第 {i + 1}/{len(non_mutual_followings_list)} 位用户 (UID: {fid})...")
+            if modify_relation(fid, 2):  # 2 代表取消关注
+                successful_unfollows += 1
+            else:
+                failed_unfollows += 1
+            if successful_unfollows > 500:
+                logging.info("已取消关注超过 500 人，停止后续操作。")
+                break
+
+            delay = random.uniform(MIN_OPERATION_DELAY_SEC, MAX_OPERATION_DELAY_SEC)
+            delay = delay / 10
+            logging.info(f"等待 {delay:.2f} 秒...")
+            time.sleep(delay)
+
+        logging.info("\n--- 阶段 1: 清理操作完成 ---")
+        logging.info(f"总计尝试取消关注: {len(non_mutual_followings_list)} 人")
+        logging.info(f"成功取消关注: {successful_unfollows} 人, 失败: {failed_unfollows} 人")
 
     # --- 阶段 2: 回关粉丝 ---
     logging.info("\n--- 阶段 2: 开始回关新粉丝 ---")
@@ -252,9 +256,35 @@ def main_task():
     new_followers_set = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
     update_followers(new_followers_set)  # 更新粉丝列表
     new_followings_set = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
-    new_followers_set.update(load_processed_set("processed_fids.json"))
-    followers_to_follow = new_followers_set - new_followings_set
+    # 1. 加载两个来源的数据到独立的集合
+    followers_fids_set = load_processed_set("followers_fids.json")
+    processed_fids_set = load_processed_set("processed_fids.json")
 
+    # 2. 创建一个空列表，用于存放最终需要 follow 的 FID (保持顺序)
+    followers_to_follow_list = []
+
+    # 3. 使用一个集合来跟踪已经添加到列表中的 FID，避免重复
+    already_added_to_list = set()
+
+    # 4. **优先处理来自 followers_fids.json 的 FIDs**
+    #    将那些不在 new_followings_set 中的添加到列表中
+    print("\n--- Identifying Prioritized FIDs to follow ---")
+    for fid in followers_fids_set:
+        if fid not in new_followings_set:
+            if fid not in already_added_to_list:  # 确保不会重复添加 (虽然这里不应该重复)
+                followers_to_follow_list.append(fid)
+                already_added_to_list.add(fid)
+                # print(f"Added prioritized FID: {fid}") # 可选：用于调试
+
+    # 5. **处理来自 processed_fids.json 的剩余 FIDs**
+    #    将那些不在 new_followings_set 中，并且还没有被添加到列表中的 FID 添加
+    print("--- Identifying Remaining FIDs to follow ---")
+    for fid in processed_fids_set:
+        if fid not in new_followings_set:
+            if fid not in already_added_to_list:  # 检查是否已经从 followers_fids.json 添加过了
+                followers_to_follow_list.append(fid)
+                already_added_to_list.add(fid)
+    followers_to_follow = already_added_to_list
     if not followers_to_follow:
         logging.info("所有粉丝均已关注，阶段 2 无需操作。")
     else:
@@ -271,8 +301,12 @@ def main_task():
                 successful_follows += 1
             else:
                 failed_follows += 1
+            if successful_follows > 500:
+                logging.info("已回关超过 500 人，停止后续操作。")
+                break
 
             delay = random.uniform(MIN_OPERATION_DELAY_SEC, MAX_OPERATION_DELAY_SEC)
+            delay = delay / 2
             logging.info(f"等待 {delay:.2f} 秒...")
             time.sleep(delay)
 

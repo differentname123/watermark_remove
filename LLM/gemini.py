@@ -79,7 +79,7 @@ if __name__ == "__main__":
     result = get_llm_content(
         API_KEY=API_KEY,
         prompt='你好，Gemini！请介绍一下你自己。',
-        model_name="gemini-2.5-flash-lite-preview-06-17"
+        model_name="gemini-2.5-flash-preview-04-17"
     )
 
     if result:
