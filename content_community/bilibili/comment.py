@@ -258,7 +258,7 @@ class BilibiliCommenter:
         :param type_code: 目标类型，1 通常代表视频。
         :return: 评论的 rpid (评论ID) 如果成功，否则返回 None。
         """
-        print(f"尝试评论视频 BV 号：{bvid}，内容：'{message_content}'")
+        # print(f"尝试评论视频 BV 号：{bvid}，内容：'{message_content}'")
 
         # 1. 获取 AID (oid)
         oid = self._get_aid_from_bvid(bvid)
@@ -309,17 +309,19 @@ class BilibiliCommenter:
             result = response.json()
 
             if result.get("code") == 0:
-                print("评论发送成功！")
+                # print("评论发送成功！")
                 rpid = None
                 if result.get("data") and result["data"].get("reply"):
                     rpid = result["data"]["reply"]["rpid"]
                     time.sleep(5)  # 延时10秒，避免过快提交评论
                     # 评论的type和视频的type通常一致
-                    like_success = commenter.like_comment(oid=oid, rpid=rpid, type_code=comment_type)
+                    like_success = self.like_comment(oid=oid, rpid=rpid, type_code=1)
                     if like_success:
-                        print("点赞操作完成：成功。")
+                        # print("点赞操作完成：成功。")
+                        pass
                     else:
-                        print("点赞操作完成：失败。")
+                        # print("点赞操作完成：失败。")
+                        pass
                 return rpid # 返回评论的 rpid
             else:
                 print(f"评论发送失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}")
@@ -339,7 +341,7 @@ class BilibiliCommenter:
         :param type_code: 目标类型，1 通常代表视频。
         :return: 点赞是否成功。
         """
-        print(f"尝试点赞评论 rpid={rpid} (oid={oid})")
+        # print(f"尝试点赞评论 rpid={rpid} (oid={oid})")
 
         # 1. 准备 POST 请求的 Body 数据 (这些是需要签名的参数)
         # 注意：所有这些参数都将参与 WBI 签名，并通过 POST body 发送

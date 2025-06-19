@@ -484,6 +484,7 @@ def follower_worker(csrf_token):
     while True:
         try:
             video = videos_queue.get(timeout=30)  # 等待30秒，如果没有新视频则继续循环
+            logging.info(f"获取到新视频 BVID: {video.get('bvid', '未知')}，开始处理...")
         except Empty:
             continue
 
@@ -495,12 +496,12 @@ def follower_worker(csrf_token):
             author_id = video['owner'].get('mid')
 
         if not author_id:
-            logging.warning(f"视频 BVID {video.get('bvid')} 缺少作者ID，跳过。")
+            logging.info(f"视频 BVID {video.get('bvid')} 缺少作者ID，跳过。")
             continue
 
         # 如果用户ID已经处理过，则跳过
-        if author_id in processed_fids:
-            logging.debug(f"用户 UID {author_id} 已在处理列表，跳过。")
+        if author_id in target_processed_bvideos:
+            logging.info(f"用户 UID {author_id} 已在处理列表，跳过。")
             continue
 
         # 检查标题或描述是否包含关注关键词

@@ -19,7 +19,7 @@ API_KEY = get_config("gemini_api_key")
 print("正在使用 Gemini API 密钥:", API_KEY)
 
 # 修改 get_llm_content 函数
-def get_llm_content(API_KEY=get_config("gemini_api_key"), prompt='你好，Gemini！请介绍一下你自己。', model_name="gemini-2.5-flash-lite-preview-06-17"):
+def get_llm_content(API_KEY=get_config("gemini_api_key"), prompt='你好，Gemini！请介绍一下你自己。', model_name="gemini-2.5-flash-preview-04-17"):
     """
     使用 google.genai.Client 调用 Gemini 模型生成文本内容。
 
