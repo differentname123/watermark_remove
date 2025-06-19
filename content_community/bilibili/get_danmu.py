@@ -1,6 +1,8 @@
 import requests
 import xml.etree.ElementTree as ET
 import re
+import ast
+
 from collections import Counter
 import math
 from datetime import datetime
@@ -432,6 +434,49 @@ def get_sorted_danmu(cid):
     top_similar_danmakus = top_similar_danmakus[:100] if top_similar_danmakus else []
     return top_similar_danmakus
 
+
+def string_to_list(input_str: str) -> list:
+    """
+    将带有 Markdown 标记的字符串转换为 Python 列表对象。
+
+    该函数支持：
+      - 去除包含```json或```等 Markdown 代码块标记的部分；
+      - 从包含其它文本的字符串中提取出列表内容（通过查找类似 "[...]" 的子串）。
+
+    如果解析失败，则抛出 ValueError 异常。
+    """
+    # 使用正则表达式匹配 Markdown 代码块中被 ``` 或 ```json 包裹的列表部分
+    pattern = re.compile(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```")
+    match = pattern.search(input_str)
+    if match:
+        list_str = match.group(1)
+    else:
+        # 如果找不到 Markdown 代码块，则尝试从整个字符串中提取第一个以 [ 开头、以 ] 结尾的子串
+        start = input_str.find('[')
+        end = input_str.rfind(']')
+        if start != -1 and end != -1 and start < end:
+            list_str = input_str[start:end + 1]
+        else:
+            raise ValueError("未找到可以解析的列表数据")
+
+    # 首先尝试使用 ast.literal_eval 解析（优点是可以解析 Python 的字面量）
+    try:
+        result = ast.literal_eval(list_str)
+        if isinstance(result, list):
+            return result
+        else:
+            raise ValueError("解析结果不是列表类型")
+    except Exception as e:
+        # 如果 ast.literal_eval 失败，则回退到使用 json.loads 解析 (适用于标准 JSON 格式)
+        try:
+            result = json.loads(list_str)
+            if isinstance(result, list):
+                return result
+            else:
+                raise ValueError("解析结果不是列表类型")
+        except Exception as e2:
+            raise ValueError(f"字符串无法被解析为列表: {e2}")
+
 def gen_proper_comment(bvid):
     """
     生成适合的评论内容。
@@ -459,7 +504,7 @@ def gen_proper_comment(bvid):
     else:
         print("\n--- 视频信息获取失败 ---")
 
-    prompt_template = """下面是一个视频的相关信息，请你根据这些信息，给我生成几个有趣能够吸引眼球的评论(不在乎是引起共鸣还是引起反感，目标就是有流量)，包括但不限于：制造对立、身份认同、玩梗、抖机灵、挑衅、发布暴论等。你的唯一目标是为我给出的视频信息生成能风格各异、能引爆流量的神评，返回结果示例如下，严格按照下面的格式:
+    prompt_template = """下面是一个视频的相关信息，请你根据这些信息，给我生成几个有趣能够吸引眼球的评论(不在乎是引起共鸣还是引起反感，目标就是有流量)，包括但不限于：制造对立、身份认同、玩梗、抖机灵、挑衅、发布暴论等。你的唯一目标是为我给出的视频信息生成能风格各异、能引爆流量的神评，返回结果示例如下，严格按照下面的格式,最有趣的放在最前面:
     [
         "评论1",
         "评论2",
@@ -487,13 +532,15 @@ def gen_proper_comment(bvid):
     start_time = datetime.now()
     result = get_llm_content(prompt=filled_prompt)
     print(f"\n--- LLM 生成评论内容耗时: {(datetime.now() - start_time).total_seconds():.2f} 秒 ---")
-
-    return result
+    if result:
+        result = string_to_list(result)
+    video_info['gen_comment'] = result
+    return video_info
 
 # --- 主执行部分 ---
 if __name__ == "__main__":
     # 替换为你想要获取弹幕的视频 BVID
-    video_bvid = 'BV1J7MczuEHj'  # 一个有较多弹幕的鬼畜视频
+    video_bvid = 'BV1MrNtzoECN'  # 一个有较多弹幕的鬼畜视频
 
     result = gen_proper_comment(video_bvid)
     # video_bvid = 'BV1Vf4y1P7oD' # 另一个例子
