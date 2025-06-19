@@ -19,49 +19,60 @@ API_KEY = get_config("gemini_api_key")
 print("正在使用 Gemini API 密钥:", API_KEY)
 
 # 修改 get_llm_content 函数
-def get_llm_content(API_KEY=get_config("gemini_api_key"), prompt='你好，Gemini！请介绍一下你自己。', model_name="gemini-2.5-flash-preview-04-17"):
+def get_llm_content(API_KEY=get_config("gemini_api_key"),
+                    prompt='你好，Gemini！请介绍一下你自己。',
+                    model_name="gemini-2.5-flash-preview-04-17"):
     """
     使用 google.genai.Client 调用 Gemini 模型生成文本内容。
+    如果首次生成内容失败，则尝试使用备用模型 gemini-2.5-flash-lite-preview-06-17。
 
     Args:
         API_KEY: Gemini API 密钥。
         prompt: 输入给模型的文本提示。
-        model_name: 使用的 Gemini 模型名称。
+        model_name: 要使用的 Gemini 模型名称，默认使用 gemini-2.5-flash-preview-04-17。
 
     Returns:
         生成的文本内容字符串，如果发生错误则返回 None。
     """
     try:
-        # 1. 创建 genai.Client 实例，使用传入的 API_KEY
-        #    而不是 genai.configure 或从环境变量获取
+        # 1. 创建 google.genai.Client 实例，使用传入的 API_KEY
         client = google.genai.Client(api_key=API_KEY)
 
-        # 2. 构建 contents 列表，使用 types.Content 和 types.Part (来自第二个代码段)
+        # 2. 构建 contents 列表，使用 types.Content 和 types.Part
         contents = [
             types.Content(
                 role="user",
                 parts=[
-                    types.Part.from_text(text=prompt), # 使用函数参数 prompt
+                    types.Part.from_text(text=prompt),
                 ],
             ),
         ]
-        # 3. 构建 generate_content_config (来自第二个代码段)
+
+        # 3. 构建生成文本配置
         generate_content_config = types.GenerateContentConfig(
-            thinking_config = types.ThinkingConfig(
-                thinking_budget=24576, # 使用第二个代码段的值
+            thinking_config=types.ThinkingConfig(
+                thinking_budget=24576,
             ),
-            response_mime_type="text/plain", # 使用第二个代码段的值
-            # 其他可能的配置参数可以在这里添加
+            response_mime_type="text/plain",
         )
 
+        # 尝试首次调用指定的模型生成内容
         response = client.models.generate_content(
-            model=model_name, # 使用函数参数 model_name
+            model=model_name,
             contents=contents,
             config=generate_content_config,
         )
-
         generated_text = response.text
 
+        # 如果首次生成内容失败，则使用备用模型尝试
+        if not generated_text:
+            print("首次生成内容失败，尝试使用备用模型 gemini-2.5-flash-lite-preview-06-17...")
+            response = client.models.generate_content(
+                model="gemini-2.5-flash-lite-preview-06-17",
+                contents=contents,
+                config=generate_content_config,
+            )
+            generated_text = response.text
 
         return generated_text
 

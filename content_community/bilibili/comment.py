@@ -330,12 +330,13 @@ class BilibiliCommenter:
             print(f"发生未知错误：{e}")
             return None
 
-    def post_comment(self, bvid: str, message_content: str, type_code: int = 1) -> int | None:
+    def post_comment(self, bvid: str, message_content: str, type_code: int = 1, forward_to_dynamic: bool = False) -> int | None:
         """
-        发送 Bilibili 评论。
+        发送 Bilibili 评论，并可选择是否同时转发到动态。
         :param bvid: 视频 BV 号。
         :param message_content: 评论内容。
         :param type_code: 目标类型，1 通常代表视频。
+        :param forward_to_dynamic: 是否同时转发到动态。默认为 False。
         :return: 评论的 rpid (评论ID) 如果成功，否则返回 None。
         """
         # print(f"尝试评论视频 BV 号：{bvid}，内容：'{message_content}'")
@@ -347,7 +348,6 @@ class BilibiliCommenter:
             return None
 
         # 2. 准备 POST 请求的 Body 数据 (这些是需要签名的参数)
-        # 注意：所有这些参数都将参与 WBI 签名，并通过 POST body 发送
         post_body_data_unsigned = {
             "plat": 1,
             "oid": oid,
@@ -357,52 +357,49 @@ class BilibiliCommenter:
             "gaia_source": "main_web",
             "csrf": self.csrf_token,
             "statistics": '{"appId":100,"platform":5}',
-            # dm_img_* fields are also part of the signature params for comment add
             "dm_img_list": json.dumps(self._DM_IMG_LIST),
             "dm_img_str": self._DM_IMG_STR,
             "dm_cover_img_str": self._DM_COVER_IMG_STR,
             "dm_img_inter": self._DM_IMG_INTER,
         }
 
+        # --- 新增逻辑：如果需要转发到动态，则添加 from_dynamic 参数 ---
+        if forward_to_dynamic:
+            post_body_data_unsigned['sync_to_dynamic'] = 1
+            print("已启用“同时转发到动态”选项。")
+        # -----------------------------------------------------------
+
         # 3. 生成 WBI 签名参数 (wts, w_rid) 并添加到 body 数据中
         try:
-            # _sign_params_for_wbi now returns the complete body data including wts/w_rid
             signed_post_body_data = self._sign_params_for_wbi(post_body_data_unsigned)
         except ValueError as e:
             print(f"评论失败：{e}")
             return None
 
-        # 4. 构造完整的 URL (POST 请求，WBI参数在Body中，URL无WBI参数)
-        full_url = self._COMMENT_ADD_API_URL # WBI params are in the body
+        # 4. 构造完整的 URL
+        full_url = self._COMMENT_ADD_API_URL
 
-        # 5. 更新 Referer 头（针对当前评论的视频页面）
+        # 5. 更新 Referer 头
         self.session.headers.update({
-            # Using BVid in referer is fine
             "Referer": f"https://www.bilibili.com/video/{bvid}/?spm_id_from=333.1387.homepage.video_card.click"
         })
 
         # 6. 发送 POST 请求
         try:
-            # Pass the complete signed dictionary as data
             response = self.session.post(full_url, data=signed_post_body_data)
             response.raise_for_status()
             result = response.json()
 
             if result.get("code") == 0:
                 # print("评论发送成功！")
+                if forward_to_dynamic:
+                    print("评论已成功发送并转发到动态。")
                 rpid = None
                 if result.get("data") and result["data"].get("reply"):
                     rpid = result["data"]["reply"]["rpid"]
-                    time.sleep(5)  # 延时10秒，避免过快提交评论
-                    # 评论的type和视频的type通常一致
-                    like_success = self.like_comment(oid=oid, rpid=rpid, type_code=1)
-                    if like_success:
-                        # print("点赞操作完成：成功。")
-                        pass
-                    else:
-                        # print("点赞操作完成：失败。")
-                        pass
-                return rpid # 返回评论的 rpid
+                    time.sleep(5)
+                    self.like_comment(oid=oid, rpid=rpid, type_code=1)
+                return rpid
             else:
                 print(f"评论发送失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}")
                 return None
@@ -498,7 +495,8 @@ if __name__ == "__main__":
     # --- 步骤 1: 发送一条顶级评论 ---
     print("-" * 30)
     print("步骤 1: 尝试发送一条顶级评论...")
-    posted_rpid = commenter.post_comment(target_bvid, comment_text, comment_type)
+    posted_rpid = commenter.post_comment(target_bvid, comment_text, comment_type,        forward_to_dynamic=True  # <-- 关键参数
+)
 
     # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
     if posted_rpid:

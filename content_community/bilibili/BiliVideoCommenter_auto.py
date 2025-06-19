@@ -482,7 +482,7 @@ def comment_worker():
             comment_list.remove(comment_text)
             title = valid_video.get('标题', '无标题')
 
-            success = commenter.post_comment(bvid, comment_text, 1)
+            success = commenter.post_comment(bvid, comment_text, 1,forward_to_dynamic=True)
             if success:
                 logging.info(f"  > 主评论成功: '{comment_text}' BVID {bvid} | 标题：{title}")
 
