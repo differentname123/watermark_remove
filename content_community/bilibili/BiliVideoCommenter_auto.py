@@ -484,7 +484,7 @@ def comment_worker():
 
             success = commenter.post_comment(bvid, comment_text, 1,forward_to_dynamic=True)
             if success:
-                logging.info(f"  > 主评论成功: '{comment_text}' BVID {bvid} | 标题：{title}")
+                logging.info(f"  > 主评论成功✅: '{comment_text}' BVID {bvid} | 标题：{title}")
 
                 available_replies = comment_list.copy()
                 random.shuffle(available_replies)
@@ -508,7 +508,7 @@ def comment_worker():
                         logging.error(f"  > 回复失败: '{reply_message}' BVID {bvid} | 标题：{title}")
 
             else:
-                logging.error(f"  > 主评论失败。BVID {bvid} | 标题：{title}")
+                logging.error(f"  > 主评论失败❌。BVID {bvid} | 标题：{title}")
 
         # 每轮所有评论者执行完后随机休眠一段时间
         time.sleep(random.uniform(100, 200))
