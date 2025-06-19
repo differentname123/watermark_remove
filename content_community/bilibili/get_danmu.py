@@ -496,11 +496,13 @@ def gen_proper_comment(bvid):
         if comment_count > 2:
             comments = get_bilibili_comments(bvid)
             comments = [(comment['content']['message'], comment['like']) for comment in comments]
+        video_info['已有评论'] = comments
 
         danmu_count = video_info.get('数据统计', {}).get('弹幕数', 0)
         if danmu_count > 2:
             cid = video_info.get('弹幕ID (cid)', None)
             top_similar_danmakus = get_sorted_danmu(cid)
+        video_info['已有弹幕'] = top_similar_danmakus
     else:
         print("\n--- 视频信息获取失败 ---")
 
