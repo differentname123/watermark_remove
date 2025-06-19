@@ -90,7 +90,7 @@ CONFIG = {
     ],
     "MAX_VIDEOS_PER_SOURCE": 100,  # 每次搜索可以多拉取一些
     "PROCESSED_VIDEOS_FILE": "processed_bvideos.json",
-    "TARGET_PROCESSED_VIDEOS_FILE": "target_processed_bvideos.json",
+    "TARGET_PROCESSED_FIDS_FILE": "target_processed_fids.json",
     "PROCESSED_FIDS_FILE": "processed_fids.json",  # 新增：记录已处理的用户ID
     "REQUEST_TIMEOUT": 10,
     "REQUEST_DELAY": 1,
@@ -477,7 +477,7 @@ def get_comment_user(bvid):
 def follower_worker(csrf_token):
     """关注线程：从队列获取视频，判断是否需要关注作者。"""
     processed_fids = load_processed_set(CONFIG['PROCESSED_FIDS_FILE'])
-    target_processed_bvideos = load_processed_set(CONFIG['TARGET_PROCESSED_VIDEOS_FILE'])
+    target_processed_bvideos = load_processed_set(CONFIG['TARGET_PROCESSED_FIDS_FILE'])
 
     logging.info(f"已加载 {len(processed_fids)} 个已处理的用户(fid)记录。")
 
@@ -526,7 +526,7 @@ def follower_worker(csrf_token):
                     if success:
                         processed_fids.add(author_id)
             save_processed_set(processed_fids, CONFIG['PROCESSED_FIDS_FILE'])
-            save_processed_set(target_processed_bvideos, CONFIG['TARGET_PROCESSED_VIDEOS_FILE'])
+            save_processed_set(target_processed_bvideos, CONFIG['TARGET_PROCESSED_FIDS_FILE'])
         else:
             # 即使不关注，也标记为已处理，避免重复检查该用户
             processed_fids.add(author_id)
