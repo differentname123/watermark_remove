@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import random
+import traceback
+
 import requests
 import time
 import logging
@@ -444,74 +446,80 @@ def comment_worker():
         bvid = video_info.get('BVID')
         if bvid and bvid not in commented_video:
             comment_videos_queue.put(video_info)
+    logging.info(f"已加载 {len(commented_video)} 个已评论的视频记录。还需要 {comment_videos_queue} 个视频待评论。总共 {len(detail_video_info_map)} 个视频生成记录。")
 
 
     while True:
-        for commenter in commenter_list:
-            valid_video = None
-            start_time = time.time()
-            # 尝试在最多30秒内获取一条有效视频
-            while time.time() - start_time < 30:
-                try:
-                    candidate = comment_videos_queue.get(timeout=5)
-                    commented_video.add(candidate.get('BVID', '未知BVID'))
-                    save_processed_set(commented_video, CONFIG['COMMENTED_PROCESSED_VIDEOS_FILE'])
-                except Empty:
-                    logging.warning("评论视频队列为空，本评论者暂时跳过。")
-                    break
-                # 判断视频是否有效
-                bvid = candidate.get('BVID')
-                if not bvid:
-                    logging.warning("获取视频无效，bvid为空，跳过该视频。")
-                    # 可选：如果认为该视频以后可能恢复，就放回队列
-                    # comment_videos_queue.put(candidate)
-                    continue
-                else:
-                    valid_video = candidate
-                    break
-
-            # 如果没有获取到有效视频则跳过当前评论者
-            if not valid_video:
-                continue
-
-            # 准备评论
-            bvid = valid_video.get('BVID')
-            comment_list = valid_video.get('gen_comment', [])
-            comment_text = random.choice(comment_list)
-            # 删除comment_list中的comment_text
-            comment_list.remove(comment_text)
-            title = valid_video.get('标题', '无标题')
-
-            success = commenter.post_comment(bvid, comment_text, 1,forward_to_dynamic=True)
-            if success:
-                logging.info(f"  > 主评论成功✅: '{comment_text}' BVID {bvid} | 标题：{title}")
-
-                available_replies = comment_list.copy()
-                random.shuffle(available_replies)
-
-                # 2. 筛选出需要进行回复的评论者 (排除主评论者自己)
-                sub_commenters_to_reply = [sc for sc in commenter_list if sc != commenter]
-
-                for sub_commenter, reply_message in zip(sub_commenters_to_reply, available_replies):
-                    # 其他评论者回复主评论
-                    reply_rpid = sub_commenter.reply_to_comment(
-                        bvid=bvid,
-                        message_content=reply_message,  # <-- 使用配对好的、不重复的回复
-                        root_rpid=success,
-                        parent_rpid=success,
-                        type_code=1
-                    )
-                    if reply_rpid:
-                        # 优化日志：记录实际回复的内容，而不是主评论内容
-                        logging.info(f"  >  回复成功: '{reply_message}' BVID {bvid} | 标题：{title}")
+        try:
+            for commenter in commenter_list:
+                valid_video = None
+                start_time = time.time()
+                # 尝试在最多30秒内获取一条有效视频
+                while time.time() - start_time < 30:
+                    try:
+                        candidate = comment_videos_queue.get(timeout=5)
+                        commented_video.add(candidate.get('BVID', '未知BVID'))
+                        save_processed_set(commented_video, CONFIG['COMMENTED_PROCESSED_VIDEOS_FILE'])
+                    except Empty:
+                        logging.warning("评论视频队列为空，本评论者暂时跳过。")
+                        break
+                    # 判断视频是否有效
+                    bvid = candidate.get('BVID')
+                    if not bvid:
+                        logging.warning("获取视频无效，bvid为空，跳过该视频。")
+                        # 可选：如果认为该视频以后可能恢复，就放回队列
+                        # comment_videos_queue.put(candidate)
+                        continue
                     else:
-                        logging.error(f"  > 回复失败: '{reply_message}' BVID {bvid} | 标题：{title}")
+                        valid_video = candidate
+                        break
 
-            else:
-                logging.error(f"  > 主评论失败❌。BVID {bvid} | 标题：{title}")
+                # 如果没有获取到有效视频则跳过当前评论者
+                if not valid_video:
+                    continue
 
-        # 每轮所有评论者执行完后随机休眠一段时间
-        time.sleep(random.uniform(100, 200))
+                # 准备评论
+                bvid = valid_video.get('BVID')
+                comment_list = valid_video.get('gen_comment', [])
+                comment_text = random.choice(comment_list)
+                # 删除comment_list中的comment_text
+                comment_list.remove(comment_text)
+                title = valid_video.get('标题', '无标题')
+
+                success = commenter.post_comment(bvid, comment_text, 1)
+                if success:
+                    logging.info(f"  > 主评论成功✅: '{comment_text}' BVID {bvid} | 标题：{title}")
+
+                    available_replies = comment_list.copy()
+                    random.shuffle(available_replies)
+
+                    # 2. 筛选出需要进行回复的评论者 (排除主评论者自己)
+                    sub_commenters_to_reply = [sc for sc in commenter_list if sc != commenter]
+
+                    for sub_commenter, reply_message in zip(sub_commenters_to_reply, available_replies):
+                        # 其他评论者回复主评论
+                        reply_rpid = sub_commenter.reply_to_comment(
+                            bvid=bvid,
+                            message_content=reply_message,  # <-- 使用配对好的、不重复的回复
+                            root_rpid=success,
+                            parent_rpid=success,
+                            type_code=1
+                        )
+                        if reply_rpid:
+                            # 优化日志：记录实际回复的内容，而不是主评论内容
+                            logging.info(f"  >  回复成功: '{reply_message}' BVID {bvid} | 标题：{title}")
+                        else:
+                            logging.error(f"  > 回复失败: '{reply_message}' BVID {bvid} | 标题：{title}")
+
+                else:
+                    logging.error(f"  > 主评论失败❌。BVID {bvid} | 标题：{title}")
+
+            # 每轮所有评论者执行完后随机休眠一段时间
+            time.sleep(random.uniform(100, 200))
+        except KeyboardInterrupt:
+            logging.info("评论线程被用户中断，正在退出...")
+            traceback.print_exc()
+            continue
 
 def get_comment_user(bvid):
     result_id_list = []
