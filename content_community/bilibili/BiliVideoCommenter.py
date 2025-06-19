@@ -90,6 +90,7 @@ CONFIG = {
     ],
     "MAX_VIDEOS_PER_SOURCE": 100,  # 每次搜索可以多拉取一些
     "PROCESSED_VIDEOS_FILE": "processed_bvideos.json",
+    "TARGET_PROCESSED_VIDEOS_FILE": "target_processed_bvideos.json",
     "PROCESSED_FIDS_FILE": "processed_fids.json",  # 新增：记录已处理的用户ID
     "REQUEST_TIMEOUT": 10,
     "REQUEST_DELAY": 1,
@@ -413,7 +414,7 @@ def comment_worker():
     mama_total_cookie = get_config("mama_bilibili_total_cookie")
     mama_csrf_token = get_config("mama_bilibili_csrf_token")
     mama_commenter = BilibiliCommenter(mama_total_cookie, mama_csrf_token)
-    commenter_list = [nana_commenter, mama_commenter]
+    commenter_list = [base_commenter, nana_commenter, mama_commenter]
 
     while True:
         for commenter in commenter_list:
@@ -476,6 +477,8 @@ def get_comment_user(bvid):
 def follower_worker(csrf_token):
     """关注线程：从队列获取视频，判断是否需要关注作者。"""
     processed_fids = load_processed_set(CONFIG['PROCESSED_FIDS_FILE'])
+    target_processed_bvideos = load_processed_set(CONFIG['TARGET_PROCESSED_VIDEOS_FILE'])
+
     logging.info(f"已加载 {len(processed_fids)} 个已处理的用户(fid)记录。")
 
     while True:
@@ -514,14 +517,16 @@ def follower_worker(csrf_token):
                     logging.debug(f"用户 UID {fid} 已在处理列表，跳过。")
                     continue
                 else:
+                    target_processed_bvideos.add(fid)
                     # 随机暂停一段时间再执行关注，模拟人类行为
                     time.sleep(random.uniform(20, 45))
-                    success = modify_relation(author_id, 1, csrf_token)
+                    success = modify_relation(fid, 1, csrf_token)
 
                     # 无论成功与否（包括已关注/被拉黑等情况），都将其标记为已处理，避免重复请求
                     if success:
                         processed_fids.add(author_id)
-                        save_processed_set(processed_fids, CONFIG['PROCESSED_FIDS_FILE'])
+            save_processed_set(processed_fids, CONFIG['PROCESSED_FIDS_FILE'])
+            save_processed_set(target_processed_bvideos, CONFIG['TARGET_PROCESSED_VIDEOS_FILE'])
         else:
             # 即使不关注，也标记为已处理，避免重复检查该用户
             processed_fids.add(author_id)
@@ -549,10 +554,10 @@ if __name__ == '__main__':
                                        daemon=True)
     follower_thread.start()
 
-    # # --- 评论线程已暂停 ---
-    # logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
-    # comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
-    # comment_thread.start()
+    # --- 评论线程已暂停 ---
+    logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
+    comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
+    comment_thread.start()
 
     # 保持主线程运行
     try:
