@@ -92,6 +92,8 @@ CONFIG = {
     "MAX_VIDEOS_PER_SOURCE": 20,  # 每次搜索可以多拉取一些
     "PROCESSED_VIDEOS_FILE": "comment_processed_bvideos.json",
     "GEN_PROCESSED_VIDEOS_FILE": "gen_comment_processed_bvideos.json",
+    "COMMENTED_PROCESSED_VIDEOS_FILE": "commented_processed_bvideos.json",
+
     "PROCESSED_FIDS_FILE": "processed_fids.json",  # 新增：记录已处理的用户ID
     "REQUEST_TIMEOUT": 10,
     "REQUEST_DELAY": 1,
@@ -436,6 +438,14 @@ def comment_worker():
     mama_commenter = BilibiliCommenter(mama_total_cookie, mama_csrf_token)
     commenter_list = [base_commenter, nana_commenter, mama_commenter]
 
+    commented_video = load_processed_set(CONFIG['COMMENTED_PROCESSED_VIDEOS_FILE'])
+    detail_video_info_map = load_processed_dict(CONFIG['GEN_PROCESSED_VIDEOS_FILE'])
+    for video_info in detail_video_info_map.values():
+        bvid = video_info.get('BVID')
+        if bvid and bvid not in commented_video:
+            comment_videos_queue.put(video_info)
+
+
     while True:
         for commenter in commenter_list:
             valid_video = None
@@ -444,11 +454,13 @@ def comment_worker():
             while time.time() - start_time < 30:
                 try:
                     candidate = comment_videos_queue.get(timeout=5)
+                    commented_video.add(candidate.get('BVID', '未知BVID'))
+                    save_processed_set(commented_video, CONFIG['COMMENTED_PROCESSED_VIDEOS_FILE'])
                 except Empty:
                     logging.warning("评论视频队列为空，本评论者暂时跳过。")
                     break
                 # 判断视频是否有效
-                bvid = candidate.get('bvid')
+                bvid = candidate.get('BVID')
                 if not bvid:
                     logging.warning("获取视频无效，bvid为空，跳过该视频。")
                     # 可选：如果认为该视频以后可能恢复，就放回队列
@@ -463,16 +475,16 @@ def comment_worker():
                 continue
 
             # 准备评论
-            bvid = valid_video.get('bvid')
+            bvid = valid_video.get('BVID')
+            comment_list = valid_video.get('gen_comment', [])
             comment_text = random.choice(comment_list)
-            title = valid_video.get('title', '无标题')
-            logging.info(f"准备评论视频：BVID {bvid} | 标题：{title}")
+            title = valid_video.get('标题', '无标题')
 
             success = commenter.post_comment(bvid, comment_text, 1)
             if success:
-                logging.info(f"  > 评论成功: '{comment_text}'")
+                logging.info(f"  > 评论成功: '{comment_text}  'BVID {bvid} | 标题：{title}")
             else:
-                logging.error("  > 评论失败。")
+                logging.error(f"  > 评论失败。BVID {bvid} | 标题：{title}")
 
         # 每轮所有评论者执行完后随机休眠一段时间
         time.sleep(random.uniform(100, 200))
@@ -523,6 +535,7 @@ def gen_comment():
             detail_video_info_map[bvid] = video_info
             save_processed_dict(detail_video_info_map, CONFIG['GEN_PROCESSED_VIDEOS_FILE'])
             logging.info(f"视频 BVID {bvid} 处理完成，已保存生成信息。")
+            comment_videos_queue.put(video_info)
 
 
 
@@ -542,11 +555,11 @@ if __name__ == '__main__':
     follower_thread = threading.Thread(target=gen_comment, name="FollowerWorker",
                                        daemon=True)
     follower_thread.start()
-    #
-    # # --- 评论线程已暂停 ---
-    # logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
-    # comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
-    # comment_thread.start()
+
+    # --- 评论线程已暂停 ---
+    logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
+    comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
+    comment_thread.start()
 
     # 保持主线程运行
     try:
