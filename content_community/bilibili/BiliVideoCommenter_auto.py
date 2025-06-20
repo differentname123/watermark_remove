@@ -25,9 +25,10 @@ csrf_token = get_config("bilibili_csrf_token")
 
 CONFIG = {
     "STRATEGIES": {
-        "popular": True,  # 热门视频通常不是目标用户，可以关闭
-        "following": False,  # 已经关注的UP主不需要再处理
+        "popular": False,      # 热门视频通常不是目标用户，可以关闭
+        "following": False,   # 已经关注的UP主不需要再处理
         "search": False,
+        "ranking": True,      # <<< NEW: 新增分区排行榜策略开关
     },
     "COOKIE": total_cookie,
     "CSRF_TOKEN": csrf_token,
@@ -35,63 +36,41 @@ CONFIG = {
         "443415885",
         "10330740",
     ],
+    # <<< NEW: START - 新增分区排行榜相关配置 >>>
+    "RANKING_TIDS": { # 目标分区ID (rid) 和名称的映射
+        0: "全站",
+        1: "动画",
+        168: "国创",
+        3: "音乐",
+        129: "舞蹈",
+        4: "游戏",
+        36: "知识",
+        188: "科技",
+        234: "运动",
+        223: "汽车",
+        160: "生活",
+        211: "美食",
+        217: "动物圈",
+        119: "鬼畜",
+        155: "时尚",
+        5: "娱乐",
+        181: "影视",
+    },
+    # <<< NEW: END - 新增分区排行榜相关配置 >>>
     "TARGET_KEYWORDS": [
-        "互关",
-        "互粉",
-        "互赞",
-        "互助",
-        "新人UP主",
-        "回关",
-        "回粉",
-        "互暖",
-        "互评",
-        "互捞",
-        "三连",
-        "求三连",
-        "互三连",
-        "互币",
-        "新人报道",
-        "新人up",
-        "小UP主",
-        "萌新UP",
-        "底层UP主",
-        "小透明",
-        "涨粉",
-        "求关注",
-        "求抱团",
-        "抱团取暖",
-        "一起加油",
-        "挑战100粉",
-        "冲击千粉",
-        "有粉必回",
-        "有赞必回",
-        "在线秒回",
-        "已关求回"
+        "互关", "互粉", "互赞", "互助", "新人UP主", "回关", "回粉", "互暖",
+        "互评", "互捞", "三连", "求三连", "互三连", "互币", "新人报道", "新人up",
+        "小UP主", "萌新UP", "底层UP主", "小透明", "涨粉", "求关注", "求抱团",
+        "抱团取暖", "一起加油", "挑战100粉", "冲击千粉", "有粉必回", "有赞必回",
+        "在线秒回", "已关求回"
     ],
     "FOLLOW_KEYWORDS": [
-        "互关",
-        "互粉",
-        "回关",
-        "互赞",
-        "互助",
-        "回粉",
-        "必回",
-        "必回关",
-        "有粉必回",
-        "有访必回",
-        "诚信互关",
-        "诚信互粉",
-        "永不取关",
-        "不取关",
-        "赞评必回",
-        "互赞互评",
-        "互三连",
-        "互币",
-        "关我必回",
-        "私信秒回",
+        "互关", "互粉", "回关", "互赞", "互助", "回粉", "必回", "必回关",
+        "有粉必回", "有访必回", "诚信互关", "诚信互粉", "永不取关", "不取关",
+        "赞评必回", "互赞互评", "互三连", "互币", "关我必回", "私信秒回",
         "你关我就关"
     ],
-    "MAX_VIDEOS_PER_SOURCE": 20,  # 每次搜索可以多拉取一些
+    "MAX_VIDEOS_PER_SOURCE": 20,  # 每次搜索/每个分区排行可以多拉取一些
     "PROCESSED_VIDEOS_FILE": "comment_processed_bvideos.json",
     "GEN_PROCESSED_VIDEOS_FILE": "gen_comment_processed_bvideos.json",
     "COMMENTED_PROCESSED_VIDEOS_FILE": "commented_processed_bvideos.json",
@@ -338,6 +317,47 @@ def fetch_from_search():
     CONFIG['MAX_VIDEOS_PER_SOURCE'] = 20 # 重置为每页20个，避免影响后续搜索，因为不会更新这么快速
     return video_list
 
+# <<< NEW: START - 新增分区排行榜获取函数 >>>
+def fetch_from_ranking():
+    """
+    从指定分区的排行榜获取视频。
+    """
+    logging.info("开始执行 [策略四：获取分区排行榜视频]...")
+    if not CONFIG['RANKING_TIDS']:
+        logging.warning("  > 未配置目标分区ID (RANKING_TIDS)，跳过此策略。")
+        return []
+
+    video_list = []
+    url = "https://api.bilibili.com/x/web-interface/ranking/v2"
+
+    for tid, name in CONFIG['RANKING_TIDS'].items():
+        logging.info(f"  > 正在获取分区 '{name}' (TID: {tid}) 的排行榜...")
+        params = {
+            'rid': tid,
+            'type': 'all',  # 获取全部分类，可根据需求改为 'rookie' 或 'origin'
+        }
+
+        data = send_get_request(url, params=params)
+
+        if data and 'list' in data and data['list']:
+            # API返回最多100个视频，我们根据配置取前N个
+            ranking_videos = data['list']
+            for item in ranking_videos:
+                if 'bvid' in item:
+                    item['_source_strategy'] = 'ranking'
+                    video_list.append(item)
+            logging.info(f"    - 成功从分区 '{name}' 获取 {len(ranking_videos)} 个视频。")
+        else:
+            logging.warning(f"    - 未能从分区 '{name}' 获取到视频数据，或数据为空。")
+
+    if video_list:
+        logging.info(f"  > [策略四：获取分区排行榜视频] 执行完毕。总共获取 {len(video_list)} 个视频。")
+    else:
+        logging.warning("  > [策略四：获取分区排行榜视频] 执行完毕，但未能获取到任何视频。")
+
+    return video_list
+# <<< NEW: END - 新增分区排行榜获取函数 >>>
+
 
 # --- 6. 已处理记录管理 (视频BVID和用户FID) ---
 def load_processed_set(filepath):
@@ -389,6 +409,10 @@ def fetch_videos():
         all_found_videos.extend(fetch_from_following())
     if CONFIG['STRATEGIES']['search']:
         all_found_videos.extend(fetch_from_search())
+    # <<< MODIFIED: START - 集成新的获取策略 >>>
+    if CONFIG['STRATEGIES']['ranking']:
+        all_found_videos.extend(fetch_from_ranking())
+    # <<< MODIFIED: END - 集成新的获取策略 >>>
 
     unique_videos_map = {video['bvid']: video for video in reversed(all_found_videos) if 'bvid' in video}
     logging.info(f"所有策略共找到 {len(all_found_videos)} 个视频，去重后剩 {len(unique_videos_map)} 个。")
@@ -597,11 +621,11 @@ if __name__ == '__main__':
     follower_thread = threading.Thread(target=gen_comment, name="FollowerWorker",
                                        daemon=True)
     follower_thread.start()
-
-    # --- 评论线程已暂停 ---
-    logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
-    comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
-    comment_thread.start()
+    #
+    # # --- 评论线程已暂停 ---
+    # logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
+    # comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
+    # comment_thread.start()
 
     # 保持主线程运行
     try:

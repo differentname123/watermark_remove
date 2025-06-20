@@ -1,100 +1,106 @@
 import os
 import time
-
-# 假设 common_utils.common_utils 存在且 get_config 函数可用
+import base64
 from common_utils.common_utils import get_config
 
-# 设置代理环境变量，这部分通常放在程序启动时
+# 设置代理环境变量
 os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
 os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
 
-# 使用 google.genai 风格的导入
-# To run this code you need to install the following dependencies:
-# pip install google-genai
-import google.genai
-from google.genai import types # 需要导入 types 来构建 contents 和 config
+import google.genai as genai
+from google.genai import types
 
-# 获取 API 密钥 (保留原代码逻辑)
+# 获取 API 密钥
 API_KEY = get_config("gemini_api_key")
-print("正在使用 Gemini API 密钥:", API_KEY)
+print(f"[INFO] 正在使用 Gemini API 密钥: {API_KEY}")
 
-# 修改 get_llm_content 函数
-def get_llm_content(API_KEY=get_config("gemini_api_key"),
-                    prompt='你好，Gemini！请介绍一下你自己。',
-                    model_name="gemini-2.5-flash-preview-04-17"):
+
+def get_llm_content_gemini2flash(api_key: str = API_KEY,
+                                 prompt: str = '你好，Gemini！请介绍一下你自己。') -> str:
     """
-    使用 google.genai.Client 调用 Gemini 模型生成文本内容。
-    如果首次生成内容失败，则尝试使用备用模型 gemini-2.5-flash-lite-preview-06-17。
-
-    Args:
-        API_KEY: Gemini API 密钥。
-        prompt: 输入给模型的文本提示。
-        model_name: 要使用的 Gemini 模型名称，默认使用 gemini-2.5-flash-preview-04-17。
-
-    Returns:
-        生成的文本内容字符串，如果发生错误则返回 None。
+    使用 gemini-2.0-flash 模型生成内容
     """
-    try:
-        # 1. 创建 google.genai.Client 实例，使用传入的 API_KEY
-        client = google.genai.Client(api_key=API_KEY)
+    print("[INFO] 使用模型: gemini-2.0-flash")
+    client = genai.Client(api_key=api_key)
 
-        # 2. 构建 contents 列表，使用 types.Content 和 types.Part
-        contents = [
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part.from_text(text=prompt),
-                ],
-            ),
-        ]
-
-        # 3. 构建生成文本配置
-        generate_content_config = types.GenerateContentConfig(
-            thinking_config=types.ThinkingConfig(
-                thinking_budget=24576,
-            ),
-            response_mime_type="text/plain",
+    contents = [
+        types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=prompt)]
         )
-        try:
-            # 尝试首次调用指定的模型生成内容
-            response = client.models.generate_content(
-                model=model_name,
-                contents=contents,
-                config=generate_content_config,
-            )
-            generated_text = response.text
-        except Exception as e:
-            # 如果首次生成内容失败，则使用备用模型尝试
-            print("首次生成内容失败，尝试使用备用模型 gemini-2.5-flash-lite-preview-06-17...")
-            response = client.models.generate_content(
-                model="gemini-2.5-flash-lite-preview-06-17",
-                contents=contents,
-                config=generate_content_config,
-            )
-            generated_text = response.text
+    ]
+    config = types.GenerateContentConfig(response_mime_type="text/plain")
 
-        return generated_text
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=contents,
+        config=config,
+    )
+    return response.text
 
-    except Exception as e:
-        print(f"发生错误: {e}")
-        print("请检查您的 API 密钥是否正确，网络连接是否正常，以及代理设置是否工作。")
-        print("同时，请确保您已正确安装 google-genai 库 (pip install -q -U google-genai)。")
-        return None
 
-# 测试函数 (保留原代码逻辑，但调用新的函数并处理返回值)
-if __name__ == "__main__":
-    print("--- Testing get_llm_content ---")
-    # 使用之前获取的 API_KEY 进行测试调用
-    start_time = time.time()
-    result = get_llm_content(
-        API_KEY=API_KEY,
-        prompt='你好，Gemini！请介绍一下你自己。',
-        model_name="gemini-2.5-flash-preview-04-17"
+def get_llm_content_sub(api_key: str = API_KEY,
+                        prompt: str = '你好，Gemini！请介绍一下你自己。',
+                        model_name: str = "gemini-2.5-flash-preview-04-17") -> str:
+    """
+    使用指定 Gemini 模型生成内容
+    """
+    print(f"[INFO] 使用模型: {model_name}")
+    client = genai.Client(api_key=api_key)
+
+    contents = [
+        types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=prompt)]
+        )
+    ]
+    config = types.GenerateContentConfig(
+        thinking_config=types.ThinkingConfig(thinking_budget=24576),
+        response_mime_type="text/plain"
     )
 
+    response = client.models.generate_content(
+        model=model_name,
+        contents=contents,
+        config=config,
+    )
+    return response.text
+
+
+def get_llm_content(api_key: str = API_KEY,
+                    prompt: str = '你好，Gemini！请介绍一下你自己。') -> str | None:
+    """
+    优先尝试主模型，若失败则依次使用备用模型生成内容。
+    """
+    try:
+        try:
+            return get_llm_content_sub(api_key, prompt, "gemini-2.5-flash-preview-04-17")
+        except Exception as e1:
+            print(f"[WARN] 主模型失败: {e1}")
+            try:
+                return get_llm_content_sub(api_key, prompt, "gemini-2.5-flash-lite-preview-06-17")
+            except Exception as e2:
+                print(f"[WARN] 备用模型失败: {e2}")
+                return get_llm_content_gemini2flash(api_key, prompt)
+
+    except Exception as e:
+        print(f"[ERROR] 内容生成失败: {e}")
+        print("[TIPS] 请检查以下内容：")
+        print(" - API 密钥是否正确")
+        print(" - 网络连接及代理设置")
+        print(" - 是否安装了 `google-genai`（pip install -q -U google-genai）")
+        return None
+
+
+if __name__ == "__main__":
+    print("[TEST] 正在测试 get_llm_content")
+    start_time = time.time()
+
+    result = get_llm_content()
     if result:
-        print("\n--- Generated Content ---")
+        print("\n[RESULT] 模型输出：\n")
         print(result)
     else:
-        print("\n--- Generation Failed ---")
-    print("执行时间: {:.2f} 秒".format(time.time() - start_time))
+        print("\n[FAIL] 内容生成失败")
+
+    print(f"[INFO] 执行时间: {time.time() - start_time:.2f} 秒")
