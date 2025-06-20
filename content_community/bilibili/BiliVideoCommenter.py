@@ -516,13 +516,12 @@ def follower_worker(csrf_token):
                     continue
                 else:
                     target_processed_bvideos.add(fid)
+                    processed_fids.add(fid)
+
                     # 随机暂停一段时间再执行关注，模拟人类行为
                     time.sleep(random.uniform(20, 45))
                     success = modify_relation(fid, 1, csrf_token)
 
-                    # 无论成功与否（包括已关注/被拉黑等情况），都将其标记为已处理，避免重复请求
-                    if success:
-                        processed_fids.add(author_id)
             save_processed_set(processed_fids, CONFIG['PROCESSED_FIDS_FILE'])
             save_processed_set(target_processed_bvideos, CONFIG['TARGET_PROCESSED_FIDS_FILE'])
         else:
