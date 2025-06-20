@@ -25,7 +25,7 @@ csrf_token = get_config("bilibili_csrf_token")
 
 CONFIG = {
     "STRATEGIES": {
-        "popular": False,      # 热门视频通常不是目标用户，可以关闭
+        "popular": True,      # 热门视频通常不是目标用户，可以关闭
         "following": False,   # 已经关注的UP主不需要再处理
         "search": False,
         "ranking": True,      # <<< NEW: 新增分区排行榜策略开关
@@ -157,7 +157,7 @@ def modify_relation(fid, action_type, csrf_token):
 
 
 # --- 5. 视频获取策略实现 ---
-def fetch_from_popular(max_count=400):
+def fetch_from_popular(max_count=100):
     """
     循环获取B站热门榜单的视频，直到没有更多数据为止。
     """
@@ -621,7 +621,7 @@ if __name__ == '__main__':
     follower_thread = threading.Thread(target=gen_comment, name="FollowerWorker",
                                        daemon=True)
     follower_thread.start()
-    #
+
     # # --- 评论线程已暂停 ---
     # logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
     # comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
