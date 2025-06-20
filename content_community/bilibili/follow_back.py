@@ -11,7 +11,7 @@ from content_community.bilibili.BiliVideoCommenter import load_processed_set
 # 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-total_cookie = get_config("mama_bilibili_total_cookie")
+total_cookie = get_config("bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为
@@ -224,31 +224,32 @@ def main_task():
     if not non_mutual_followings:
         logging.info("您当前关注的人都已关注您，阶段 1 无需清理。")
     else:
-        logging.info(f"--- 发现 {len(non_mutual_followings)} 位您已关注但未回关的用户 ---")
-        non_mutual_followings_list = list(non_mutual_followings)
-        random.shuffle(non_mutual_followings_list)
-        logging.info("自动开始取消关注操作。")
+        if len(followings_set) > 4000:
+            logging.info(f"--- 发现 {len(non_mutual_followings)} 位您已关注但未回关的用户 ---")
+            non_mutual_followings_list = list(non_mutual_followings)
+            random.shuffle(non_mutual_followings_list)
+            logging.info("自动开始取消关注操作。")
 
-        successful_unfollows = 0
-        failed_unfollows = 0
-        for i, fid in enumerate(non_mutual_followings_list):
-            logging.info(f"\n正在取消关注第 {i + 1}/{len(non_mutual_followings_list)} 位用户 (UID: {fid})...")
-            if modify_relation(fid, 2):  # 2 代表取消关注
-                successful_unfollows += 1
-            else:
-                failed_unfollows += 1
-            if successful_unfollows > 500:
-                logging.info("已取消关注超过 500 人，停止后续操作。")
-                break
+            successful_unfollows = 0
+            failed_unfollows = 0
+            for i, fid in enumerate(non_mutual_followings_list):
+                logging.info(f"\n正在取消关注第 {i + 1}/{len(non_mutual_followings_list)} 位用户 (UID: {fid})...")
+                if modify_relation(fid, 2):  # 2 代表取消关注
+                    successful_unfollows += 1
+                else:
+                    failed_unfollows += 1
+                if successful_unfollows > 500:
+                    logging.info("已取消关注超过 500 人，停止后续操作。")
+                    break
 
-            delay = random.uniform(MIN_OPERATION_DELAY_SEC, MAX_OPERATION_DELAY_SEC)
-            delay = delay / 10
-            logging.info(f"等待 {delay:.2f} 秒...")
-            time.sleep(delay)
+                delay = random.uniform(MIN_OPERATION_DELAY_SEC, MAX_OPERATION_DELAY_SEC)
+                delay = delay / 10
+                logging.info(f"等待 {delay:.2f} 秒...")
+                time.sleep(delay)
 
-        logging.info("\n--- 阶段 1: 清理操作完成 ---")
-        logging.info(f"总计尝试取消关注: {len(non_mutual_followings_list)} 人")
-        logging.info(f"成功取消关注: {successful_unfollows} 人, 失败: {failed_unfollows} 人")
+            logging.info("\n--- 阶段 1: 清理操作完成 ---")
+            logging.info(f"总计尝试取消关注: {len(non_mutual_followings_list)} 人")
+            logging.info(f"成功取消关注: {successful_unfollows} 人, 失败: {failed_unfollows} 人")
 
     # --- 阶段 2: 回关粉丝 ---
     logging.info("\n--- 阶段 2: 开始回关新粉丝 ---")
@@ -258,7 +259,7 @@ def main_task():
     new_followings_set = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
     # 1. 加载两个来源的数据到独立的集合
     followers_fids_set = load_processed_set("followers_fids.json")
-    processed_fids_set = load_processed_set("processed_fids.json")
+    processed_fids_set = load_processed_set("target_processed_fids.json")
 
     # 2. 创建一个空列表，用于存放最终需要 follow 的 FID (保持顺序)
     followers_to_follow_list = []
