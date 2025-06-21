@@ -36,6 +36,7 @@ cookies = {}
 csrf_token = ""
 my_uid = None
 
+
 def parse_cookies_string(cookie_string):
     """从完整的Cookie字符串中解析出字典和bili_jct"""
     parsed_cookies = {}
@@ -47,6 +48,7 @@ def parse_cookies_string(cookie_string):
             if key == 'bili_jct':
                 bili_jct_val = value
     return parsed_cookies, bili_jct_val
+
 
 def init_session():
     """初始化requests session和cookies"""
@@ -67,6 +69,7 @@ def init_session():
     session.cookies.update(cookies)
     logging.info("Session 初始化完成。SESSDATA 和 CSRF token 已加载。")
 
+
 def get_my_uid():
     """获取当前登录用户的UID"""
     global my_uid
@@ -86,6 +89,7 @@ def get_my_uid():
     except ValueError:
         logging.error("UID 响应内容不是有效的 JSON。")
     return None
+
 
 def get_user_list(url, vmid, page_size, list_type="用户"):
     """
@@ -141,6 +145,7 @@ def get_user_list(url, vmid, page_size, list_type="用户"):
     logging.info(f"成功获取到 {len(user_mids)} 个{list_type}。")
     return user_mids
 
+
 def modify_relation(fid, action_type):
     """
     修改用户关系 (关注或取消关注)。
@@ -171,6 +176,7 @@ def modify_relation(fid, action_type):
         logging.error(f"  ❌ {action_text} UID: {fid} 响应内容不是有效的 JSON。")
         return False
 
+
 def load_followers_set(filename):
     """尝试从指定的 JSON 文件中加载之前的粉丝列表，返回 set"""
     try:
@@ -185,6 +191,7 @@ def load_followers_set(filename):
         logging.error(f"加载 {filename} 时发生 JSON 解析错误: {e}")
         return set()
 
+
 def save_followers_set(filename, followers_set):
     """保存粉丝列表到指定的 JSON 文件中（覆盖写入）"""
     try:
@@ -194,14 +201,17 @@ def save_followers_set(filename, followers_set):
     except Exception as e:
         logging.error(f"保存粉丝列表到 {filename} 失败: {e}")
 
+
 def update_followers(new_followers_set):
     # 加载之前保存的粉丝列表（如果存在）
     previous_followers_set = load_followers_set("followers_fids.json")
     # 取并集更新后的粉丝列表和之前的粉丝列表
     updated_followers_set = previous_followers_set.union(new_followers_set)
-    logging.info(f"之前的粉丝列表中有 {len(previous_followers_set)} 条记录，最新的粉丝列表中有 {len(new_followers_set)} 条记录。 合并之后的粉丝列表中有 {len(updated_followers_set)} 条记录。")
+    logging.info(
+        f"之前的粉丝列表中有 {len(previous_followers_set)} 条记录，最新的粉丝列表中有 {len(new_followers_set)} 条记录。 合并之后的粉丝列表中有 {len(updated_followers_set)} 条记录。")
     # 保存更新后的粉丝列表到文件
     save_followers_set("followers_fids.json", updated_followers_set)
+
 
 def main_task():
     """
@@ -219,6 +229,8 @@ def main_task():
     followers_set = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
     update_followers(followers_set)
     followings_set = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
+    followings_set = {str(fid) for fid in followings_set}
+
     non_mutual_followings = followings_set - followers_set
 
     if not non_mutual_followings:
@@ -257,6 +269,9 @@ def main_task():
     new_followers_set = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
     update_followers(new_followers_set)  # 更新粉丝列表
     new_followings_set = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
+    # 将new_followings_set的元素全部变成字符串形式
+    new_followings_set = {str(fid) for fid in new_followings_set}
+
     # 1. 加载两个来源的数据到独立的集合
     followers_fids_set = load_processed_set("followers_fids.json")
     processed_fids_set = load_processed_set("target_processed_fids.json")
@@ -316,6 +331,7 @@ def main_task():
         logging.info(f"成功回关: {successful_follows} 人, 失败: {failed_follows} 人")
 
     logging.info("\n所有操作执行完毕。")
+
 
 if __name__ == "__main__":
     # 使用 robust 的定时任务调度，每个小时执行一次

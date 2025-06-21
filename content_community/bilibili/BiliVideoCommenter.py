@@ -310,7 +310,9 @@ def load_processed_set(filepath):
         return set()
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
-            return set(json.load(f))
+            temp_set = set(json.load(f))
+            temp_set = {str(fid) for fid in temp_set}
+            return temp_set
     except (json.JSONDecodeError, IOError):
         return set()
 
