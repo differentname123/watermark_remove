@@ -16,19 +16,23 @@ import urllib.parse
 import time
 from hashlib import md5
 import json
+
 # 确保您的 common_utils.common_utils 模块和 get_config 函数可用
 # 如果没有，请替换为实际获取配置的方法，例如从文件读取或直接硬编码(不推荐敏感信息)
 try:
     from common_utils.common_utils import get_config
 except ImportError:
     print("警告: 未找到 common_utils.common_utils 模块。请确保该模块存在或手动设置配置。")
+
+
     # 提供一个简单的模拟函数，实际使用请替换
     def get_config(key):
         configs = {
-            "bilibili_csrf_token": "YOUR_CSRF_TOKEN", # <-- 替换为你的 bili_jct 值
-            "bilibili_total_cookie": "SESSDATA=YOUR_SESSDATA; bili_jct=YOUR_CSRF_TOKEN;" # <-- 替换为你的完整Cookie字符串
+            "bilibili_csrf_token": "YOUR_CSRF_TOKEN",  # <-- 替换为你的 bili_jct 值
+            "bilibili_total_cookie": "SESSDATA=YOUR_SESSDATA; bili_jct=YOUR_CSRF_TOKEN;"  # <-- 替换为你的完整Cookie字符串
         }
         return configs.get(key)
+
 
 class BilibiliCommenter:
     """
@@ -104,10 +108,10 @@ class BilibiliCommenter:
     _DM_COVER_IMG_STR = "QU5HTEUgKE5WSURJQSwgTlZJRElBIEdlRm9yY2UgUlRYIDIwODAgVGkgKDB4MDAwMDFFMDcpIERpcmVjdDNEMTEgdnNfNV8wIHBzXzVfMCwgRDNEMTEpR29vZ2xlIEluYy4gKE5WSURJQS"
     _DM_IMG_INTER = '{"ds":[{"t":0,"c":"","p":[1284,74,2003],"s":[374,3566,1044]}],"wh":[4332,3754,88],"of":[1239,1934,423]}'
 
-
     # --- API 端点 ---
     _COMMENT_ADD_API_URL = "https://api.bilibili.com/x/v2/reply/add"
-    _COMMENT_ACTION_API_URL = "https://api.bilibili.com/x/v2/reply/action" # 用于点赞/点踩
+    _COMMENT_ACTION_API_URL = "https://api.bilibili.com/x/v2/reply/action"  # 用于点赞/点踩评论
+    _VIDEO_LIKE_API_URL = "https://api.bilibili.com/x/web-interface/archive/like"  # <--- 新增：视频点赞API
     _NAV_API_URL = "https://api.bilibili.com/x/web-interface/nav"
     _VIEW_API_URL_TEMPLATE = "https://api.bilibili.com/x/web-interface/view?bvid={bvid_str}"
 
@@ -126,7 +130,6 @@ class BilibiliCommenter:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
             "accept": "*/*",
             "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
-            # We are sending form data in the body
             "content-type": "application/x-www-form-urlencoded",
             "priority": "u=1, i",
             "referrerPolicy": "no-referrer-when-downgrade",
@@ -159,19 +162,9 @@ class BilibiliCommenter:
 
     def _filter_and_encode_param_value(self, value_str: str) -> str:
         """过滤 value 中的 "!'()*" 字符，并进行 URL 编码（大写编码，空格为 %20）"""
-        # Ensure the value is a string
         value_str = str(value_str)
         filtered_value = ''.join(filter(lambda chr: chr not in "!'()*", value_str))
-        # Use quote_plus would encode space to '+', but WBI expects %20
-        # Use quote, safe='', then replace + with %20
-        quoted = urllib.parse.quote(filtered_value, safe='')
-        # Handle potential '+' from quoting non-ASCII characters if needed,
-        # though for typical parameters like numbers/strings it's less likely.
-        # The filter handles the '!'()*' part.
-        # Let's refine to handle spaces specifically as %20,
-        # and let quote handle other special chars.
         return urllib.parse.quote(filtered_value, safe='').replace(' ', '%20')
-
 
     def _sign_params_for_wbi(self, params: dict) -> dict:
         """
@@ -179,7 +172,6 @@ class BilibiliCommenter:
         返回修改后的字典，这个字典可以直接用于 POST 请求的 data 参数。
         """
         if not (self.img_key and self.sub_key):
-            # 尝试重新加载一次WBI keys
             self._load_wbi_keys()
             if not (self.img_key and self.sub_key):
                 raise ValueError("WBI Keys 不可用，无法生成签名。")
@@ -187,14 +179,11 @@ class BilibiliCommenter:
         mixin_key = self._get_mixin_key(self.img_key + self.sub_key)
         curr_time = round(time.time())
 
-        # 复制一份，避免修改原始字典
         params_with_wbi = params.copy()
         params_with_wbi['wts'] = curr_time
 
-        # 按照 key 重排参数 (排序是为了MD5计算的输入一致性)
         sorted_params_for_md5 = dict(sorted(params_with_wbi.items()))
 
-        # 过滤 value 中的 "!'()*" 字符并进行 URL 编码
         encoded_parts_for_md5 = []
         for k, v in sorted_params_for_md5.items():
             encoded_key = urllib.parse.quote(str(k), safe='')
@@ -205,17 +194,12 @@ class BilibiliCommenter:
 
         wbi_sign = md5((query_for_md5 + mixin_key).encode()).hexdigest()
 
-        # 将 w_rid 添加到参数字典中
         params_with_wbi['w_rid'] = wbi_sign
-
-        # 返回包含所有参数（包括wts和w_rid）的字典
         return params_with_wbi
-
 
     def _get_aid_from_bvid(self, bvid_str: str) -> int | None:
         """根据 BV 号获取视频的 AID"""
         url = self._VIEW_API_URL_TEMPLATE.format(bvid_str=bvid_str)
-        # 临时的 Referer 头，用于获取 AID，因为此时还没有视频的 Referer
         temp_headers = {"Referer": "https://www.bilibili.com/"}
         try:
             response = self.session.get(url, headers=temp_headers)
@@ -233,7 +217,7 @@ class BilibiliCommenter:
     def _load_wbi_keys(self) -> None:
         """获取最新的 img_key 和 sub_key 用于 WBI 签名"""
         try:
-            response = self.session.get(self._NAV_API_URL)  # Session 会自动带上Cookie
+            response = self.session.get(self._NAV_API_URL)
             response.raise_for_status()
             json_content = response.json()
             if json_content.get('code') == 0:
@@ -241,7 +225,6 @@ class BilibiliCommenter:
                 sub_url: str = json_content['data']['wbi_img']['sub_url']
                 self.img_key = img_url.rsplit('/', 1)[1].split('.')[0]
                 self.sub_key = sub_url.rsplit('/', 1)[1].split('.')[0]
-                # print("WBI Keys 加载成功。")
             else:
                 print(f"获取 WBI Keys 失败：{json_content.get('message')}")
         except requests.exceptions.RequestException as e:
@@ -251,9 +234,48 @@ class BilibiliCommenter:
             print("警告：未能成功加载 WBI Keys，评论或点赞请求可能失败或被风控。")
 
     # =========================================================================
-    # ====================== 新增的方法：回复指定评论 ==========================
+    # ======================== 新增的方法：点赞视频 ===========================
     # =========================================================================
-    def reply_to_comment(self, bvid: str, message_content: str, root_rpid: int, parent_rpid: int, type_code: int = 1) -> int | None:
+    def like_video(self, bvid: str) -> bool:
+        """
+        对指定的视频进行点赞。此API不需要WBI签名。
+        :param bvid: 视频的 BV 号。
+        :return: 点赞是否成功（或已点赞）。
+        """
+        post_data = {
+            "bvid": bvid,
+            "like": 1,  # 1 为点赞, 2 为取消点赞
+            "csrf": self.csrf_token,
+        }
+
+        # 更新 Referer 头
+        self.session.headers.update({
+            "Referer": f"https://www.bilibili.com/video/{bvid}/"
+        })
+
+        try:
+            response = self.session.post(self._VIDEO_LIKE_API_URL, data=post_data)
+            response.raise_for_status()
+            result = response.json()
+
+            if result.get("code") == 0:
+                # print(f"视频 {bvid} 点赞成功。")
+                return True
+            elif result.get("code") == 65006:  # 65006 代表已经点赞过
+                # print(f"视频 {bvid} 已点赞。")
+                return True
+            else:
+                print(f"视频点赞失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}")
+                return False
+        except requests.exceptions.RequestException as e:
+            print(f"请求视频点赞时发生错误：{e}")
+            return False
+        except Exception as e:
+            print(f"视频点赞时发生未知错误：{e}")
+            return False
+
+    def reply_to_comment(self, bvid: str, message_content: str, root_rpid: int, parent_rpid: int,
+                         type_code: int = 1) -> int | None:
         """
         回复指定的 Bilibili 评论 (发送楼中楼评论)。
         在发送回复前，此方法会先尝试为被回复的评论（父评论）点赞。
@@ -270,20 +292,16 @@ class BilibiliCommenter:
             print("回复失败：无法获取有效的 AID。")
             return None
 
-        # --- 新增逻辑：在回复前，先为父评论点赞 ---
         print(f"准备回复 rpid={parent_rpid} 的评论，先尝试为其点赞...")
-        # 点赞操作是“尽力而为”，无论成功与否，都继续执行回复
         self.like_comment(oid=oid, rpid=parent_rpid, type_code=type_code)
-        # ----------------------------------------
 
-        # 准备 POST 请求的 Body 数据，增加了 root 和 parent 参数
         post_body_data_unsigned = {
             "plat": 1,
             "oid": oid,
             "type": type_code,
             "message": message_content,
-            "root": root_rpid,       # <-- 关键参数: 根评论ID
-            "parent": parent_rpid,   # <-- 关键参数: 父评论ID
+            "root": root_rpid,
+            "parent": parent_rpid,
             "at_name_to_mid": "{}",
             "gaia_source": "main_web",
             "csrf": self.csrf_token,
@@ -316,7 +334,6 @@ class BilibiliCommenter:
                 if result.get("data") and result["data"].get("reply"):
                     rpid = result["data"]["reply"]["rpid"]
                     print(f"获取到新回复的 rpid: {rpid}")
-                    # 默认情况下，发送评论后也会为自己的新评论点赞
                     time.sleep(5)
                     self.like_comment(oid=oid, rpid=rpid, type_code=1)
                 return rpid
@@ -330,16 +347,26 @@ class BilibiliCommenter:
             print(f"发生未知错误：{e}")
             return None
 
-    def post_comment(self, bvid: str, message_content: str, type_code: int = 1, forward_to_dynamic: bool = False) -> int | None:
+    # <--- 修改 post_comment 方法 ---
+    def post_comment(self, bvid: str, message_content: str, type_code: int = 1,
+                     forward_to_dynamic: bool = False) -> int | None:
         """
-        发送 Bilibili 评论，并可选择是否同时转发到动态。
+        发送 Bilibili 评论。在发送前，会先尝试为该视频点赞。
         :param bvid: 视频 BV 号。
         :param message_content: 评论内容。
         :param type_code: 目标类型，1 通常代表视频。
         :param forward_to_dynamic: 是否同时转发到动态。默认为 False。
         :return: 评论的 rpid (评论ID) 如果成功，否则返回 None。
         """
-        # print(f"尝试评论视频 BV 号：{bvid}，内容：'{message_content}'")
+        # --- 新增逻辑：在评论前，先为视频点赞 ---
+        print(f"准备评论视频 {bvid}，先尝试为该视频点赞...")
+        like_success = self.like_video(bvid=bvid)
+        if like_success:
+            print("视频点赞成功或已点赞。")
+        else:
+            # 即使点赞失败，也继续尝试评论
+            print("视频点赞失败，但仍将继续尝试评论。")
+        # ----------------------------------------
 
         # 1. 获取 AID (oid)
         oid = self._get_aid_from_bvid(bvid)
@@ -363,11 +390,9 @@ class BilibiliCommenter:
             "dm_img_inter": self._DM_IMG_INTER,
         }
 
-        # --- 新增逻辑：如果需要转发到动态，则添加 from_dynamic 参数 ---
         if forward_to_dynamic:
             post_body_data_unsigned['sync_to_dynamic'] = 1
             print("已启用“同时转发到动态”选项。")
-        # -----------------------------------------------------------
 
         # 3. 生成 WBI 签名参数 (wts, w_rid) 并添加到 body 数据中
         try:
@@ -381,7 +406,7 @@ class BilibiliCommenter:
 
         # 5. 更新 Referer 头
         self.session.headers.update({
-            "Referer": f"https://www.bilibili.com/video/{bvid}/?spm_id_from=333.1387.homepage.video_card.click"
+            "Referer": f"https://www.bilibili.com/video/{bvid}/"
         })
 
         # 6. 发送 POST 请求
@@ -391,12 +416,14 @@ class BilibiliCommenter:
             result = response.json()
 
             if result.get("code") == 0:
-                # print("评论发送成功！")
+                print(f"评论发送成功！内容：'{message_content}'")
                 if forward_to_dynamic:
                     print("评论已成功发送并转发到动态。")
                 rpid = None
                 if result.get("data") and result["data"].get("reply"):
                     rpid = result["data"]["reply"]["rpid"]
+                    # 默认给自己发的评论点赞
+                    print(f"获取到新评论 rpid: {rpid}，准备为其点赞...")
                     time.sleep(5)
                     self.like_comment(oid=oid, rpid=rpid, type_code=1)
                 return rpid
@@ -418,59 +445,44 @@ class BilibiliCommenter:
         :param type_code: 目标类型，1 通常代表视频。
         :return: 点赞是否成功。
         """
-        # print(f"尝试点赞评论 rpid={rpid} (oid={oid})")
-
-        # 1. 准备 POST 请求的 Body 数据 (这些是需要签名的参数)
-        # 注意：所有这些参数都将参与 WBI 签名，并通过 POST body 发送
         post_body_data_unsigned = {
             "oid": oid,
             "rpid": rpid,
-            "action": 1, # 1 为点赞
+            "action": 1,  # 1 为点赞
             "type": type_code,
             "csrf": self.csrf_token,
-            "statistics": '{"appId":100,"platform":5}', # 点赞同样需要statistics
+            "statistics": '{"appId":100,"platform":5}',
         }
 
-        # 2. 生成 WBI 签名参数 (wts, w_rid) 并添加到 body 数据中
         try:
-            # _sign_params_for_wbi now returns the complete body data including wts/w_rid
             signed_post_body_data = self._sign_params_for_wbi(post_body_data_unsigned)
         except ValueError as e:
-            print(f"点赞失败：{e}")
+            print(f"评论点赞失败：{e}")
             return False
 
-        # 3. 构造完整的 URL (POST 请求，WBI参数在Body中，URL无WBI参数)
-        full_url = self._COMMENT_ACTION_API_URL # WBI params are in the body
-
-        # 4. 更新 Referer 头 (使用视频页面的 Referer)
-        # Use av{oid} format or derive bvid if possible. av format is generally safer if only oid is available.
-        # Let's use av format here as we have oid.
+        full_url = self._COMMENT_ACTION_API_URL
         self.session.headers.update({
-             "Referer": f"https://www.bilibili.com/video/av{oid}/"
+            "Referer": f"https://www.bilibili.com/video/av{oid}/"
         })
 
-        # 5. 发送 POST 请求
         try:
-            # Pass the complete signed dictionary as data
             response = self.session.post(full_url, data=signed_post_body_data)
             response.raise_for_status()
             result = response.json()
 
             if result.get("code") == 0:
+                print(f"评论 rpid={rpid} 点赞成功。")
                 return True
             else:
                 print(f"评论点赞失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}")
-                # 常见的失败原因可能是已经点赞过 (错误码 -653)，这通常不算真正的失败
-                if result.get("code") == -653:
-                     print("评论点赞失败原因：可能已经点赞过 (错误码 -653)。")
-                     # You might choose to return True here if -653 is acceptable as "already liked"
-                     # For now, we return False as the *attempt* to like didn't change the state (it was already liked)
+                if result.get("code") == -653:  # B站新版接口，-653是已点赞
+                    print("评论点赞失败原因：可能已经点赞过。")
                 return False
         except requests.exceptions.RequestException as e:
-            print(f"请求发生错误：{e}")
+            print(f"请求评论点赞时发生错误：{e}")
             return False
         except Exception as e:
-            print(f"发生未知错误：{e}")
+            print(f"评论点赞时发生未知错误：{e}")
             return False
 
 
@@ -492,11 +504,15 @@ if __name__ == "__main__":
     # 初始化 BilibiliCommenter
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
 
-    # --- 步骤 1: 发送一条顶级评论 ---
+    # --- 步骤 1: 发送一条顶级评论 (现在会先点赞视频) ---
     print("-" * 30)
     print("步骤 1: 尝试发送一条顶级评论...")
-    posted_rpid = commenter.post_comment(target_bvid, comment_text, comment_type,        forward_to_dynamic=True  # <-- 关键参数
-)
+    posted_rpid = commenter.post_comment(
+        target_bvid,
+        comment_text,
+        comment_type,
+        forward_to_dynamic=True
+    )
 
     # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
     if posted_rpid:

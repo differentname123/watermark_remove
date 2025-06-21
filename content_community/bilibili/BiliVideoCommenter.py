@@ -383,6 +383,29 @@ comment_list = [
 ]
 
 
+interactive_comment_list = [
+    "这个作品拍得真好，细节满满！已点赞支持，盼回访交流呀！👍",
+    "视频质量很高，能看出非常用心！已赞评，期待你也能来我的新作品看看，给点建议。😊",
+    "很有趣的内容，我已经点赞评论啦！也欢迎你来我的频道做客，互相学习。🤝",
+    "干货满满，学到了新东西，感谢分享！已手动三连，有空也来看看我的视频吧！",
+    "感觉我们做的内容方向很像，你的视频给了我很多启发！已支持，希望可以常来常往呀！✨",
+    "哇！这个视频太棒了，看得人心情都好了！必须给你点个大大的赞！我也刚发了新作品，欢迎来踩踩！🥰",
+    "太有才了！果断给你点赞评论！我们一起加油，让更多人看到彼此的作品吧！💪",
+    "视频充满了能量！已为你打call！有空也来我的视频充充电，互相注入能量！⚡️",
+    "你更新啦！第一时间赶来支持，赞和评论都安排上了！我的主页也在等你的到来哦！😉",
+    "发现宝藏博主了！已点赞+评论，希望我的小支持能给你带来好运！也期待你的回访~💖",
+    "感觉我们是同路人，内容风格很棒！已赞评支持，希望可以一起进步，常互动呀！🌟",
+    "你的作品总能带来惊喜，已点赞评论！让我们做彼此最忠实的观众吧！🎬",
+    "在茫茫视频中刷到你，是种缘分！赞和评论送上，希望我们能成为互相支持的朋友。🙏",
+    "小博主一起抱团取暖啦！你的视频已点赞评论，咱们互相“串门”，一起把数据做起来！🚀",
+    "我正在寻找一起成长的伙伴，你的内容很棒！已支持，期待在我的评论区也能看到你的身影。👀",
+    "你的赞和评论我已经帮你“签收”啦！也给我的视频盖个章吧？等你哦！😜",
+    "滴！你的互动卡已打！请查收我的赞和评论。什么时候也来打我的卡呀？😂",
+    "已用我最快的“一指禅”为你点赞评论！我的视频也需要你来“加持”一下！拜托拜托~🙏",
+    "我带着我的赞和评论“闯”进你的世界啦！现在把“回访”的接力棒交给你！🏃",
+    "叮咚！您的“点赞评论”外卖已送达！麻烦签收后，也给我下一单哦，地址在我主页！😉"
+]
+
 def video_fetcher_worker():
     """视频拉取线程：定期拉取新视频并放入队列。"""
     while True:
@@ -405,15 +428,22 @@ def video_fetcher_worker():
 # (评论功能保留，暂不启用)
 def comment_worker():
     """评论线程：从队列获取视频并发表评论。"""
-    base_commenter = BilibiliCommenter(CONFIG['COOKIE'], CONFIG['CSRF_TOKEN'])
-    nana_total_cookie = get_config("nana_bilibili_total_cookie")
-    nana_csrf_token = get_config("nana_bilibili_csrf_token")
-    nana_commenter = BilibiliCommenter(nana_total_cookie, nana_csrf_token)
+    # base_commenter = BilibiliCommenter(CONFIG['COOKIE'], CONFIG['CSRF_TOKEN'])
+    # nana_total_cookie = get_config("nana_bilibili_total_cookie")
+    # nana_csrf_token = get_config("nana_bilibili_csrf_token")
+    # nana_commenter = BilibiliCommenter(nana_total_cookie, nana_csrf_token)
+    #
+    # mama_total_cookie = get_config("mama_bilibili_total_cookie")
+    # mama_csrf_token = get_config("mama_bilibili_csrf_token")
+    # mama_commenter = BilibiliCommenter(mama_total_cookie, mama_csrf_token)
 
-    mama_total_cookie = get_config("mama_bilibili_total_cookie")
-    mama_csrf_token = get_config("mama_bilibili_csrf_token")
-    mama_commenter = BilibiliCommenter(mama_total_cookie, mama_csrf_token)
-    commenter_list = [base_commenter, nana_commenter, mama_commenter]
+    ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
+    ruru_csrf_token = get_config("ruru_bilibili_csrf_token")
+    ruru_commenter = BilibiliCommenter(ruru_total_cookie, ruru_csrf_token)
+
+    commenter_list = [ruru_commenter]
+
+
 
     while True:
         for commenter in commenter_list:
@@ -443,7 +473,7 @@ def comment_worker():
 
             # 准备评论
             bvid = valid_video.get('bvid')
-            comment_text = random.choice(comment_list)
+            comment_text = random.choice(interactive_comment_list)
             title = valid_video.get('title', '无标题')
             logging.info(f"准备评论视频：BVID {bvid} | 标题：{title}")
 
@@ -513,6 +543,7 @@ def follower_worker(csrf_token):
             result_id_list = list(set(result_id_list))
             logging.info(f"发现目标用户: {author_name} (UID: {author_id}) | 来源: BVID {video.get('bvid')} | 标题: {title} 连带评论有 {len(result_id_list)} 个用户需要关注。")
             for fid in result_id_list:
+                fid = str(fid)
                 if fid in processed_fids:
                     logging.debug(f"用户 UID {fid} 已在处理列表，跳过。")
                     continue
@@ -553,10 +584,10 @@ if __name__ == '__main__':
                                        daemon=True)
     follower_thread.start()
 
-    # # --- 评论线程已暂停 ---
-    # logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
-    # comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
-    # comment_thread.start()
+    # --- 评论线程已暂停 ---
+    logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
+    comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
+    comment_thread.start()
 
     # 保持主线程运行
     try:
