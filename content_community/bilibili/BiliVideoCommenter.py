@@ -88,7 +88,8 @@ CONFIG = {
         "私信秒回",
         "你关我就关"
     ],
-    "MAX_VIDEOS_PER_SOURCE": 100,  # 每次搜索可以多拉取一些
+    "MAX_VIDEOS_PER_SOURCE": 20,  # 每次搜索可以多拉取一些
+    "DISCOVERED_VIDEOS_FILE":"DISCOVERED_VIDEOS_FILE.json",
     "PROCESSED_VIDEOS_FILE": "processed_bvideos.json",
     "TARGET_PROCESSED_FIDS_FILE": "target_processed_fids.json",
     "PROCESSED_FIDS_FILE": "processed_fids.json",  # 新增：记录已处理的用户ID
@@ -317,6 +318,15 @@ def load_processed_set(filepath):
         return set()
 
 
+def load_processed_dict(filepath):
+    if not os.path.exists(filepath):
+        return {}
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {}
+
 def save_processed_set(data_set, filepath):
     try:
         with open(filepath, 'w', encoding='utf-8') as f:
@@ -325,14 +335,26 @@ def save_processed_set(data_set, filepath):
     except IOError as e:
         logging.error(f"保存文件 {filepath} 失败: {e}")
 
+def save_processed_dict(data_dict, filepath):
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            # 关键改动：添加 ensure_ascii=False
+            json.dump(data_dict, f, indent=4, ensure_ascii=False)
+        print(f"数据已成功保存到 {filepath}")
+    except IOError as e:
+        logging.error(f"保存文件 {filepath} 失败: {e}")
 
 # --- 7. 视频拉取主逻辑 ---
 def fetch_videos():
     logging.info("==================== 开始获取待处理视频 ====================")
-    processed_bvideos = load_processed_set(CONFIG['PROCESSED_VIDEOS_FILE'])
 
-    logging.info(f"已加载 {len(processed_bvideos)} 个已处理的视频记录。")
+    # --- 步骤 1: 加载并更新全局视频发现库 ---
 
+    # 加载所有历史上发现过的视频
+    discovered_videos_map = load_processed_dict(CONFIG['DISCOVERED_VIDEOS_FILE'])
+    logging.info(f"已加载 {len(discovered_videos_map)} 个历史已发现视频。")
+
+    # 从所有策略中获取当前批次的视频
     all_found_videos = []
     if CONFIG['STRATEGIES']['popular']:
         all_found_videos.extend(fetch_from_popular())
@@ -341,18 +363,39 @@ def fetch_videos():
     if CONFIG['STRATEGIES']['search']:
         all_found_videos.extend(fetch_from_search())
 
-    unique_videos_map = {video['bvid']: video for video in reversed(all_found_videos) if 'bvid' in video}
-    logging.info(f"所有策略共找到 {len(all_found_videos)} 个视频，去重后剩 {len(unique_videos_map)} 个。")
+    # 对本轮获取的视频进行去重
+    unique_newly_found_map = {video['bvid']: video for video in reversed(all_found_videos) if 'bvid' in video}
+    logging.info(f"所有策略本轮共找到 {len(all_found_videos)} 个视频，去重后剩 {len(unique_newly_found_map)} 个。")
 
-    videos_to_process = [video for bvid, video in unique_videos_map.items() if bvid not in processed_bvideos]
-    logging.info(f"过滤掉已处理的视频后，最终得到 {len(videos_to_process)} 个新视频待处理。")
+    # 将新发现的视频合并到全局发现库中
+    new_videos_added_count = 0
+    for bvid, video in unique_newly_found_map.items():
+        if bvid not in discovered_videos_map:
+            discovered_videos_map[bvid] = video
+            new_videos_added_count += 1
 
-    newly_processed_bvid_set = {video['bvid'] for video in videos_to_process}
-    updated_processed_set = processed_bvideos.union(newly_processed_bvid_set)
-    save_processed_set(updated_processed_set, CONFIG['PROCESSED_VIDEOS_FILE'])
-    logging.info(f"已处理视频记录已更新，总数: {len(updated_processed_set)}。")
+    # 如果有新视频加入，则保存更新后的发现库
+    if new_videos_added_count > 0:
+        logging.info(f"发现 {new_videos_added_count} 个全新视频，正在更新全局发现库...")
+        save_processed_dict(discovered_videos_map, CONFIG['DISCOVERED_VIDEOS_FILE'])
+        logging.info(f"全局发现库已更新，总数: {len(discovered_videos_map)}。")
+    else:
+        logging.info("本轮未发现任何新视频。")
 
-    logging.info("==================== 获取任务完成 ====================")
+    # --- 步骤 2: 从更新后的发现库中筛选待处理视频 ---
+
+    # 加载已处理的视频 bvid 集合
+    processed_bvideos = load_processed_set(CONFIG['PROCESSED_VIDEOS_FILE'])
+    logging.info(f"已加载 {len(processed_bvideos)} 个已处理的视频记录。")
+
+    # 从完整的“已发现视频库”中，筛选出“未处理”的视频
+    videos_to_process = [
+        video for bvid, video in discovered_videos_map.items()
+        if bvid not in processed_bvideos
+    ]
+    logging.info(
+        f"从 {len(discovered_videos_map)} 个已发现视频中，过滤掉已处理的视频后，最终得到 {len(videos_to_process)} 个待处理视频。")
+
     return videos_to_process
 
 
@@ -505,6 +548,7 @@ def get_comment_user(bvid):
 # (新功能)
 def follower_worker(csrf_token):
     """关注线程：从队列获取视频，判断是否需要关注作者。"""
+    processed_bvideos = load_processed_set(CONFIG['PROCESSED_VIDEOS_FILE'])
     processed_fids = load_processed_set(CONFIG['PROCESSED_FIDS_FILE'])
     target_processed_bvideos = load_processed_set(CONFIG['TARGET_PROCESSED_FIDS_FILE'])
 
@@ -513,6 +557,8 @@ def follower_worker(csrf_token):
     while True:
         try:
             video = videos_queue.get(timeout=30)  # 等待30秒，如果没有新视频则继续循环
+            processed_bvideos.add(video.get('bvid', '未知'))
+            save_processed_set(processed_bvideos, CONFIG['PROCESSED_VIDEOS_FILE'])
             logging.info(f"获取到新视频 BVID: {video.get('bvid', '未知')}，开始处理...")
         except Empty:
             continue
@@ -526,11 +572,6 @@ def follower_worker(csrf_token):
 
         if not author_id:
             logging.info(f"视频 BVID {video.get('bvid')} 缺少作者ID，跳过。")
-            continue
-
-        # 如果用户ID已经处理过，则跳过
-        if author_id in target_processed_bvideos:
-            logging.info(f"用户 UID {author_id} 已在处理列表，跳过。")
             continue
 
         # 检查标题或描述是否包含关注关键词
@@ -558,10 +599,10 @@ def follower_worker(csrf_token):
             save_processed_set(processed_fids, CONFIG['PROCESSED_FIDS_FILE'])
             save_processed_set(target_processed_bvideos, CONFIG['TARGET_PROCESSED_FIDS_FILE'])
         else:
+            logging.info(f"视频 BVID {video.get('bvid')} 未匹配到关注关键词，作者UID {author_id} 不需要关注。")
             # 即使不关注，也标记为已处理，避免重复检查该用户
             processed_fids.add(author_id)
             save_processed_set(processed_fids, CONFIG['PROCESSED_FIDS_FILE'])
-            logging.debug(f"视频 BVID {video.get('bvid')} 未匹配到关注关键词，作者UID {author_id} 已标记为无需处理。")
 
         # 每次处理后都暂停，控制API请求频率
         time.sleep(random.uniform(3, 8))
