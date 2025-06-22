@@ -349,7 +349,7 @@ class BilibiliCommenter:
 
     # <--- 修改 post_comment 方法 ---
     def post_comment(self, bvid: str, message_content: str, type_code: int = 1,
-                     forward_to_dynamic: bool = False) -> int | None:
+                     forward_to_dynamic: bool = False, like_video: bool = False) -> int | None:
         """
         发送 Bilibili 评论。在发送前，会先尝试为该视频点赞。
         :param bvid: 视频 BV 号。
@@ -358,14 +358,15 @@ class BilibiliCommenter:
         :param forward_to_dynamic: 是否同时转发到动态。默认为 False。
         :return: 评论的 rpid (评论ID) 如果成功，否则返回 None。
         """
-        # --- 新增逻辑：在评论前，先为视频点赞 ---
-        print(f"准备评论视频 {bvid}，先尝试为该视频点赞...")
-        like_success = self.like_video(bvid=bvid)
-        if like_success:
-            print("视频点赞成功或已点赞。")
-        else:
-            # 即使点赞失败，也继续尝试评论
-            print("视频点赞失败，但仍将继续尝试评论。")
+        if like_video:
+            # --- 新增逻辑：在评论前，先为视频点赞 ---
+            print(f"准备评论视频 {bvid}，先尝试为该视频点赞...")
+            like_success = self.like_video(bvid=bvid)
+            if like_success:
+                print("视频点赞成功或已点赞。")
+            else:
+                # 即使点赞失败，也继续尝试评论
+                print("视频点赞失败，但仍将继续尝试评论。")
         # ----------------------------------------
 
         # 1. 获取 AID (oid)

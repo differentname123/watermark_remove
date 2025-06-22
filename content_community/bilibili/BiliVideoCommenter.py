@@ -456,6 +456,13 @@ def video_fetcher_worker():
         if new_videos:
             # 随机打乱顺序，避免行为模式过于固定
             random.shuffle(new_videos)
+            # 清空videos_queue中的旧视频
+            while not videos_queue.empty():
+                try:
+                    videos_queue.get_nowait()
+                    comment_videos_queue.get_nowait()  # 如果评论功能启用，这里也可以放入评论队列
+                except Empty:
+                    break
             for video in new_videos:
                 videos_queue.put(video)
                 comment_videos_queue.put(video)  # 如果评论功能启用，这里也可以放入评论队列
@@ -520,7 +527,7 @@ def comment_worker():
             title = valid_video.get('title', '无标题')
             logging.info(f"准备评论视频：BVID {bvid} | 标题：{title}")
 
-            success = commenter.post_comment(bvid, comment_text, 1)
+            success = commenter.post_comment(bvid, comment_text, 1, like_video=True)
             if success:
                 logging.info(f"  > 评论成功: '{comment_text}'")
             else:
@@ -625,10 +632,10 @@ if __name__ == '__main__':
                                        daemon=True)
     follower_thread.start()
 
-    # --- 评论线程已暂停 ---
-    logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
-    comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
-    comment_thread.start()
+    # # --- 评论线程已暂停 ---
+    # logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
+    # comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
+    # comment_thread.start()
 
     # 保持主线程运行
     try:
