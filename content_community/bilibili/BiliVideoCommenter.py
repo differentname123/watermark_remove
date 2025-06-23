@@ -88,7 +88,7 @@ CONFIG = {
         "私信秒回",
         "你关我就关"
     ],
-    "MAX_VIDEOS_PER_SOURCE": 100,  # 每次搜索可以多拉取一些
+    "MAX_VIDEOS_PER_SOURCE": 20,  # 每次搜索可以多拉取一些
     "DISCOVERED_VIDEOS_FILE":"DISCOVERED_VIDEOS_FILE.json",
     "PROCESSED_VIDEOS_FILE": "processed_bvideos.json",
     "TARGET_PROCESSED_FIDS_FILE": "target_processed_fids.json",
@@ -100,8 +100,8 @@ CONFIG = {
 # --- 3. 日志与会话配置 ---
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    encoding='utf-8'
+    # 在格式中同时加入进程ID(%(process)d)和线程ID(%(thread)d)
+    format=f'%(asctime)s - [PID:%(process)d Thread:%(thread)d] - %(levelname)s - %(message)s'
 )
 
 # 创建一个全局会话对象，用于保持登录状态
@@ -593,14 +593,14 @@ def follower_worker(csrf_token):
             for fid in result_id_list:
                 fid = str(fid)
                 if fid in processed_fids:
-                    logging.debug(f"用户 UID {fid} 已在处理列表，跳过。")
+                    logging.info(f"用户 UID {fid} 已在处理列表，跳过。")
                     continue
                 else:
                     target_processed_bvideos.add(fid)
                     processed_fids.add(fid)
 
                     # 随机暂停一段时间再执行关注，模拟人类行为
-                    time.sleep(random.uniform(20, 45))
+                    time.sleep(random.uniform(2, 10))
                     success = modify_relation(fid, 1, csrf_token)
 
             save_processed_set(processed_fids, CONFIG['PROCESSED_FIDS_FILE'])

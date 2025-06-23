@@ -231,7 +231,10 @@ def main_task():
     followings_set = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
     followings_set = {str(fid) for fid in followings_set}
 
-    non_mutual_followings = followings_set - followers_set
+    followers_fids_set = load_processed_set("followers_fids.json")
+    processed_fids_set = load_processed_set("target_processed_fids.json")
+
+    non_mutual_followings = followings_set - followers_set - followers_fids_set - processed_fids_set
 
     if not non_mutual_followings:
         logging.info("您当前关注的人都已关注您，阶段 1 无需清理。")
@@ -301,6 +304,7 @@ def main_task():
                 followers_to_follow_list.append(fid)
                 already_added_to_list.add(fid)
     followers_to_follow = already_added_to_list
+    failed_set = set()
     if not followers_to_follow:
         logging.info("所有粉丝均已关注，阶段 2 无需操作。")
     else:
@@ -317,6 +321,7 @@ def main_task():
                 successful_follows += 1
             else:
                 failed_follows += 1
+                failed_set.add(fid)  # 将失败的 FID 添加到集合中
             if successful_follows > 500:
                 logging.info("已回关超过 500 人，停止后续操作。")
                 break
@@ -325,6 +330,12 @@ def main_task():
             delay = delay / 2
             logging.info(f"等待 {delay:.2f} 秒...")
             time.sleep(delay)
+        # 删除followers_fids_set和processed_fids_set中失败的 FID
+        followers_fids_set -= failed_set
+        processed_fids_set -= failed_set
+        # 保存更新后的粉丝列表
+        save_followers_set("followers_fids.json", followers_fids_set)
+        save_followers_set("target_processed_fids.json", processed_fids_set)
 
         logging.info("\n--- 阶段 2: 回关操作完成 ---")
         logging.info(f"总计尝试回关: {len(followers_to_follow_list)} 人")
