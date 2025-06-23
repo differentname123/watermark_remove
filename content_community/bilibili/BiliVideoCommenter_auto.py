@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import datetime
 import random
 import traceback
 
@@ -489,15 +490,29 @@ def comment_worker():
                 while time.time() - start_time < 30:
                     try:
                         candidate = comment_videos_queue.get(timeout=5)
-                        commented_video.add(candidate.get('BVID', '未知BVID'))
-                        save_processed_set(commented_video, CONFIG['COMMENTED_PROCESSED_VIDEOS_FILE'])
+                        publish_time = candidate.get('发布时间', None)  # 示例 为 '2025-03-15 21:11:23'
+
+                        # 将字符串时间转为 datetime 对象
+                        if publish_time:
+                            publish_time = datetime.datetime.strptime(publish_time, '%Y-%m-%d %H:%M:%S')
+
+                        # 获取当前时间并计算一周前的时间
+                        one_week_ago = datetime.datetime.now() - datetime.timedelta(weeks=1)
+
+                        # 如果发布时间不在最近一周内，则跳过
+                        if publish_time and publish_time >= one_week_ago:
+                            commented_video.add(candidate.get('BVID', '未知BVID'))
+                            save_processed_set(commented_video, CONFIG['COMMENTED_PROCESSED_VIDEOS_FILE'])
+                        else:
+                            logging.info(f"发布时间 {publish_time} 超过一周，跳过该视频。")
+                            continue
                     except Empty:
-                        logging.warning("评论视频队列为空，本评论者暂时跳过。")
+                        logging.info("评论视频队列为空，本评论者暂时跳过。")
                         break
                     # 判断视频是否有效
                     bvid = candidate.get('BVID')
                     if not bvid:
-                        logging.warning("获取视频无效，bvid为空，跳过该视频。")
+                        logging.info("获取视频无效，bvid为空，跳过该视频。")
                         # 可选：如果认为该视频以后可能恢复，就放回队列
                         # comment_videos_queue.put(candidate)
                         continue
@@ -544,6 +559,7 @@ def comment_worker():
 
                 else:
                     logging.error(f"  > 主评论失败❌。BVID {bvid} | 标题：{title}")
+                    time.sleep(random.uniform(200, 400))  # 主评论失败后稍作等待
 
             # 每轮所有评论者执行完后随机休眠一段时间
             time.sleep(random.uniform(100, 200))
