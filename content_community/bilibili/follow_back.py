@@ -304,7 +304,7 @@ def main_task():
                 followers_to_follow_list.append(fid)
                 already_added_to_list.add(fid)
     followers_to_follow = already_added_to_list
-    failed_set = set()
+    failed_set = load_processed_set("failed_set.json")
     if not followers_to_follow:
         logging.info("所有粉丝均已关注，阶段 2 无需操作。")
     else:
@@ -331,11 +331,7 @@ def main_task():
             logging.info(f"等待 {delay:.2f} 秒...")
             time.sleep(delay)
         # 删除followers_fids_set和processed_fids_set中失败的 FID
-        followers_fids_set -= failed_set
-        processed_fids_set -= failed_set
-        # 保存更新后的粉丝列表
-        save_followers_set("followers_fids.json", followers_fids_set)
-        save_followers_set("target_processed_fids.json", processed_fids_set)
+        save_followers_set("failed_set.json", failed_set)
 
         logging.info("\n--- 阶段 2: 回关操作完成 ---")
         logging.info(f"总计尝试回关: {len(followers_to_follow_list)} 人")
