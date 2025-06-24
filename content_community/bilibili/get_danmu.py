@@ -482,63 +482,67 @@ def gen_proper_comment(bvid):
     生成适合的评论内容。
     这里可以根据需要实现更复杂的逻辑。
     """
-    video_info = get_bilibili_video_info_full(bvid)
+    try:
+        video_info = get_bilibili_video_info_full(bvid)
 
-    if video_info:
-        print("\n--- 视频信息获取成功 ---")
-        title = video_info.get('标题', '未知标题').replace('\n', '\\n').replace('\r', '\\r')
-        desc = video_info.get('视频简介', '无简介').replace('\n', '\\n').replace('\r', '\\r')
-        tag = video_info.get('视频标签', [])
-        tname = video_info.get('分区名称', '未知分区').replace('\n', '\\n').replace('\r', '\\r')
-        comment_count = video_info.get('数据统计', {}).get('评论数', 0)
-        comments = []
-        top_similar_danmakus = []
-        if comment_count > 2:
-            comments = get_bilibili_comments(bvid)
-            comments = [(comment['content']['message'], comment['like']) for comment in comments]
-        video_info['已有评论'] = comments
+        if video_info:
+            print("\n--- 视频信息获取成功 ---")
+            title = video_info.get('标题', '未知标题').replace('\n', '\\n').replace('\r', '\\r')
+            desc = video_info.get('视频简介', '无简介').replace('\n', '\\n').replace('\r', '\\r')
+            tag = video_info.get('视频标签', [])
+            tname = video_info.get('分区名称', '未知分区').replace('\n', '\\n').replace('\r', '\\r')
+            comment_count = video_info.get('数据统计', {}).get('评论数', 0)
+            comments = []
+            top_similar_danmakus = []
+            if comment_count > 2:
+                comments = get_bilibili_comments(bvid)
+                comments = [(comment['content']['message'], comment['like']) for comment in comments]
+            video_info['已有评论'] = comments
 
-        danmu_count = video_info.get('数据统计', {}).get('弹幕数', 0)
-        if danmu_count > 2:
-            cid = video_info.get('弹幕ID (cid)', None)
-            top_similar_danmakus = get_sorted_danmu(cid)
-        video_info['已有弹幕'] = top_similar_danmakus
-    else:
-        print("\n--- 视频信息获取失败 ---")
+            danmu_count = video_info.get('数据统计', {}).get('弹幕数', 0)
+            if danmu_count > 2:
+                cid = video_info.get('弹幕ID (cid)', None)
+                top_similar_danmakus = get_sorted_danmu(cid)
+            video_info['已有弹幕'] = top_similar_danmakus
+        else:
+            print("\n--- 视频信息获取失败 ---")
+            return {}
+
+        prompt_template = """下面是一个视频的相关信息，请你根据这些信息，给我生成几个有趣能够吸引眼球的评论(不在乎是引起共鸣还是引起反感，目标就是有流量)，包括但不限于：制造对立、身份认同、玩梗、抖机灵、挑衅、发布暴论等。你的唯一目标是为我给出的视频信息生成能风格各异、能引爆流量的神评，返回结果示例如下，严格按照下面的格式:
+        [
+            "评论1",
+            "评论2",
+            ...
+        ]
+        视频信息如下:
+        标题: "{video_title}"
+        描述: "{video_description}"
+        分区: "{video_partition}"
+        标签: "{video_tags}"
+        已有评论(数字代表点赞数): {existing_comments}
+        已有弹幕(数字代表出现的次数): {top_danmakus}
+        """
+
+        # 填充数据
+        filled_prompt = prompt_template.format(
+            video_title=title,
+            video_description=desc,
+            video_partition=tname,
+            video_tags=tag,  # 列表会直接显示为 [item1, item2, ...]
+            existing_comments=comments,  # 列表会直接显示为 [item1, item2, ...]
+            top_danmakus=top_similar_danmakus  # 列表会直接显示为 [(item1, count1), ...]
+        )
+
+        start_time = datetime.now()
+        result = get_llm_content(prompt=filled_prompt)
+        print(f"\n--- LLM 生成评论内容耗时: {(datetime.now() - start_time).total_seconds():.2f} 秒 ---")
+        if result:
+            result = string_to_list(result)
+        video_info['gen_comment'] = result
+        return video_info
+    except Exception as e:
+        print(f"生成评论时发生错误: {e}")
         return {}
-
-    prompt_template = """下面是一个视频的相关信息，请你根据这些信息，给我生成几个有趣能够吸引眼球的评论(不在乎是引起共鸣还是引起反感，目标就是有流量)，包括但不限于：制造对立、身份认同、玩梗、抖机灵、挑衅、发布暴论等。你的唯一目标是为我给出的视频信息生成能风格各异、能引爆流量的神评，返回结果示例如下，严格按照下面的格式,最有趣的放在最前面:
-    [
-        "评论1",
-        "评论2",
-        ...
-    ]
-    视频信息如下:
-    标题: "{video_title}"
-    描述: "{video_description}"
-    分区: "{video_partition}"
-    标签: "{video_tags}"
-    已有评论(数字代表点赞数): {existing_comments}
-    已有弹幕(数字代表出现的次数): {top_danmakus}
-    """
-
-    # 填充数据
-    filled_prompt = prompt_template.format(
-        video_title=title,
-        video_description=desc,
-        video_partition=tname,
-        video_tags=tag,  # 列表会直接显示为 [item1, item2, ...]
-        existing_comments=comments,  # 列表会直接显示为 [item1, item2, ...]
-        top_danmakus=top_similar_danmakus  # 列表会直接显示为 [(item1, count1), ...]
-    )
-
-    start_time = datetime.now()
-    result = get_llm_content(prompt=filled_prompt)
-    print(f"\n--- LLM 生成评论内容耗时: {(datetime.now() - start_time).total_seconds():.2f} 秒 ---")
-    if result:
-        result = string_to_list(result)
-    video_info['gen_comment'] = result
-    return video_info
 
 # --- 主执行部分 ---
 if __name__ == "__main__":

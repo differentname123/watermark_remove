@@ -614,10 +614,11 @@ def gen_comment():
             continue
         else:
             video_info = gen_proper_comment(bvid)
-            detail_video_info_map[bvid] = video_info
-            save_processed_dict(detail_video_info_map, CONFIG['GEN_PROCESSED_VIDEOS_FILE'])
-            logging.info(f"视频 BVID {bvid} 处理完成，已保存生成信息。")
-            comment_videos_queue.put(video_info)
+            if video_info:
+                detail_video_info_map[bvid] = video_info
+                save_processed_dict(detail_video_info_map, CONFIG['GEN_PROCESSED_VIDEOS_FILE'])
+                logging.info(f"视频 BVID {bvid} 处理完成，已保存生成信息。")
+                comment_videos_queue.put(video_info)
 
 
 

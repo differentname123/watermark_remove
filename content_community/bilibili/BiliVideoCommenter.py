@@ -88,7 +88,7 @@ CONFIG = {
         "私信秒回",
         "你关我就关"
     ],
-    "MAX_VIDEOS_PER_SOURCE": 1000,  # 每次搜索可以多拉取一些
+    "MAX_VIDEOS_PER_SOURCE": 20,  # 每次搜索可以多拉取一些
     "DISCOVERED_VIDEOS_FILE":"DISCOVERED_VIDEOS_FILE.json",
     "PROCESSED_VIDEOS_FILE": "processed_bvideos.json",
     "TARGET_PROCESSED_FIDS_FILE": "target_processed_fids.json",
