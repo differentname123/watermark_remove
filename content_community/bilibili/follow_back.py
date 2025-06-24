@@ -234,7 +234,7 @@ def main_task():
     followers_fids_set = load_processed_set("followers_fids.json")
     processed_fids_set = load_processed_set("target_processed_fids.json")
 
-    non_mutual_followings = followings_set - followers_set - followers_fids_set - processed_fids_set
+    non_mutual_followings = followings_set - followers_set - followers_fids_set
 
     if not non_mutual_followings:
         logging.info("您当前关注的人都已关注您，阶段 1 无需清理。")
