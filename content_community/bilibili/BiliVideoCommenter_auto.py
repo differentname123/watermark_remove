@@ -634,10 +634,10 @@ if __name__ == '__main__':
     video_thread = threading.Thread(target=video_fetcher_worker, name="VideoFetcherWorker", daemon=True)
     video_thread.start()
 
-    # --- 启动生成评论线程 ---
-    follower_thread = threading.Thread(target=gen_comment, name="FollowerWorker",
-                                       daemon=True)
-    follower_thread.start()
+    # # --- 启动生成评论线程 ---
+    # follower_thread = threading.Thread(target=gen_comment, name="FollowerWorker",
+    #                                    daemon=True)
+    # follower_thread.start()
 
     # --- 评论线程已暂停 ---
     logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
