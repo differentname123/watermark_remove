@@ -15,6 +15,50 @@ API_KEY = get_config("gemini_api_key")
 print(f"[INFO] 正在使用 Gemini API 密钥: {API_KEY}")
 
 
+# === 新增：视频内容分析函数（使用 google.generativeai） ===
+import google.generativeai as genai_flash
+from google.api_core import exceptions as ga_exceptions
+
+def get_llm_content_gemini_flash_video(
+    api_key: str = API_KEY,
+    prompt: str = '视频中的内容是什么',
+    video_path: str = 'test.mp4'
+) -> str:
+    """
+    使用 Gemini 1.5 Flash 模型分析视频内容并返回文本描述。
+    """
+    try:
+        # 配置 API
+        genai_flash.configure(api_key=api_key)
+
+        # 检查视频文件是否存在
+        if not os.path.exists(video_path):
+            return f"错误: 视频文件未找到 -> {video_path}"
+
+        # 上传并等待处理
+        video_file = genai_flash.upload_file(path=video_path)
+        while video_file.state.name == "PROCESSING":
+            print("等待视频文件处理完成...")
+            time.sleep(10)
+            video_file = genai_flash.get_file(video_file.name)
+
+        if video_file.state.name == "FAILED":
+            return f"错误: 视频文件 '{video_path}' 处理失败。"
+
+        # 调用 Gemini 多模态模型
+        model = genai_flash.GenerativeModel(model_name='gemini-2.5-flash-preview-04-17')
+        response = model.generate_content(
+            [video_file, prompt],
+            request_options={"timeout": 600}
+        )
+        return response.text
+
+    except ga_exceptions.GoogleAPICallError as e:
+        return f"调用 Gemini API 时发生网络或权限错误: {e}"
+    except Exception as e:
+        return f"处理过程中发生未知错误: {e}"
+
+
 def get_llm_content_gemini2flash(api_key: str = API_KEY,
                                  prompt: str = '你好，Gemini！请介绍一下你自己。') -> str:
     """
@@ -104,3 +148,9 @@ if __name__ == "__main__":
         print("\n[FAIL] 内容生成失败")
 
     print(f"[INFO] 执行时间: {time.time() - start_time:.2f} 秒")
+
+    result = get_llm_content_gemini_flash_video(
+        prompt="请详细描述这个视频的内容，分点说明。",
+        video_path="test.mp4"
+    )
+    print(result)

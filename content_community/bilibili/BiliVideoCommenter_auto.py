@@ -478,7 +478,8 @@ def comment_worker():
         bvid = video_info.get('BVID')
         if bvid and bvid not in commented_video:
             comment_videos_queue.put(video_info)
-    logging.info(f"已加载 {len(commented_video)} 个已评论的视频记录。还需要 {comment_videos_queue} 个视频待评论。总共 {len(detail_video_info_map)} 个视频生成记录。")
+
+    logging.info(f"已加载 {len(commented_video)} 个已评论的视频记录。还需要 {comment_videos_queue.qsize()} 个视频待评论。总共 {len(detail_video_info_map)} 个视频生成记录。")
 
 
     while True:

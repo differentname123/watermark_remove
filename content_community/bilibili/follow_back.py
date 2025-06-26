@@ -253,7 +253,7 @@ def main_task():
                     successful_unfollows += 1
                 else:
                     failed_unfollows += 1
-                if successful_unfollows > 500:
+                if successful_unfollows > 1000:
                     logging.info("已取消关注超过 500 人，停止后续操作。")
                     break
 
