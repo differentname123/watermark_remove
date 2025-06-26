@@ -534,6 +534,8 @@ def comment_worker():
 
                 success = commenter.post_comment(bvid, comment_text, 1)
                 if success:
+                    commented_video.add(bvid)
+                    save_processed_set(commented_video, CONFIG['COMMENTED_PROCESSED_VIDEOS_FILE'])
                     logging.info(f"  > 主评论成功✅: '{comment_text}' BVID {bvid} | 标题：{title}")
 
                     available_replies = comment_list.copy()
@@ -634,10 +636,10 @@ if __name__ == '__main__':
     video_thread = threading.Thread(target=video_fetcher_worker, name="VideoFetcherWorker", daemon=True)
     video_thread.start()
 
-    # # --- 启动生成评论线程 ---
-    # follower_thread = threading.Thread(target=gen_comment, name="FollowerWorker",
-    #                                    daemon=True)
-    # follower_thread.start()
+    # --- 启动生成评论线程 ---
+    follower_thread = threading.Thread(target=gen_comment, name="FollowerWorker",
+                                       daemon=True)
+    follower_thread.start()
 
     # --- 评论线程已暂停 ---
     logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
