@@ -27,15 +27,17 @@ csrf_token = get_config("bilibili_csrf_token")
 CONFIG = {
     "STRATEGIES": {
         "popular": True,      # 热门视频通常不是目标用户，可以关闭
-        "following": False,   # 已经关注的UP主不需要再处理
+        "following": True,   # 已经关注的UP主不需要再处理
         "search": False,
         "ranking": True,      # <<< NEW: 新增分区排行榜策略开关
     },
     "COOKIE": total_cookie,
     "CSRF_TOKEN": csrf_token,
     "TARGET_UIDS": [  # 监控动态时使用，当前已关闭
-        "443415885",
-        "10330740",
+        "1223805908",
+        "1639172564",
+        "3546909677455941",
+        "3546717871934392",
     ],
     # <<< NEW: START - 新增分区排行榜相关配置 >>>
     "RANKING_TIDS": { # 目标分区ID (rid) 和名称的映射
