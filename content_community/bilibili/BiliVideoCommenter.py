@@ -487,11 +487,11 @@ def comment_worker():
     mama_csrf_token = get_config("mama_bilibili_csrf_token")
     mama_commenter = BilibiliCommenter(mama_total_cookie, mama_csrf_token)
 
-    # ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
-    # ruru_csrf_token = get_config("ruru_bilibili_csrf_token")
-    # ruru_commenter = BilibiliCommenter(ruru_total_cookie, ruru_csrf_token)
+    ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
+    ruru_csrf_token = get_config("ruru_bilibili_csrf_token")
+    ruru_commenter = BilibiliCommenter(ruru_total_cookie, ruru_csrf_token)
 
-    commenter_list = [mama_commenter]
+    commenter_list = [mama_commenter, ruru_commenter]
 
 
 
