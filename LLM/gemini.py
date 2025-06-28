@@ -46,7 +46,7 @@ def get_llm_content_gemini_flash_video(
             return f"错误: 视频文件 '{video_path}' 处理失败。"
 
         # 调用 Gemini 多模态模型
-        model = genai_flash.GenerativeModel(model_name='gemini-2.5-flash-preview-04-17')
+        model = genai_flash.GenerativeModel(model_name="gemini-2.5-pro")
         response = model.generate_content(
             [video_file, prompt],
             request_options={"timeout": 600}
