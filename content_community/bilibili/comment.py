@@ -11,6 +11,9 @@
     注意：dm_img_* 字段是硬编码的设备指纹，长期使用可能导致风控或失效。
           建议定期更新这些值或考虑使用自动化浏览器。
 """
+import mimetypes
+import os
+
 import requests
 import urllib.parse
 import time
@@ -32,6 +35,67 @@ except ImportError:
             "bilibili_total_cookie": "SESSDATA=YOUR_SESSDATA; bili_jct=YOUR_CSRF_TOKEN;"  # <-- 替换为你的完整Cookie字符串
         }
         return configs.get(key)
+
+def upload_bilibili_image(image_path: str, cookies: dict, csrf_token: str):
+    """
+    模拟浏览器上传图片到Bilibili动态。
+
+    :param image_path: 要上传的本地图片文件的路径。
+    :param cookies: 用户登录后的 cookies，以字典形式提供。
+    :param csrf_token: 用户的 CSRF token (通常与 bili_jct cookie 的值相同)。
+    :return: requests 的 Response 对象，可以调用 .json() 查看返回结果。
+    """
+    # 检查文件是否存在
+    if not os.path.exists(image_path):
+        print(f"错误：文件 '{image_path}' 不存在。")
+        return None
+
+    # 目标 URL
+    url = "https://api.bilibili.com/x/dynamic/feed/draw/upload_bfs"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        "Referer": "https://www.bilibili.com/",
+        "Accept": "*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Origin": "https://t.bilibili.com",  # 有时 Origin 头也是必要的
+    }
+
+    data = {
+        "biz": "new_dyn",
+        "category": "daily",
+        "csrf": csrf_token,
+    }
+
+
+    with open(image_path, 'rb') as f:
+        # 猜测文件的MIME类型 (e.g., 'image/jpeg', 'image/png')
+        mime_type = mimetypes.guess_type(image_path)[0] or 'application/octet-stream'
+
+        files = {
+            'file_up': (os.path.basename(image_path), f, mime_type)
+        }
+
+        try:
+            # 发送 POST 请求
+            print(f"正在上传图片: {image_path}...")
+            response = requests.post(
+                url,
+                headers=headers,
+                cookies=cookies,
+                data=data,
+                files=files
+            )
+
+            # 检查请求是否成功
+            response.raise_for_status()  # 如果状态码是 4xx 或 5xx，将抛出异常
+
+            print("上传成功！")
+            return response
+
+        except requests.exceptions.RequestException as e:
+            print(f"上传失败: {e}")
+            return None
 
 
 class BilibiliCommenter:
@@ -348,26 +412,27 @@ class BilibiliCommenter:
             return None
 
     # <--- 修改 post_comment 方法 ---
-    def post_comment(self, bvid: str, message_content: str, type_code: int = 1,
-                     forward_to_dynamic: bool = False, like_video: bool = False) -> int | None:
+    def post_comment(self,
+                     bvid: str,
+                     message_content: str,
+                     type_code: int = 1,
+                     forward_to_dynamic: bool = False,
+                     like_video: bool = False,
+                     image_path: str = "") -> int | None:
         """
-        发送 Bilibili 评论。在发送前，会先尝试为该视频点赞。
+        发送 Bilibili 评论，并可在内部上传图片。
         :param bvid: 视频 BV 号。
         :param message_content: 评论内容。
         :param type_code: 目标类型，1 通常代表视频。
-        :param forward_to_dynamic: 是否同时转发到动态。默认为 False。
+        :param forward_to_dynamic: 是否同时转发到动态。
+        :param like_video: 是否先为视频点赞。
+        :param image_path: 本地图片路径，若非空则上传并附带到评论中。
         :return: 评论的 rpid (评论ID) 如果成功，否则返回 None。
         """
+        # 如果需要，先给视频点赞
         if like_video:
-            # --- 新增逻辑：在评论前，先为视频点赞 ---
             print(f"准备评论视频 {bvid}，先尝试为该视频点赞...")
-            like_success = self.like_video(bvid=bvid)
-            if like_success:
-                print("视频点赞成功或已点赞。")
-            else:
-                # 即使点赞失败，也继续尝试评论
-                print("视频点赞失败，但仍将继续尝试评论。")
-        # ----------------------------------------
+            self.like_video(bvid=bvid)
 
         # 1. 获取 AID (oid)
         oid = self._get_aid_from_bvid(bvid)
@@ -375,8 +440,28 @@ class BilibiliCommenter:
             print("评论失败：无法获取有效的 AID。")
             return None
 
-        # 2. 准备 POST 请求的 Body 数据 (这些是需要签名的参数)
-        post_body_data_unsigned = {
+        pictures_data = None
+        # 2. 如果指定了图片路径，就上传
+        if image_path:
+            print(f"检测到 image_path='{image_path}'，开始上传图片...")
+            upload_resp = upload_bilibili_image(
+                image_path=image_path,
+                cookies={"bili_jct": self.csrf_token, "SESSDATA": self.session.cookies.get("SESSDATA")},
+                csrf_token=self.csrf_token
+            )
+            if not upload_resp or upload_resp.status_code != 200:
+                print("图片上传失败，评论将不包含图片。")
+            else:
+                data = upload_resp.json().get("data", {})
+                # 按 API 要求字段重命名
+                data["img_src"] = data.get("image_url")
+                data["img_width"] = data.get("image_width")
+                data["img_height"] = data.get("image_height")
+                pictures_data = [data]
+                print("图片上传并组装完成，准备在评论中附带图片。")
+
+        # 3. 准备签名前的 Body 参数
+        post_body_data = {
             "plat": 1,
             "oid": oid,
             "type": type_code,
@@ -390,53 +475,36 @@ class BilibiliCommenter:
             "dm_cover_img_str": self._DM_COVER_IMG_STR,
             "dm_img_inter": self._DM_IMG_INTER,
         }
-
+        if pictures_data:
+            post_body_data["pictures"] = json.dumps(pictures_data)
         if forward_to_dynamic:
-            post_body_data_unsigned['sync_to_dynamic'] = 1
-            print("已启用“同时转发到动态”选项。")
+            post_body_data["sync_to_dynamic"] = 1
 
-        # 3. 生成 WBI 签名参数 (wts, w_rid) 并添加到 body 数据中
+        # 4. 添加 WBI 签名
         try:
-            signed_post_body_data = self._sign_params_for_wbi(post_body_data_unsigned)
+            signed_data = self._sign_params_for_wbi(post_body_data)
         except ValueError as e:
             print(f"评论失败：{e}")
             return None
 
-        # 4. 构造完整的 URL
-        full_url = self._COMMENT_ADD_API_URL
-
-        # 5. 更新 Referer 头
-        self.session.headers.update({
-            "Referer": f"https://www.bilibili.com/video/{bvid}/"
-        })
-
-        # 6. 发送 POST 请求
+        # 5. 发起请求
+        self.session.headers.update({"Referer": f"https://www.bilibili.com/video/{bvid}/"})
         try:
-            response = self.session.post(full_url, data=signed_post_body_data)
-            response.raise_for_status()
-            result = response.json()
-
+            resp = self.session.post(self._COMMENT_ADD_API_URL, data=signed_data)
+            resp.raise_for_status()
+            result = resp.json()
             if result.get("code") == 0:
-                print(f"评论发送成功！内容：'{message_content}'")
-                if forward_to_dynamic:
-                    print("评论已成功发送并转发到动态。")
-                rpid = None
-                if result.get("data") and result["data"].get("reply"):
-                    rpid = result["data"]["reply"]["rpid"]
-                    # 默认给自己发的评论点赞
-                    print(f"获取到新评论 rpid: {rpid}，准备为其点赞...")
-                    time.sleep(5)
-                    self.like_comment(oid=oid, rpid=rpid, type_code=1)
+                print("评论发送成功！")
+                rpid = result["data"]["reply"]["rpid"]
+                # 给自己评论点赞
+                time.sleep(5)
+                self.like_comment(oid=oid, rpid=rpid, type_code=type_code)
                 return rpid
             else:
-                print(f"评论发送失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}")
-                return None
-        except requests.exceptions.RequestException as e:
-            print(f"请求发生错误：{e}")
-            return None
+                print(f"评论失败，错误码：{result['code']}, 信息：{result['message']}")
         except Exception as e:
-            print(f"发生未知错误：{e}")
-            return None
+            print(f"请求出错：{e}")
+        return None
 
     def like_comment(self, oid: int, rpid: int, type_code: int = 1) -> bool:
         """
@@ -512,6 +580,7 @@ if __name__ == "__main__":
         target_bvid,
         comment_text,
         comment_type,
+        image_path="test.jpg",
         forward_to_dynamic=True
     )
 
