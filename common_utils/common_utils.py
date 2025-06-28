@@ -1,8 +1,89 @@
 import json
 import os
-
+import cv2
 import numpy as np
+
 import pandas as pd
+
+
+def get_frame_at_time_safe(video_path: str, time_str: str) -> np.ndarray | None:
+    """
+    从视频中提取指定时间点的帧，并在发生任何错误时安全地回退到第一帧。
+
+    - 如果成功，返回目标时间的帧。
+    - 如果时间格式错误、时间超出范围或读取目标帧失败，则返回视频的第一帧。
+    - 如果视频文件无法打开或无法读取第一帧，则返回 None。
+
+    参数:
+    - video_path (str): 视频文件的路径。
+    - time_str (str): "HH:MM:SS" 或 "MM:SS" 格式的时间字符串。
+
+    返回:
+    - np.ndarray: OpenCV格式的图像帧。
+    - None: 仅在视频文件无法打开或损坏时返回。
+    """
+    # 1. 尝试打开视频文件
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"严重错误: 无法打开视频文件: {video_path}。无法获取任何帧。")
+        return None
+
+    # 2. 立即读取第一帧作为备用
+    ret_first, first_frame = cap.read()
+    if not ret_first:
+        print(f"严重错误: 视频 '{video_path}' 可打开但无法读取第一帧。")
+        cap.release()
+        return None
+
+    try:
+        # 3. 尝试解析时间并定位目标帧（正常流程）
+        try:
+            parts = list(map(int, time_str.split(':')))
+            if len(parts) == 3:
+                h, m, s = parts
+            elif len(parts) == 2:
+                h, m, s = 0, parts[0], parts[1]
+            else:
+                raise ValueError("时间格式应为 'HH:MM:SS' 或 'MM:SS'")
+            total_seconds = h * 3600 + m * 60 + s
+        except ValueError as e:
+            # 如果时间格式解析失败，直接触发回退
+            raise ValueError(f"时间格式不正确 ({e})") from e
+
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps == 0:
+            raise IOError("无法读取视频的帧率 (FPS)。")
+
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        video_duration = total_frames / fps
+
+        if total_seconds > video_duration:
+            raise ValueError(f"指定时间 {time_str} 超出视频总时长 ({video_duration:.2f}s)")
+
+        target_frame_index = int(total_seconds * fps)
+
+        # 对于非常接近第一帧的情况，直接使用已读取的第一帧
+        if target_frame_index == 0:
+            return first_frame
+
+        cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame_index)
+        ret, target_frame = cap.read()
+
+        if not ret:
+            raise IOError(f"无法在时间点 {time_str} 读取到帧")
+
+        # 如果一切顺利，返回目标帧
+        return target_frame
+
+    except Exception as e:
+        # 4. 如果try块中出现任何异常，执行回退逻辑
+        print(f"处理时发生异常: {e}")
+        print(">>> 已触发回退机制，将返回视频的第一帧。")
+        return first_frame
+
+    finally:
+        # 5. 确保无论如何都释放视频捕获对象
+        cap.release()
 
 def select_strategies_optimized(
     strategy_df: pd.DataFrame,
