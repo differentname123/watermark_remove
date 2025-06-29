@@ -7,7 +7,7 @@
 :last_date:
     2025/5/28 00:30 (修正 WBI 参数位置，放入 Body)
 :description:
-    Bilibili 评论发送及点赞脚本。
+    Bilibili 评论和弹幕发送及点赞脚本。
     注意：dm_img_* 字段是硬编码的设备指纹，长期使用可能导致风控或失效。
           建议定期更新这些值或考虑使用自动化浏览器。
 """
@@ -35,6 +35,7 @@ except ImportError:
             "bilibili_total_cookie": "SESSDATA=YOUR_SESSDATA; bili_jct=YOUR_CSRF_TOKEN;"  # <-- 替换为你的完整Cookie字符串
         }
         return configs.get(key)
+
 
 def upload_bilibili_image(image_path: str, cookies: dict, csrf_token: str):
     """
@@ -66,7 +67,6 @@ def upload_bilibili_image(image_path: str, cookies: dict, csrf_token: str):
         "category": "daily",
         "csrf": csrf_token,
     }
-
 
     with open(image_path, 'rb') as f:
         # 猜测文件的MIME类型 (e.g., 'image/jpeg', 'image/png')
@@ -100,8 +100,8 @@ def upload_bilibili_image(image_path: str, cookies: dict, csrf_token: str):
 
 class BilibiliCommenter:
     """
-    用于发送 Bilibili 评论并尝试点赞的类。
-    封装了获取 AID、WBI 签名生成和实际评论发送/点赞的逻辑。
+    用于发送 Bilibili 评论、弹幕并尝试点赞的类。
+    封装了获取 AID/CID、WBI 签名生成和实际发送/点赞的逻辑。
     """
 
     # --- WBI 签名相关静态配置 ---
@@ -175,7 +175,8 @@ class BilibiliCommenter:
     # --- API 端点 ---
     _COMMENT_ADD_API_URL = "https://api.bilibili.com/x/v2/reply/add"
     _COMMENT_ACTION_API_URL = "https://api.bilibili.com/x/v2/reply/action"  # 用于点赞/点踩评论
-    _VIDEO_LIKE_API_URL = "https://api.bilibili.com/x/web-interface/archive/like"  # <--- 新增：视频点赞API
+    _VIDEO_LIKE_API_URL = "https://api.bilibili.com/x/web-interface/archive/like"
+    _DANMAKU_POST_API_URL = "https://api.bilibili.com/x/v2/dm/post"  # <--- 新增：发送弹幕API
     _NAV_API_URL = "https://api.bilibili.com/x/web-interface/nav"
     _VIEW_API_URL_TEMPLATE = "https://api.bilibili.com/x/web-interface/view?bvid={bvid_str}"
 
@@ -261,21 +262,22 @@ class BilibiliCommenter:
         params_with_wbi['w_rid'] = wbi_sign
         return params_with_wbi
 
-    def _get_aid_from_bvid(self, bvid_str: str) -> int | None:
-        """根据 BV 号获取视频的 AID"""
+    # <--- 新增：统一获取视频信息的辅助方法 ---
+    def _get_video_info(self, bvid_str: str) -> dict | None:
+        """根据 BV 号获取视频的 aid 和 cid"""
         url = self._VIEW_API_URL_TEMPLATE.format(bvid_str=bvid_str)
-        temp_headers = {"Referer": "https://www.bilibili.com/"}
+        temp_headers = {"Referer": f"https://www.bilibili.com/video/{bvid_str}/"}
         try:
             response = self.session.get(url, headers=temp_headers)
             response.raise_for_status()
             data = response.json()
             if data.get("code") == 0 and data.get("data"):
-                return data["data"]["aid"]
+                return {"aid": data["data"]["aid"], "cid": data["data"]["cid"]}
             else:
-                print(f"获取 AID 失败: {data.get('message')}")
+                print(f"获取视频信息失败 (bvid: {bvid_str}): {data.get('message')}")
                 return None
         except requests.exceptions.RequestException as e:
-            print(f"请求 AID 发生错误：{e}")
+            print(f"请求视频信息发生错误：{e}")
             return None
 
     def _load_wbi_keys(self) -> None:
@@ -298,8 +300,78 @@ class BilibiliCommenter:
             print("警告：未能成功加载 WBI Keys，评论或点赞请求可能失败或被风控。")
 
     # =========================================================================
-    # ======================== 新增的方法：点赞视频 ===========================
+    # ===================== 新增的方法：发送视频弹幕 ==========================
     # =========================================================================
+    def send_danmaku(self, bvid: str, msg: str, progress: int, mode: int = 1, fontsize: int = 25, color: int = 16777215,
+                     pool: int = 0) -> bool:
+        """
+        发送视频弹幕。
+
+        :param bvid: 视频的 BV 号。
+        :param msg: 弹幕内容 (长度小于 100 字符)。
+        :param progress: 弹幕出现在视频内的时间 (单位为毫秒)。
+        :param mode: 弹幕类型 (1:普通滚动, 4:底部, 5:顶部)。默认为 1。
+        :param fontsize: 字号 (12, 16, 18, 25, 36, 45, 64)。默认为 25。
+        :param color: 弹幕颜色 (十进制 RGB888 值)。默认为 16777215 (白色)。
+        :param pool: 弹幕池 (0:普通, 1:字幕, 2:特殊)。默认为 0。
+        :return: True 如果发送成功，否则 False。
+        """
+        print(f"准备向视频 {bvid} 发送弹幕: '{msg}'")
+
+        # 1. 获取视频 aid 和 cid
+        video_info = self._get_video_info(bvid)
+        if not video_info:
+            print("弹幕发送失败：无法获取视频信息 (aid, cid)。")
+            return False
+        cid = video_info['cid']
+        aid = video_info['aid']
+
+        # 2. 准备签名前的 Body 参数
+        # 根据文档，我们将所有参数（包括文档中标记为URL参数的）放入 Body 进行WBI签名
+        # 这与评论接口的行为保持一致，也符合代码中将WBI参数放入Body的修正逻辑
+        unsigned_data = {
+            'type': 1,
+            'oid': cid,
+            'msg': msg,
+            'aid': aid,  # 文档要求 avid 或 bvid 任选一个，示例中使用 aid
+            'progress': progress,
+            'color': color,
+            'fontsize': fontsize,
+            'pool': pool,
+            'mode': mode,
+            'rnd': int(time.time() * 1000000),  # 使用时间戳*10^6可将冷却减至5秒
+            'csrf': self.csrf_token,
+            'web_location': '1315873',  # 文档中提到的URL参数
+        }
+
+        # 3. 添加 WBI 签名
+        try:
+            signed_data = self._sign_params_for_wbi(unsigned_data)
+        except ValueError as e:
+            print(f"弹幕发送失败：{e}")
+            return False
+
+        # 4. 发起请求
+        self.session.headers.update({"Referer": f"https://www.bilibili.com/video/{bvid}/"})
+        try:
+            response = self.session.post(self._DANMAKU_POST_API_URL, data=signed_data)
+            response.raise_for_status()
+            result = response.json()
+
+            if result.get("code") == 0:
+                dmid = result.get("data", {}).get("dmid_str")
+                print(f"弹幕发送成功！Dmid: {dmid}")
+                return True
+            else:
+                print(f"弹幕发送失败，错误码：{result.get('code')}, 信息：{result.get('message')}")
+                return False
+        except requests.exceptions.RequestException as e:
+            print(f"请求弹幕发送接口时发生错误：{e}")
+            return False
+        except Exception as e:
+            print(f"弹幕发送时发生未知错误：{e}")
+            return False
+
     def like_video(self, bvid: str) -> bool:
         """
         对指定的视频进行点赞。此API不需要WBI签名。
@@ -351,10 +423,12 @@ class BilibiliCommenter:
         :param type_code: 目标类型，1 通常代表视频。
         :return: 新回复的 rpid (评论ID) 如果成功，否则返回 None。
         """
-        oid = self._get_aid_from_bvid(bvid)
-        if not oid:
-            print("回复失败：无法获取有效的 AID。")
+        # <--- 重构：使用 _get_video_info ---
+        video_info = self._get_video_info(bvid)
+        if not video_info:
+            print("回复失败：无法获取有效的视频信息。")
             return None
+        oid = video_info['aid']
 
         print(f"准备回复 rpid={parent_rpid} 的评论，先尝试为其点赞...")
         self.like_comment(oid=oid, rpid=parent_rpid, type_code=type_code)
@@ -411,7 +485,6 @@ class BilibiliCommenter:
             print(f"发生未知错误：{e}")
             return None
 
-    # <--- 修改 post_comment 方法 ---
     def post_comment(self,
                      bvid: str,
                      message_content: str,
@@ -435,10 +508,12 @@ class BilibiliCommenter:
             self.like_video(bvid=bvid)
 
         # 1. 获取 AID (oid)
-        oid = self._get_aid_from_bvid(bvid)
-        if not oid:
-            print("评论失败：无法获取有效的 AID。")
+        # <--- 重构：使用 _get_video_info ---
+        video_info = self._get_video_info(bvid)
+        if not video_info:
+            print("评论失败：无法获取有效的视频信息。")
             return None
+        oid = video_info['aid']
 
         pictures_data = None
         # 2. 如果指定了图片路径，就上传
@@ -565,8 +640,8 @@ if __name__ == "__main__":
         print("请编辑脚本，替换 YOUR_CSRF_TOKEN 和 YOUR_SESSDATA 为您的实际信息。")
         exit()
 
-    # --- 评论和点赞配置 ---
-    target_bvid = "BV1Sz4y1S7bx"  # 目标视频 BV 号
+    # --- 评论、弹幕和点赞配置 ---
+    target_bvid = "BV19G3FzeEHi"  # 目标视频 BV 号
     comment_text = f"这是一条由脚本发送的顶级评论! [{time.strftime('%Y-%m-%d %H:%M:%S')}]"  # 顶级评论内容
     comment_type = 1  # 目标类型，1 一般代表视频
 
@@ -580,7 +655,8 @@ if __name__ == "__main__":
         target_bvid,
         comment_text,
         comment_type,
-        image_path="test.jpg",
+        like_video=True,
+        image_path="test.jpg",  # 如需带图评论，请提供有效图片路径，如 "test.jpg"
         forward_to_dynamic=True
     )
 
@@ -599,7 +675,7 @@ if __name__ == "__main__":
         root_comment_id = posted_rpid
         parent_comment_id = posted_rpid
 
-        # 调用新方法进行回复
+        # 调用方法进行回复
         reply_rpid = commenter.reply_to_comment(
             bvid=target_bvid,
             message_content=reply_text,
@@ -616,3 +692,20 @@ if __name__ == "__main__":
     else:
         print("-" * 30)
         print("顶级评论发送失败，无法进行回复操作。")
+
+    # --- 步骤 3: 发送一条弹幕 ---
+    print("-" * 30)
+    print("步骤 3: 尝试发送一条弹幕...")
+    danmaku_text = f"美丽的山脉，心情都好"
+    danmaku_time_ms = 10000  # 弹幕出现在视频第 10 秒 (10000毫秒)
+
+    danmaku_sent = commenter.send_danmaku(
+        bvid=target_bvid,
+        msg=danmaku_text,
+        progress=danmaku_time_ms
+    )
+
+    if danmaku_sent:
+        print("弹幕发送流程成功完成！")
+    else:
+        print("弹幕发送流程失败。")
