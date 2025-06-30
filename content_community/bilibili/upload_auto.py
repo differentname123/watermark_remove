@@ -1,14 +1,13 @@
 import json
 import os
 
-# 假设你的上传函数在这里
 from content_community.bilibili.bilibili_uploader import upload_to_bilibili
 
 # --- 文件路径常量 ---
 METADATA_FILE = '../../LLM/TikTokDownloader/metadata_cache.json'
 
 def get_best_plan_by_potential(data: dict) -> dict:
-    # 这个函数保持不变
+    """根据爆款潜力指数选择最佳方案。"""
     best_plan = None
     highest_score = float('-inf')
 
@@ -23,34 +22,12 @@ def get_best_plan_by_potential(data: dict) -> dict:
     return best_plan
 
 
-def load_uploaded_ids_from_json(filepath: str) -> set:
-    """从 JSON 文件加载已上传的 video_id 列表。"""
-    if not os.path.exists(filepath):
-        return set()
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            # 文件可能是空的，直接 load 会报错
-            content = f.read()
-            if not content:
-                return set()
-            ids_list = json.loads(content)
-            return set(str(item) for item in ids_list)  # 转换为 set 并确保是字符串
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"警告：无法读取或解析JSON记录文件 {filepath}。将创建一个新的记录。错误: {e}")
-        return set()
-
-
-def save_uploaded_ids_to_json(ids_set: set, filepath: str):
-    """将 video_id 集合保存到 JSON 文件。"""
-    try:
-        with open(filepath, 'w', encoding='utf-8') as f:
-            # 将 set 转换为 list 以便 JSON 序列化
-            json.dump(list(ids_set), f, indent=4, ensure_ascii=False)
-    except IOError as e:
-        print(f"错误：无法写入记录到JSON文件 {filepath}: {e}")
-
-
 def auto_upload():
+    """
+    自动读取元数据、选择最佳方案并上传视频。
+    如果视频已上传过，则跳过。
+    上传成功后，将上传信息记录回元数据文件。
+    """
     try:
         with open(METADATA_FILE, 'r', encoding='utf-8') as f:
             metadata_cache = json.load(f)
@@ -61,23 +38,32 @@ def auto_upload():
         print(f"错误：元数据文件 JSON 格式有误 -> {METADATA_FILE}")
         return
 
-    # 3. 遍历视频，进行投稿
     new_uploads_made = False  # 标记是否有新的上传成功
+
+    # 遍历所有视频元数据
     for key, value in metadata_cache.items():
+        print("-" * 50)
+
+        # 1. 检查是否已经投稿成功
+        if 'upload_info' in value:
+            print(f"✅ 跳过 {key}：该视频已于之前投稿成功。")
+            continue
+
         metadata = value.get('metadata')
         if not metadata:
-            print(f"跳过 {key}：缺少 'metadata' 字段。")
+            print(f"⏭️ 跳过 {key}：缺少 'metadata' 字段。")
             continue
         video_id = metadata[0].get('id')
         if not video_id:
-            print(f"跳过 {key}：'metadata' 中缺少 'id' 字段。")
+            print(f"⏭️ 跳过 {key}：'metadata' 中缺少 'id' 字段。")
             continue
 
         video_path = value.get('video_path')
         if not video_path or not os.path.exists(video_path):
-            print(f"跳过 {key} (ID: {video_id})：视频文件路径不存在或未提供 -> {video_path}")
+            print(f"⏭️ 跳过 {key} (ID: {video_id})：视频文件路径不存在或未提供 -> {video_path}")
             continue
 
+        # 2. 准备投稿所需信息
         if 'best_scheme' in value and value['best_scheme']:
             best_scheme = value['best_scheme']
         else:
@@ -85,15 +71,15 @@ def auto_upload():
             best_scheme = get_best_plan_by_potential(title_schemes)
 
         if not best_scheme:
-            print(f"跳过 {key} (ID: {video_id})：未能找到合适的投稿方案。")
+            print(f"⏭️ 跳过 {key} (ID: {video_id})：未能找到合适的投稿方案。")
             continue
+
         abs_cover_path = metadata[0].get('abs_cover_path')
-        if os.path.exists(abs_cover_path):
+        if abs_cover_path and os.path.exists(abs_cover_path):
             cover_path = abs_cover_path
-            print(f"使用绝对封面路径: {cover_path}")
         else:
             cover_path = best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
-            print(f"使用默认封面路径: {cover_path}")
+
         title = best_scheme.get('标题', '欢迎来看我的视频！')
         description_json = best_scheme.get('简介', {})
         description = ""
@@ -104,37 +90,59 @@ def auto_upload():
 
         tags = best_scheme.get('标签', ['AI修复', '视频剪辑', '有趣', '科技', '日常生活'])
         tags_str = ','.join(tags) if isinstance(tags, list) else tags
-
-        print(f"准备投稿视频 (ID: {video_id})，标题：《{title}》")
-
         dynamic = best_scheme.get('简介', {}).get('互动引导', '希望大家喜欢')
+
+        # 将本次投稿所用的参数打包成一个字典
+        upload_params = {
+            'title': title,
+            'description': description,
+            'tags': tags_str,
+            'dynamic': dynamic,
+            'cover_path': cover_path,
+            'video_path': video_path
+        }
+
+        print(f"🚀 准备投稿视频 (ID: {video_id})，标题：《{title}》")
+
+        # 3. 执行投稿
         try:
-            result = upload_to_bilibili(
-                video_path=video_path,
-                cover_path=cover_path,
-                title=title,
-                description=description,
-                tags=tags_str,
-                dynamic=dynamic
-            )
+            result = upload_to_bilibili(**upload_params)
         except Exception as e:
             print(f"❌ 投稿失败：调用 upload_to_bilibili 时发生异常 -> {e}")
             continue
 
+        # 4. 处理投稿结果
+        # B站成功投稿通常返回的code为0
         if result and result.get('aid') and result.get('bvid'):
             print(f"🎉 投稿成功！")
             print(f"   - 标题: {title}")
-            print(f"   - AID: {result['aid']}")
-            print(f"   - BVID: {result['bvid']}")
+            print(f"   - AID: {result.get('aid')}")
+            print(f"   - BVID: {result.get('bvid')}")
+
+            # 创建 upload_info 字段并添加到当前视频的 value 中
+            upload_info = {
+                'upload_params': upload_params,
+                'upload_result': result
+            }
+            metadata_cache[key]['upload_info'] = upload_info  # 直接修改内存中的字典
 
             new_uploads_made = True  # 标记发生了成功的上传
         else:
             error_msg = result.get('message', '未知错误') if isinstance(result, dict) else str(result)
             print(f"❌ 投稿失败: {key} (ID: {video_id})。上传接口返回: {error_msg}")
 
-    # 4. 如果有新的视频成功上传，则更新JSON文件
+    # 5. 如果有新的视频成功上传，则将更新后的 metadata_cache 写回文件
+    print("=" * 50)
     if new_uploads_made:
-        print("记录文件更新完毕。")
+        print("\n检测到新的成功投稿，正在更新元数据文件...")
+        try:
+            with open(METADATA_FILE, 'w', encoding='utf-8') as f:
+                json.dump(metadata_cache, f, indent=4, ensure_ascii=False)
+            print(f"✅ 元数据文件 {METADATA_FILE} 更新成功。")
+        except IOError as e:
+            print(f"🔥 错误：无法写入更新后的元数据到文件 {METADATA_FILE}: {e}")
+    else:
+        print("\n本次运行没有新的成功投稿，元数据文件无需更新。")
 
     print("\n所有任务处理完毕。")
 
