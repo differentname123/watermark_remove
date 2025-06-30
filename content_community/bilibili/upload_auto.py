@@ -1,153 +1,178 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+自动上传脚本（B 站版）
+
+功能说明
+1. 读取权威元数据文件 metadata_cache.json，获取需要处理的全部视频任务。
+2. 读取 / 创建 上传日志文件 metadata_cache_with_uploads.json，判断哪些视频已成功投稿。
+3. 仅对尚未记录成功投稿的视频执行完整上传流程。
+4. 上传成功后，把「权威元数据 + upload_info」写入 / 更新到 metadata_cache_with_uploads.json。
+5. 任何情况下都不修改 metadata_cache.json。
+"""
+
 import json
 import os
+import copy
 
 from content_community.bilibili.bilibili_uploader import upload_to_bilibili, add_image_to_video_end
 
-# --- 文件路径常量 ---
-METADATA_FILE = '../../LLM/TikTokDownloader/metadata_cache.json'
+# ---------- 文件路径常量 ----------
+METADATA_FILE = '../../LLM/TikTokDownloader/metadata_cache.json'           # 权威源
+UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/metadata_cache_with_uploads.json'  # 上传日志
+
+
+# ---------- 工具函数 ----------
+def load_json(path: str, default):
+    """安全地加载 JSON 文件；不存在或格式错误时返回 default。"""
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return default
+    except json.JSONDecodeError as e:
+        print(f"⚠️  警告：文件 {path} JSON 解析失败，原因：{e}。将使用默认值。")
+        return default
+
+
+def save_json(path: str, data: dict):
+    """将 data 保存成 JSON 文件（带缩进、美化）。"""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
 
 def get_best_plan_by_potential(data: dict) -> dict:
-    """根据爆款潜力指数选择最佳方案。"""
-    best_plan = None
-    highest_score = float('-inf')
-
-    for plan_name, plan_info in data.items():
+    """根据“爆款潜力指数”选出分值最高的方案。"""
+    best_plan, highest_score = None, float('-inf')
+    for plan_info in data.values():
         if not isinstance(plan_info, dict):
             continue
         score = plan_info.get("增长潜力", {}).get("爆款潜力指数", 0)
         if score > highest_score:
-            highest_score = score
-            best_plan = plan_info
-
+            highest_score, best_plan = score, plan_info
     return best_plan
 
 
+# ---------- 主逻辑 ----------
 def auto_upload():
-    """
-    自动读取元数据、选择最佳方案并上传视频。
-    如果视频已上传过，则跳过。
-    上传成功后，将上传信息记录回元数据文件。
-    """
-    try:
-        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
-            metadata_cache = json.load(f)
-    except FileNotFoundError:
-        print(f"错误：元数据文件未找到 -> {METADATA_FILE}")
-        return
-    except json.JSONDecodeError:
-        print(f"错误：元数据文件 JSON 格式有误 -> {METADATA_FILE}")
+    # 1. 读取元数据 & 上传日志
+    metadata_cache: dict = load_json(METADATA_FILE, default={})
+    upload_log: dict = load_json(UPLOAD_LOG_FILE, default={})
+
+    if not metadata_cache:
+        print(f"❌ 无可用任务：{METADATA_FILE} 为空或不存在。")
         return
 
-    new_uploads_made = False  # 标记是否有新的上传成功
+    new_uploads_made = False
 
-    # 遍历所有视频元数据
+    # 2. 遍历权威元数据
     for key, value in metadata_cache.items():
-        print("-" * 50)
+        updated_entry = copy.deepcopy(value)
 
-        # 1. 检查是否已经投稿成功
-        if 'upload_info' in value:
-            print(f"✅ 跳过 {key}：该视频已于之前投稿成功。")
+        print("-" * 60)
+
+        # 2.1 若日志里已记录成功投稿，则跳过
+        if key in upload_log and upload_log[key].get("upload_info"):
+            print(f"✅ 已上传，跳过 {key}")
             continue
 
+        # ---------- 数据合法性检查 ----------
         metadata = value.get('metadata')
-        if not metadata:
-            print(f"⏭️ 跳过 {key}：缺少 'metadata' 字段。")
+        if not (isinstance(metadata, list) and metadata):
+            print(f"⏭️ 跳过 {key}：metadata 字段缺失或格式错误。")
             continue
+
         video_id = metadata[0].get('id')
         if not video_id:
-            print(f"⏭️ 跳过 {key}：'metadata' 中缺少 'id' 字段。")
+            print(f"⏭️ 跳过 {key}：metadata 中缺少 id。")
             continue
 
         video_path = value.get('video_path')
         if not video_path or not os.path.exists(video_path):
-            print(f"⏭️ 跳过 {key} (ID: {video_id})：视频文件路径不存在或未提供 -> {video_path}")
+            print(f"⏭️ 跳过 {key} (ID: {video_id})：视频文件缺失 -> {video_path}")
             continue
+
+        # ---------- 预处理：在尾部插入引导图片 ----------
         new_video_path = video_path.replace('.mp4', '_new.mp4')
-        add_image_to_video_end(video_path, 'final.png', new_video_path)
-        video_path = new_video_path  # 更新 video_path 为新的视频文件
-        # 2. 准备投稿所需信息
-        if 'best_scheme' in value and value['best_scheme']:
-            best_scheme = value['best_scheme']
-        else:
-            title_schemes = value.get('title_schemes', {})
-            best_scheme = get_best_plan_by_potential(title_schemes)
+        try:
+            add_image_to_video_end(video_path, 'final.png', new_video_path)
+            video_path = new_video_path
+        except Exception as e:
+            print(f"⚠️  尾部插图失败，继续使用原视频：{e}")
 
+        # ---------- 选择最佳投稿方案 ----------
+        best_scheme = value.get('best_scheme') or get_best_plan_by_potential(
+            value.get('title_schemes', {})
+        )
         if not best_scheme:
-            print(f"⏭️ 跳过 {key} (ID: {video_id})：未能找到合适的投稿方案。")
+            print(f"⏭️ 跳过 {key}：无法选取投稿方案。")
             continue
 
-        abs_cover_path = metadata[0].get('abs_cover_path')
-        if abs_cover_path and os.path.exists(abs_cover_path):
-            cover_path = abs_cover_path
-        else:
-            cover_path = best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
-
+        # ---------- 准备投稿参数 ----------
+        cover_path = (
+            metadata[0].get('abs_cover_path') if os.path.exists(metadata[0].get('abs_cover_path', ''))
+            else best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
+        )
+        origin_tag = metadata[0].get('tag', [])
         title = best_scheme.get('标题', '欢迎来看我的视频！')
         description_json = best_scheme.get('简介', {})
-        description = ""
-        if isinstance(description_json, dict):
-            description = "\n".join(description_json.values())
-        elif isinstance(description_json, str):
-            description = description_json
-
-        tags = best_scheme.get('标签', ['AI修复', '视频剪辑', '有趣', '科技', '日常生活'])
-        tags_str = ','.join(tags) if isinstance(tags, list) else tags
+        description = "\n".join(description_json.values()) if isinstance(description_json, dict) else str(description_json)
+        tags = best_scheme.get('标签', ['AI修复', '视频剪辑'])
+        origin_tag.extend(tags)  # 保留原始标签
+        # 去重origin_tag
+        tags = list(set(origin_tag))
+        tags_str = ",".join(tags) if isinstance(tags, list) else str(tags)
         dynamic = best_scheme.get('简介', {}).get('互动引导', '希望大家喜欢')
 
-        # 将本次投稿所用的参数打包成一个字典
         upload_params = {
-            'title': title,
-            'description': description,
-            'tags': tags_str,
-            'dynamic': dynamic,
-            'cover_path': cover_path,
-            'video_path': video_path
+            "title": title,
+            "description": description,
+            "tags": tags_str,
+            "dynamic": dynamic,
+            "cover_path": cover_path,
+            "video_path": video_path,
         }
 
-        print(f"🚀 准备投稿视频 (ID: {video_id})，标题：《{title}》")
+        print(f"🚀 开始投稿 {key} (ID: {video_id}) - 《{title}》")
 
-        # 3. 执行投稿
+        # ---------- 调用上传接口 ----------
         try:
             result = upload_to_bilibili(**upload_params)
         except Exception as e:
-            print(f"❌ 投稿失败：调用 upload_to_bilibili 时发生异常 -> {e}")
+            print(f"❌ 上传接口异常：{e}")
             continue
 
-        # 4. 处理投稿结果
-        # B站成功投稿通常返回的code为0
-        if result and result.get('aid') and result.get('bvid'):
-            print(f"🎉 投稿成功！")
-            print(f"   - 标题: {title}")
-            print(f"   - AID: {result.get('aid')}")
-            print(f"   - BVID: {result.get('bvid')}")
+        # ---------- 结果处理 ----------
+        if result and result.get("aid") and result.get("bvid"):
+            print(f"🎉 投稿成功！AID={result['aid']}  BVID={result['bvid']}")
 
-            # 创建 upload_info 字段并添加到当前视频的 value 中
-            upload_info = {
-                'upload_params': upload_params,
-                'upload_result': result
+            # 把「权威元数据 + upload_info」写入日志字典
+            updated_entry["upload_info"] = {
+                "upload_params": upload_params,
+                "upload_result": result,
             }
-            metadata_cache[key]['upload_info'] = upload_info  # 直接修改内存中的字典
-
-            new_uploads_made = True  # 标记发生了成功的上传
+            upload_log[key] = updated_entry
+            new_uploads_made = True
         else:
-            error_msg = result.get('message', '未知错误') if isinstance(result, dict) else str(result)
-            print(f"❌ 投稿失败: {key} (ID: {video_id})。上传接口返回: {error_msg}")
+            err = result.get("message", "未知错误") if isinstance(result, dict) else str(result)
+            print(f"❌ 投稿失败：{err}")
 
-    # 5. 如果有新的视频成功上传，则将更新后的 metadata_cache 写回文件
-    print("=" * 50)
+    # 3. 如有新成功上传，则更新日志文件
+    print("=" * 60)
     if new_uploads_made:
-        print("\n检测到新的成功投稿，正在更新元数据文件...")
         try:
-            with open(METADATA_FILE, 'w', encoding='utf-8') as f:
-                json.dump(metadata_cache, f, indent=4, ensure_ascii=False)
-            print(f"✅ 元数据文件 {METADATA_FILE} 更新成功。")
+            save_json(UPLOAD_LOG_FILE, upload_log)
+            print(f"✅ 上传日志已更新 -> {UPLOAD_LOG_FILE}")
         except IOError as e:
-            print(f"🔥 错误：无法写入更新后的元数据到文件 {METADATA_FILE}: {e}")
+            print(f"🔥 写入日志文件失败：{e}")
     else:
-        print("\n本次运行没有新的成功投稿，元数据文件无需更新。")
+        print("本次运行没有新的成功投稿。")
 
-    print("\n所有任务处理完毕。")
+    print("全部任务处理完毕。")
 
 
+# ---------- CLI ----------
 if __name__ == "__main__":
     auto_upload()
