@@ -303,7 +303,7 @@ class BilibiliCommenter:
     # ===================== 新增的方法：发送视频弹幕 ==========================
     # =========================================================================
     def send_danmaku(self, bvid: str, msg: str, progress: int, mode: int = 1, fontsize: int = 25, color: int = 16777215,
-                     pool: int = 0) -> bool:
+                     pool: int = 0, is_up: bool = False) -> bool:
         """
         发送视频弹幕。
 
@@ -343,6 +343,8 @@ class BilibiliCommenter:
             'csrf': self.csrf_token,
             'web_location': '1315873',  # 文档中提到的URL参数
         }
+        if is_up:
+            unsigned_data['checkbox_type'] = 4
 
         # 3. 添加 WBI 签名
         try:
@@ -696,13 +698,14 @@ if __name__ == "__main__":
     # --- 步骤 3: 发送一条弹幕 ---
     print("-" * 30)
     print("步骤 3: 尝试发送一条弹幕...")
-    danmaku_text = f"美丽的山脉，心情都好"
-    danmaku_time_ms = 10000  # 弹幕出现在视频第 10 秒 (10000毫秒)
+    danmaku_text = f"大家怎么样，心情都好"
+    danmaku_time_ms = 2100  # 弹幕出现在视频第 10 秒 (10000毫秒)
 
     danmaku_sent = commenter.send_danmaku(
         bvid=target_bvid,
         msg=danmaku_text,
-        progress=danmaku_time_ms
+        progress=danmaku_time_ms,
+        is_up=True
     )
 
     if danmaku_sent:

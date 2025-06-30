@@ -114,6 +114,8 @@ def auto_upload():
         tags_str = ','.join(tags) if isinstance(tags, list) else tags
 
         print(f"准备投稿视频 (ID: {video_id})，标题：《{title}》")
+
+        dynamic = best_scheme.get('简介', {}).get('互动引导', '希望大家喜欢')
         try:
             result = upload_to_bilibili(
                 video_path=video_path,
@@ -121,6 +123,7 @@ def auto_upload():
                 title=title,
                 description=description,
                 tags=tags_str,
+                dynamic=dynamic
             )
         except Exception as e:
             print(f"❌ 投稿失败：调用 upload_to_bilibili 时发生异常 -> {e}")
