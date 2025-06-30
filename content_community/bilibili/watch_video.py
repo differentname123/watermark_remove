@@ -6,13 +6,6 @@ import urllib.parse
 
 from common_utils.common_utils import get_config
 
-SESSDATA = get_config("nana_bilibili_sessdata_cookie")
-BILI_JCT = get_config("nana_bilibili_csrf_token")
-CONFIG = {
-    "SESSDATA": SESSDATA,
-    "BILI_JCT": BILI_JCT  # 文档中的 csrf
-}
-
 # 心跳间隔时间（秒），Web 端默认为 15 秒
 HEARTBEAT_INTERVAL = 15
 
@@ -41,9 +34,7 @@ class WbiSigner:
             return
         resp = requests.get(
             'https://api.bilibili.com/x/web-interface/nav',
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-            }
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         )
         resp.raise_for_status()
         data = resp.json()['data']['wbi_img']
@@ -65,14 +56,14 @@ class WbiSigner:
 
 
 # =========================================================================
-# 主功能函数
+# 获取视频基本信息
 # =========================================================================
 def get_video_info(session: requests.Session, bvid: str):
     url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
     resp = session.get(url)
     resp.raise_for_status()
     data = resp.json()
-    if data['code'] != 0:
+    if data.get('code') != 0:
         print(f"[错误] 获取视频信息失败: {data.get('message')}")
         return None
     d = data['data']
@@ -81,13 +72,21 @@ def get_video_info(session: requests.Session, bvid: str):
         "cid": d['cid'],
         "duration": d['duration'],
         "title": d['title'],
-        "mid": d['owner']['mid']
     }
 
 
-def simulate_watch_video(bvid: str):
-    if not CONFIG["SESSDATA"] or "你的" in CONFIG["SESSDATA"]:
-        print("[错误] 请先在脚本配置区域填入你的 SESSDATA 和 BILI_JCT！")
+# =========================================================================
+# 模拟观看视频主函数
+# =========================================================================
+def simulate_watch_video(sessdata: str, bili_jct: str, bvid: str):
+    """
+    模拟在 B 站浏览器端完整观看一次视频。
+    :param sessdata: 浏览器登录后的 SESSDATA
+    :param bili_jct: CSRF Token（bili_jct）
+    :param bvid: 视频的 BV 号，例如 "BV1Gw3Nz2ExL"
+    """
+    if not sessdata or "你的" in sessdata:
+        print("[错误] 请传入有效的 SESSDATA 和 BILI_JCT！")
         return
 
     # 准备 Session
@@ -96,10 +95,10 @@ def simulate_watch_video(bvid: str):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Origin": "https://www.bilibili.com",
     })
-    session.cookies.set("SESSDATA", CONFIG["SESSDATA"])
-    session.cookies.set("bili_jct", CONFIG["BILI_JCT"])
+    session.cookies.set("SESSDATA", sessdata)
+    session.cookies.set("bili_jct", bili_jct)
 
-    # 获取 viewer_mid（当前账号的 mid）
+    # 获取当前账号的 mid
     nav = session.get("https://api.bilibili.com/x/web-interface/nav")
     nav.raise_for_status()
     viewer_mid = nav.json()['data']['mid']
@@ -112,8 +111,6 @@ def simulate_watch_video(bvid: str):
     aid, cid, duration, title = (
         info["aid"], info["cid"], info["duration"], info["title"]
     )
-    csrf = CONFIG["BILI_JCT"]
-
     print(f"[*] 视频《{title}》 (aid={aid}, cid={cid}, 时长={duration}s)")
 
     # 1/3: 模拟开始播放
@@ -129,9 +126,8 @@ def simulate_watch_video(bvid: str):
         'w_type': 3,
         'web_location': 1315873,
     }
-
     body_params = {
-        'mid': viewer_mid,    # 用 viewer_mid 而不是 owner_mid
+        'mid': viewer_mid,
         'aid': aid,
         'cid': cid,
         'part': 1,
@@ -154,16 +150,14 @@ def simulate_watch_video(bvid: str):
         'spmid': '333.788.0.0',
         'from_spmid': '333.788.0.0',
         'session': md5(str(time.time()).encode()).hexdigest(),
-        'csrf': csrf,
+        'csrf': bili_jct,
     }
-
     session.headers.update({
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Content-Type": "application/x-www-form-urlencoded",
         "Referer": f"https://www.bilibili.com/video/{bvid}/?vd_source=5d365f9cfcf15bb4bacfcd69a69fc4d4",
     })
-
     signer = WbiSigner()
     signed = signer.sign_url_params(url_params)
     final_url = f"{base_url}?{urllib.parse.urlencode(signed)}"
@@ -183,7 +177,7 @@ def simulate_watch_video(bvid: str):
     while played < duration:
         payload = {
             'aid': aid, 'cid': cid, 'bvid': bvid, 'mid': viewer_mid,
-            'csrf': csrf, 'played_time': played, 'realtime': played,
+            'csrf': bili_jct, 'played_time': played, 'realtime': played,
             'start_ts': start_ts, 'play_type': 0, 'type': 3,
             'sub_type': 0, 'dt': 2, 'last_play_progress_time': played,
         }
@@ -201,7 +195,7 @@ def simulate_watch_video(bvid: str):
     print("\n[3/3] 上报历史记录…")
     rpt = session.post(
         "https://api.bilibili.com/x/v2/history/report",
-        data={"aid": aid, "cid": cid, "progress": duration, "csrf": csrf}
+        data={"aid": aid, "cid": cid, "progress": duration, "csrf": bili_jct}
     ).json()
     if rpt.get('code') == 0:
         print("[+] 历史记录上报成功")
@@ -211,5 +205,54 @@ def simulate_watch_video(bvid: str):
     print("\n[*] 模拟观看完成！")
 
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+def simulate_watch_video_with_log(SESSDATA, BILI_JCT, BV_ID):
+    if not SESSDATA or not BILI_JCT:
+        print("[错误] 请确保配置文件中包含有效的 SESSDATA 和 BILI_JCT！")
+        return
+    print(f"\n正在模拟观看视频 {BV_ID}，使用 SESSDATA: {SESSDATA[:10]}... 和 BILI_JCT: {BILI_JCT[:10]}...")
+    simulate_watch_video(SESSDATA, BILI_JCT, BV_ID)
+
+
+def run_parallel_watch(config_list, BV_ID, max_workers=10):
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(simulate_watch_video_with_log, SESSDATA, BILI_JCT, BV_ID)
+            for SESSDATA, BILI_JCT in config_list
+        ]
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                print(f"[异常] 某个线程执行出错: {e}")
+
+
 if __name__ == "__main__":
-    simulate_watch_video("BV19G3FzeEHi")
+    config_list = []
+    mama_total_cookie = get_config("mama_bilibili_total_cookie")
+    mama_csrf_token = get_config("mama_bilibili_csrf_token")
+    config_list.append((mama_total_cookie, mama_csrf_token))
+    nana_total_cookie = get_config("nana_bilibili_total_cookie")
+    nana_csrf_token = get_config("nana_bilibili_csrf_token")
+    config_list.append((nana_total_cookie, nana_csrf_token))
+    ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
+    ruru_csrf_token = get_config("ruru_bilibili_csrf_token")
+    config_list.append((ruru_total_cookie, ruru_csrf_token))
+    total_cookie = get_config("bilibili_total_cookie")
+    csrf_token = get_config("bilibili_csrf_token")
+    config_list.append((total_cookie, csrf_token))
+
+    BV_ID_list = ['BV1shK2zgEfb', 'BV1RdgrzHEmq', 'BV19BgkzXE23', 'BV1CZg6zwEP5', 'BV1sRg6zPEHo', 'BV1K53NzBECJ',
+                  'BV1BG3KzZEAk', 'BV1xh3wzFEYd', 'BV19X3FzTEso', 'BV15S3FzuEEC', 'BV1X33FzNEoQ', 'BV1LYKmzZEF8',
+                  'BV19G3FzeEHi', 'BV1fw3Fz3E22', 'BV1LFK6zTEp9', 'BV1GcKBzZEqa', 'BV1pLKozcEeQ', 'BV1XBKVzxEZb',
+                  'BV1b1KVzDEUy', 'BV1qTKGzZEes', 'BV1sDK3zzEfe', 'BV1koK3zvEek', 'BV1V4g1zZEW6', 'BV1h8g1zdErz',
+                  'BV138g1zdEZ2', 'BV1Qgg2ztE4T', 'BV1fog1zTE9G', 'BV1fog1zTEyq', 'BV1xqgCzVE6G', 'BV1HC3PzfEz3',
+                  'BV1nC3PzfEvJ', 'BV1HC3PzfESh', 'BV1nC3PzfEfP', 'BV1t83PzBEWm', 'BV1Mq7pzMEW3']
+    while True:
+        for BV_ID in BV_ID_list:
+            print(f"\n开始模拟观看视频 {BV_ID} 的任务...")
+            run_parallel_watch(config_list, BV_ID)
+            print(f"完成模拟观看视频 {BV_ID} 的任务。")
+
