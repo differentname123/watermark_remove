@@ -1,7 +1,7 @@
 import json
 import os
 
-from content_community.bilibili.bilibili_uploader import upload_to_bilibili
+from content_community.bilibili.bilibili_uploader import upload_to_bilibili, add_image_to_video_end
 
 # --- 文件路径常量 ---
 METADATA_FILE = '../../LLM/TikTokDownloader/metadata_cache.json'
@@ -62,7 +62,9 @@ def auto_upload():
         if not video_path or not os.path.exists(video_path):
             print(f"⏭️ 跳过 {key} (ID: {video_id})：视频文件路径不存在或未提供 -> {video_path}")
             continue
-
+        new_video_path = video_path.replace('.mp4', '_new.mp4')
+        add_image_to_video_end(video_path, 'final.png', new_video_path)
+        video_path = new_video_path  # 更新 video_path 为新的视频文件
         # 2. 准备投稿所需信息
         if 'best_scheme' in value and value['best_scheme']:
             best_scheme = value['best_scheme']

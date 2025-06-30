@@ -7,6 +7,67 @@ import math
 import time
 import urllib.parse
 
+import os
+import subprocess
+import json
+
+
+def probe_video(path):
+    """用 ffprobe 返回字典：{width, height, fps}"""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,r_frame_rate",
+        "-of", "json",
+        path
+    ]
+    # 注意：ffprobe 已经使用了 -v error，所以它本身就很安静，无需修改。
+    out = subprocess.check_output(cmd)
+    info = json.loads(out)["streams"][0]
+    num, den = map(int, info["r_frame_rate"].split("/"))
+    return {
+        "width": info["width"],
+        "height": info["height"],
+        "fps": num / den
+    }
+
+
+def probe_duration(path):
+    """返回视频时长（秒）"""
+    out = subprocess.check_output([
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        path
+    ])
+    return float(out)
+
+def add_image_to_video_end(
+    video_path, image_path, output_path, image_duration=1.0
+):
+    meta = probe_video(video_path)
+    video_dur = probe_duration(video_path)
+    total_dur = video_dur + image_duration
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-loglevel", "error",
+        "-i", video_path,
+        "-loop", "1", "-t", str(image_duration), "-i", image_path,
+        "-filter_complex",
+        f"[1:v]fps={meta['fps']:.2f},scale={meta['width']}:{meta['height']},format=yuv420p[img];"
+        f"[0:v][img]concat=n=2:v=1:a=0[v]",
+        "-map", "[v]",
+        "-map", "0:a?",            # 如果有音频就映射
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",             # 必须重新编码才能用 apad
+        "-af", "apad",             # 自动补零
+        "-t", str(total_dur),      # 强制输出时长
+        output_path
+    ]
+    subprocess.run(cmd, check=True)
+
 from common_utils.common_utils import get_config
 
 # --- 配置参数 ---
