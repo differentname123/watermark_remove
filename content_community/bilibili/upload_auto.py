@@ -6,9 +6,6 @@ from content_community.bilibili.bilibili_uploader import upload_to_bilibili
 
 # --- 文件路径常量 ---
 METADATA_FILE = '../../LLM/TikTokDownloader/metadata_cache.json'
-# 使用 JSON 文件来记录已成功投稿的 video_id
-UPLOADED_LOG_FILE = 'uploaded_videos.json'
-
 
 def get_best_plan_by_potential(data: dict) -> dict:
     # 这个函数保持不变
@@ -54,11 +51,6 @@ def save_uploaded_ids_to_json(ids_set: set, filepath: str):
 
 
 def auto_upload():
-    # 1. 从 JSON 文件加载已投稿的 video_id
-    uploaded_ids = load_uploaded_ids_from_json(UPLOADED_LOG_FILE)
-    print(f"已加载 {len(uploaded_ids)} 条已投稿记录。")
-
-    # 2. 读取元数据文件
     try:
         with open(METADATA_FILE, 'r', encoding='utf-8') as f:
             metadata_cache = json.load(f)
@@ -81,11 +73,6 @@ def auto_upload():
             print(f"跳过 {key}：'metadata' 中缺少 'id' 字段。")
             continue
 
-        # 检查是否已投稿
-        if str(video_id) in uploaded_ids:
-            print(f"跳过 {key} (ID: {video_id})：此视频已投稿。") # 可以取消注释以获得更详细的输出
-            continue
-
         video_path = value.get('video_path')
         if not video_path or not os.path.exists(video_path):
             print(f"跳过 {key} (ID: {video_id})：视频文件路径不存在或未提供 -> {video_path}")
@@ -100,8 +87,13 @@ def auto_upload():
         if not best_scheme:
             print(f"跳过 {key} (ID: {video_id})：未能找到合适的投稿方案。")
             continue
-
-        cover_path = best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
+        abs_cover_path = metadata[0].get('abs_cover_path')
+        if os.path.exists(abs_cover_path):
+            cover_path = abs_cover_path
+            print(f"使用绝对封面路径: {cover_path}")
+        else:
+            cover_path = best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
+            print(f"使用默认封面路径: {cover_path}")
         title = best_scheme.get('标题', '欢迎来看我的视频！')
         description_json = best_scheme.get('简介', {})
         description = ""
@@ -135,8 +127,6 @@ def auto_upload():
             print(f"   - AID: {result['aid']}")
             print(f"   - BVID: {result['bvid']}")
 
-            # 将新的 video_id 添加到集合中
-            uploaded_ids.add(str(video_id))
             new_uploads_made = True  # 标记发生了成功的上传
         else:
             error_msg = result.get('message', '未知错误') if isinstance(result, dict) else str(result)
@@ -144,8 +134,6 @@ def auto_upload():
 
     # 4. 如果有新的视频成功上传，则更新JSON文件
     if new_uploads_made:
-        print(f"\n正在更新投稿记录文件: {UPLOADED_LOG_FILE}")
-        save_uploaded_ids_to_json(uploaded_ids, UPLOADED_LOG_FILE)
         print("记录文件更新完毕。")
 
     print("\n所有任务处理完毕。")
