@@ -15,6 +15,7 @@
 import json
 import os
 import copy
+import time
 
 from content_community.bilibili.bilibili_uploader import upload_to_bilibili, add_image_to_video_end
 
@@ -175,4 +176,6 @@ def auto_upload():
 
 # ---------- CLI ----------
 if __name__ == "__main__":
-    auto_upload()
+    while True:
+        auto_upload()
+        time.sleep(60 * 60)  # 每小时运行一次
