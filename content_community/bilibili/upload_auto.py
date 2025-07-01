@@ -143,6 +143,8 @@ def auto_upload():
         title = best_scheme.get('标题', '欢迎来看我的视频！')
         human_type2 = best_scheme.get('分区编号', 21)
         topic_json = fetch_bili_topics(config[2], type_pid=human_type2)
+        topic_name = '骑行去追夏天的风'  # 默认话题名称
+        topic_id = 1313687  # 默认话题ID
         topic_detail = {
             "from_topic_id": 1313687,
             "from_source": "arc.web.recommend",
@@ -181,6 +183,7 @@ def auto_upload():
             "bili_jct": config[1],
             "human_type2": human_type2,
             "topic_detail": topic_detail,
+            "topic_id": topic_id,
         }
 
         print(f"🚀 开始投稿 {key} (ID: {video_id}) - 《{title}》")

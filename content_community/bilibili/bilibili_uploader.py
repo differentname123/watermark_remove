@@ -354,7 +354,9 @@ def submit_post(
     no_reprint: int,
     bili_jct: str = BILI_JCT,
     human_type2=1002,
-    topic_detail={"from_topic_id": 1313687, "from_source": "arc.web.recommend"}
+    topic_detail={"from_topic_id": 1313687, "from_source": "arc.web.recommend"},
+    topic_id: int = 1313687
+
 ) -> dict:
     """
     投递稿件，返回 aid 和 bvid。
@@ -383,6 +385,7 @@ def submit_post(
         "up_close_danmu": False,
         "human_type2": human_type2,
         "topic_detail": topic_detail,
+        "topic_id": topic_id,
         "web_os": 3,
         "csrf": bili_jct,
     }
@@ -413,7 +416,8 @@ def upload_to_bilibili(
     sessdata=SESSDATA,
     bili_jct=BILI_JCT,
     human_type2=1002,
-    topic_detail={"from_topic_id": 1313687,"from_source": "arc.web.recommend"}
+    topic_detail={"from_topic_id": 1313687,"from_source": "arc.web.recommend"},
+    topic_id: int = 1313687
 ) -> dict:
     """
     一步完成B站投稿流程，返回投稿结果。
@@ -434,7 +438,7 @@ def upload_to_bilibili(
     return submit_post(
         sess, cover_url, biz_id, filename,
         title, description, tags,
-        copyright_type, tid, recreate, dynamic, no_reprint,bili_jct=bili_jct,human_type2=human_type2, topic_detail=topic_detail
+        copyright_type, tid, recreate, dynamic, no_reprint,bili_jct=bili_jct,human_type2=human_type2, topic_detail=topic_detail,topic_id=topic_id
     )
 
 
