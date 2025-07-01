@@ -491,7 +491,7 @@ def comment_worker():
     ruru_csrf_token = get_config("ruru_bilibili_csrf_token")
     ruru_commenter = BilibiliCommenter(ruru_total_cookie, ruru_csrf_token)
 
-    commenter_list = [mama_commenter, ruru_commenter, base_commenter]
+    commenter_list = [ruru_commenter, base_commenter, mama_commenter]
 
 
 
