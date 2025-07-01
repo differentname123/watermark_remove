@@ -43,20 +43,41 @@ def probe_duration(path):
     return float(out)
 
 def add_image_to_video_end(
-    video_path, image_path, output_path, image_duration=1.0
-):
+    video_path: str,
+    image_path: str,
+    output_path: str,
+    image_duration: float = 1.0,
+    max_retries: int = 3
+) -> None:
+    """
+    将一张图片拼接到视频末尾。如果输出文件小于输入视频文件，最多重试 max_retries 次。
+
+    :param video_path: 输入视频路径
+    :param image_path: 输入图片路径
+    :param output_path: 输出视频路径
+    :param image_duration: 图片在视频末尾的持续时长（秒）
+    :param max_retries: 最大重试次数
+    :raises RuntimeError: 如果所有重试均失败
+    """
+    # 初次探测视频元信息、时长
     meta = probe_video(video_path)
     video_dur = probe_duration(video_path)
     total_dur = video_dur + image_duration
 
-    cmd = [
-        "ffmpeg", "-y",
-        "-loglevel", "error",
+    # 构造 filter_complex 字符串
+    filter_complex = (
+        f"[1:v]fps={meta['fps']:.2f},"
+        f"scale={meta['width']}:{meta['height']},"
+        "format=yuv420p[img];"
+        "[0:v][img]concat=n=2:v=1:a=0[v]"
+    )
+
+    # 公共 ffmpeg 参数
+    base_cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
         "-i", video_path,
         "-loop", "1", "-t", str(image_duration), "-i", image_path,
-        "-filter_complex",
-        f"[1:v]fps={meta['fps']:.2f},scale={meta['width']}:{meta['height']},format=yuv420p[img];"
-        f"[0:v][img]concat=n=2:v=1:a=0[v]",
+        "-filter_complex", filter_complex,
         "-map", "[v]",
         "-map", "0:a?",            # 如果有音频就映射
         "-c:v", "libx264",
@@ -64,9 +85,32 @@ def add_image_to_video_end(
         "-c:a", "aac",             # 必须重新编码才能用 apad
         "-af", "apad",             # 自动补零
         "-t", str(total_dur),      # 强制输出时长
-        output_path
     ]
-    subprocess.run(cmd, check=True)
+
+    input_size = os.path.getsize(video_path)
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            # 每次都重新生成输出文件
+            cmd = base_cmd + [output_path]
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            # ffmpeg 出错，记录并重试
+            print(f"[警告] 第 {attempt} 次合成失败：{e}")
+        else:
+            # 检查输出文件大小
+            if os.path.exists(output_path):
+                output_size = os.path.getsize(output_path)
+                if output_size >= input_size:
+                    # 成功且大小正常，退出循环
+                    return
+                else:
+                    print(f"[警告] 第 {attempt} 次生成的视频大小 ({output_size}) 小于输入视频大小 ({input_size})，重试中...")
+            else:
+                print(f"[警告] 第 {attempt} 次没有生成输出文件，重试中...")
+
+    # 如果循环结束仍未成功，则抛出异常
+    raise RuntimeError(f"多次尝试后仍未生成有效视频（{max_retries} 次）")
 
 from common_utils.common_utils import get_config
 

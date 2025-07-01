@@ -22,7 +22,7 @@ from content_community.bilibili.bilibili_uploader import upload_to_bilibili, add
 # ---------- 文件路径常量 ----------
 METADATA_FILE = '../../LLM/TikTokDownloader/metadata_cache.json'           # 权威源
 UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/metadata_cache_with_uploads.json'  # 上传日志
-
+persistent_tasks_file = "../../LLM/TikTokDownloader/persistent_tasks.json"
 
 # ---------- 工具函数 ----------
 def load_json(path: str, default):
@@ -59,6 +59,7 @@ def get_best_plan_by_potential(data: dict) -> dict:
 
 # ---------- 主逻辑 ----------
 def auto_upload():
+    temp_set = set()  # 用于临时存储已处理的任务，避免重复处理
     # 1. 读取元数据 & 上传日志
     metadata_cache: dict = load_json(METADATA_FILE, default={})
     upload_log: dict = load_json(UPLOAD_LOG_FILE, default={})
@@ -92,6 +93,7 @@ def auto_upload():
         )
         if not best_scheme:
             print(f"⏭️ 跳过 {key}：无法选取投稿方案。")
+            temp_set.add(key)  # 添加到临时集合，避免重复处理
             continue
 
         video_id = metadata[0].get('id')
@@ -175,6 +177,13 @@ def auto_upload():
                 print(f"🔥 写入日志文件失败：{e}")
         else:
             print("本次运行没有新的成功投稿。")
+
+    if len(temp_set) > 0:
+        print(f"⚠️ 跳过了 {len(temp_set)} 个任务：{', '.join(temp_set)}")
+        persistent_tasks = load_json(persistent_tasks_file, default={})
+        persistent_tasks = set(persistent_tasks)
+        persistent_tasks.update(temp_set)
+        save_json(persistent_tasks_file, list(persistent_tasks))
 
     print("全部任务处理完毕。")
 
