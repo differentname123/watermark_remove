@@ -101,7 +101,7 @@ def auto_upload():
 
         video_path = value.get('video_path')
         if not video_path or not os.path.exists(video_path):
-            # print(f"⏭️ 跳过 {key} (ID: {video_id})：视频文件缺失 -> {video_path}")
+            print(f"⏭️ 跳过 {key} (ID: {video_id})：视频文件缺失 -> {video_path}")
             continue
 
         # ---------- 预处理：在尾部插入引导图片 ----------
