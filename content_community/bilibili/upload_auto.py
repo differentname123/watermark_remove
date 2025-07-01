@@ -83,7 +83,7 @@ def auto_upload():
         # ---------- 数据合法性检查 ----------
         metadata = value.get('metadata')
         if not (isinstance(metadata, list) and metadata):
-            print(f"⏭️ 跳过 {key}：metadata 字段缺失或格式错误。")
+            print(f"⏭️ 跳过 {key}：metadata 字段缺失或格式错误。{metadata}")
             continue
 
         # ---------- 选择最佳投稿方案 ----------
