@@ -125,6 +125,7 @@ def auto_upload():
         origin_tag.extend(tags)  # 保留原始标签
         # 去重origin_tag
         tags = list(set(origin_tag))
+        tags = tags[:12]
         tags_str = ",".join(tags) if isinstance(tags, list) else str(tags)
         dynamic = best_scheme.get('简介', {}).get('互动引导', '希望大家喜欢')
 
@@ -144,6 +145,7 @@ def auto_upload():
             result = upload_to_bilibili(**upload_params)
         except Exception as e:
             print(f"❌ 上传接口异常：{e}")
+            print(upload_params)
             continue
 
         # ---------- 结果处理 ----------
