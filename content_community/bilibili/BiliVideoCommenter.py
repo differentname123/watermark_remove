@@ -478,7 +478,7 @@ def video_fetcher_worker():
 # (评论功能保留，暂不启用)
 def comment_worker():
     """评论线程：从队列获取视频并发表评论。"""
-    # base_commenter = BilibiliCommenter(CONFIG['COOKIE'], CONFIG['CSRF_TOKEN'])
+    base_commenter = BilibiliCommenter(CONFIG['COOKIE'], CONFIG['CSRF_TOKEN'])
     # nana_total_cookie = get_config("nana_bilibili_total_cookie")
     # nana_csrf_token = get_config("nana_bilibili_csrf_token")
     # nana_commenter = BilibiliCommenter(nana_total_cookie, nana_csrf_token)
@@ -491,7 +491,7 @@ def comment_worker():
     ruru_csrf_token = get_config("ruru_bilibili_csrf_token")
     ruru_commenter = BilibiliCommenter(ruru_total_cookie, ruru_csrf_token)
 
-    commenter_list = [mama_commenter, ruru_commenter]
+    commenter_list = [mama_commenter, ruru_commenter, base_commenter]
 
 
 

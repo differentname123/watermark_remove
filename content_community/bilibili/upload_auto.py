@@ -51,6 +51,7 @@ def get_best_plan_by_potential(data: dict) -> dict:
         if not isinstance(plan_info, dict):
             continue
         score = plan_info.get("增长潜力", {}).get("爆款潜力指数", 0)
+        score = float(score)
         if score > highest_score:
             highest_score, best_plan = score, plan_info
     return best_plan
@@ -160,16 +161,16 @@ def auto_upload():
             err = result.get("message", "未知错误") if isinstance(result, dict) else str(result)
             print(f"❌ 投稿失败：{err}")
 
-    # 3. 如有新成功上传，则更新日志文件
-    print("=" * 60)
-    if new_uploads_made:
-        try:
-            save_json(UPLOAD_LOG_FILE, upload_log)
-            print(f"✅ 上传日志已更新 -> {UPLOAD_LOG_FILE}")
-        except IOError as e:
-            print(f"🔥 写入日志文件失败：{e}")
-    else:
-        print("本次运行没有新的成功投稿。")
+        # 3. 如有新成功上传，则更新日志文件
+        print("=" * 60)
+        if new_uploads_made:
+            try:
+                save_json(UPLOAD_LOG_FILE, upload_log)
+                print(f"✅ 上传日志已更新 -> {UPLOAD_LOG_FILE}")
+            except IOError as e:
+                print(f"🔥 写入日志文件失败：{e}")
+        else:
+            print("本次运行没有新的成功投稿。")
 
     print("全部任务处理完毕。")
 
@@ -178,4 +179,4 @@ def auto_upload():
 if __name__ == "__main__":
     while True:
         auto_upload()
-        time.sleep(60 * 60)  # 每小时运行一次
+        time.sleep(60)  # 每小时运行一次
