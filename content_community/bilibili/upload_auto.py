@@ -22,15 +22,17 @@ config_map = {}
 
 base_SESSDATA = get_config("bilibili_sessdata_cookie")  # 必需。你的B站登录会话 SESSDATA cookie 值。
 base_BILI_JCT = get_config("bilibili_csrf_token")
+base_total_cookie = get_config("bilibili_total_cookie")
 
-config_map['base'] = (base_SESSDATA, base_BILI_JCT)
+config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 
 mama_SESSDATA = get_config("mama_bilibili_sessdata_cookie")  # 可选。妈妈账号的 SESSDATA cookie 值。
 mama_BILI_JCT = get_config("mama_bilibili_csrf_token")
-config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT)
+mama_total_cookie = get_config("mama_bilibili_total_cookie")
+config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT, mama_total_cookie)
 
 
-from content_community.bilibili.bilibili_uploader import upload_to_bilibili, add_image_to_video_end
+from content_community.bilibili.bilibili_uploader import upload_to_bilibili, add_image_to_video_end, fetch_bili_topics
 
 # ---------- 文件路径常量 ----------
 METADATA_FILE = '../../LLM/TikTokDownloader/metadata_cache.json'           # 权威源
@@ -139,6 +141,25 @@ def auto_upload():
         )
         origin_tag = metadata[0].get('tag', [])
         title = best_scheme.get('标题', '欢迎来看我的视频！')
+        human_type2 = best_scheme.get('分区编号', 21)
+        topic_json = fetch_bili_topics(config[2], type_pid=human_type2)
+        topic_detail = {
+            "from_topic_id": 1313687,
+            "from_source": "arc.web.recommend",
+            'topic_name': '骑行去追夏天的风'
+        }
+        # 尝试获取data字段下面的topics列表中一个个元素的topic_id
+        if isinstance(topic_json, dict) and 'data' in topic_json:
+            topics = topic_json.get('data', {}).get('topics', [])
+            if topics:
+                topic_id = topics[0].get('topic_id', human_type2)
+                topic_name = topics[0].get('topic_name', '骑行去追夏天的风')
+                topic_detail['from_topic_id'] = topic_id
+                topic_detail['topic_name'] = topic_name
+        else:
+            print(f"⚠️ 获取分区 {human_type2} 的话题失败，使用默认值。")
+
+
         description_json = best_scheme.get('简介', {})
         description = "\n".join(description_json.values()) if isinstance(description_json, dict) else str(description_json)
         tags = best_scheme.get('标签', ['AI修复', '视频剪辑'])
@@ -158,6 +179,8 @@ def auto_upload():
             "video_path": video_path,
             "sessdata": config[0],
             "bili_jct": config[1],
+            "human_type2": human_type2,
+            "topic_detail": topic_detail,
         }
 
         print(f"🚀 开始投稿 {key} (ID: {video_id}) - 《{title}》")

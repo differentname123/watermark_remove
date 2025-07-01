@@ -167,6 +167,54 @@ def upload_cover(session: requests.Session, image_path: str, bili_jct=BILI_JCT) 
         raise RuntimeError(f"封面上传失败：{result.get('message')}")
     return result["data"]["url"]
 
+def fetch_bili_topics(cookie: str, type_pid=1029, type_id=21):
+    """
+    使用给定的 Cookie 获取 B 站创作中心话题类型信息。
+
+    参数:
+        cookie (str): 用于请求的完整 Cookie。
+
+    返回:
+        dict: 返回接口返回的 JSON 数据，如果请求失败则返回 None。
+    """
+    base_url = "https://member.bilibili.com/x/vupre/web/topic/type/v2"
+
+    # 请求参数
+    params = {
+        "pn": 0,
+        "ps": 200,
+        "platform": "pc",
+        "type_id": 21,
+        "type_pid": type_pid,
+    }
+
+    # 构造请求头
+    headers = {
+        "accept": "application/json, text/plain, */*",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+        "sec-ch-ua": "\"Microsoft Edge\";v=\"137\", \"Chromium\";v=\"137\", \"Not/A)Brand\";v=\"24\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "Referer": "https://member.bilibili.com/platform/upload/video/frame?page_from=creative_home_top_upload",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 Edg/137.0.0.0",
+        "Cookie": cookie
+    }
+
+    try:
+        session = requests.Session()
+        response = session.get(base_url, params=params, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        return data
+    except requests.exceptions.RequestException as e:
+        print(f"请求失败: {e}")
+        if 'response' in locals() and response is not None:
+            print(f"状态码: {response.status_code}")
+            print(f"响应文本: {response.text}")
+        return None
 
 def preupload_video(session: requests.Session, video_path: str) -> dict:
     """
@@ -304,7 +352,9 @@ def submit_post(
     recreate: int,
     dynamic: str,
     no_reprint: int,
-    bili_jct: str = BILI_JCT
+    bili_jct: str = BILI_JCT,
+    human_type2=1002,
+    topic_detail={"from_topic_id": 1313687, "from_source": "arc.web.recommend"}
 ) -> dict:
     """
     投递稿件，返回 aid 和 bvid。
@@ -331,6 +381,8 @@ def submit_post(
         "up_selection_reply": False,
         "up_close_reply": False,
         "up_close_danmu": False,
+        "human_type2": human_type2,
+        "topic_detail": topic_detail,
         "web_os": 3,
         "csrf": bili_jct,
     }
@@ -359,7 +411,9 @@ def upload_to_bilibili(
     dynamic: str = DEFAULT_DYNAMIC,
     no_reprint: int = DEFAULT_NO_REPRINT,
     sessdata=SESSDATA,
-    bili_jct=BILI_JCT
+    bili_jct=BILI_JCT,
+    human_type2=1002,
+    topic_detail={"from_topic_id": 1313687,"from_source": "arc.web.recommend"}
 ) -> dict:
     """
     一步完成B站投稿流程，返回投稿结果。
@@ -380,7 +434,7 @@ def upload_to_bilibili(
     return submit_post(
         sess, cover_url, biz_id, filename,
         title, description, tags,
-        copyright_type, tid, recreate, dynamic, no_reprint,bili_jct=bili_jct
+        copyright_type, tid, recreate, dynamic, no_reprint,bili_jct=bili_jct,human_type2=human_type2, topic_detail=topic_detail
     )
 
 
