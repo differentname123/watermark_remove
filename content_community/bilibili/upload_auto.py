@@ -73,7 +73,7 @@ def auto_upload():
     for key, value in metadata_cache.items():
         updated_entry = copy.deepcopy(value)
 
-        print("-" * 60)
+        # print("-" * 60)
 
         # 2.1 若日志里已记录成功投稿，则跳过
         if key in upload_log and upload_log[key].get("upload_info"):
@@ -166,7 +166,7 @@ def auto_upload():
             print(f"❌ 投稿失败：{err}")
 
         # 3. 如有新成功上传，则更新日志文件
-        print("=" * 60)
+        # print("=" * 60)
         if new_uploads_made:
             try:
                 save_json(UPLOAD_LOG_FILE, upload_log)
