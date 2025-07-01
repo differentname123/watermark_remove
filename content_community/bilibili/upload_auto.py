@@ -17,6 +17,19 @@ import os
 import copy
 import time
 
+from common_utils.common_utils import get_config
+config_map = {}
+
+base_SESSDATA = get_config("bilibili_sessdata_cookie")  # 必需。你的B站登录会话 SESSDATA cookie 值。
+base_BILI_JCT = get_config("bilibili_csrf_token")
+
+config_map['base'] = (base_SESSDATA, base_BILI_JCT)
+
+mama_SESSDATA = get_config("mama_bilibili_sessdata_cookie")  # 可选。妈妈账号的 SESSDATA cookie 值。
+mama_BILI_JCT = get_config("mama_bilibili_csrf_token")
+config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT)
+
+
 from content_community.bilibili.bilibili_uploader import upload_to_bilibili, add_image_to_video_end
 
 # ---------- 文件路径常量 ----------
@@ -83,6 +96,9 @@ def auto_upload():
 
         # ---------- 数据合法性检查 ----------
         metadata = value.get('metadata')
+        userName = value.get('userName', 'base')
+        config = config_map.get(userName, config_map['base'])
+        print(f"🔍 处理 {key} (用户: {userName})")
         if not (isinstance(metadata, list) and metadata):
             print(f"⏭️ 跳过 {key}：metadata 字段缺失或格式错误。{metadata}")
             continue
@@ -140,6 +156,8 @@ def auto_upload():
             "dynamic": dynamic,
             "cover_path": cover_path,
             "video_path": video_path,
+            "sessdata": config[0],
+            "bili_jct": config[1],
         }
 
         print(f"🚀 开始投稿 {key} (ID: {video_id}) - 《{title}》")

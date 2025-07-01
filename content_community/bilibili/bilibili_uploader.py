@@ -137,18 +137,18 @@ HEADERS = {
 }
 
 
-def get_session() -> requests.Session:
+def get_session(sessdata, bili_jct) -> requests.Session:
     """
     创建并返回带有登录 Cookie 的 requests Session
     """
     sess = requests.Session()
     sess.headers.update(HEADERS)
-    sess.cookies.set("SESSDATA", SESSDATA)
-    sess.cookies.set("bili_jct", BILI_JCT)
+    sess.cookies.set("SESSDATA", sessdata)
+    sess.cookies.set("bili_jct", bili_jct)
     return sess
 
 
-def upload_cover(session: requests.Session, image_path: str) -> str:
+def upload_cover(session: requests.Session, image_path: str, bili_jct=BILI_JCT) -> str:
     """
     上传封面图片，返回封面 URL。
     """
@@ -159,7 +159,7 @@ def upload_cover(session: requests.Session, image_path: str) -> str:
     resp = session.post(
         "https://member.bilibili.com/x/vu/web/cover/up",
         params={"ts": int(time.time() * 1000)},
-        data={"csrf": BILI_JCT, "cover": cover_base64}
+        data={"csrf": bili_jct, "cover": cover_base64}
     )
     resp.raise_for_status()
     result = resp.json()
@@ -304,6 +304,7 @@ def submit_post(
     recreate: int,
     dynamic: str,
     no_reprint: int,
+    bili_jct: str = BILI_JCT
 ) -> dict:
     """
     投递稿件，返回 aid 和 bvid。
@@ -331,11 +332,11 @@ def submit_post(
         "up_close_reply": False,
         "up_close_danmu": False,
         "web_os": 3,
-        "csrf": BILI_JCT,
+        "csrf": bili_jct,
     }
     resp = session.post(
         "https://member.bilibili.com/x/vu/web/add/v3",
-        params={"ts": int(time.time() * 1000), "csrf": BILI_JCT},
+        params={"ts": int(time.time() * 1000), "csrf": bili_jct},
         headers={"Content-Type": "application/json; charset=utf-8"},
         json=payload,
     )
@@ -357,6 +358,8 @@ def upload_to_bilibili(
     recreate: int = DEFAULT_RECREATE,
     dynamic: str = DEFAULT_DYNAMIC,
     no_reprint: int = DEFAULT_NO_REPRINT,
+    sessdata=SESSDATA,
+    bili_jct=BILI_JCT
 ) -> dict:
     """
     一步完成B站投稿流程，返回投稿结果。
@@ -366,8 +369,8 @@ def upload_to_bilibili(
     if not os.path.exists(video_path) or not os.path.exists(cover_path):
         raise FileNotFoundError("视频或封面文件不存在")
 
-    sess = get_session()
-    cover_url = upload_cover(sess, cover_path)
+    sess = get_session(sessdata, bili_jct)
+    cover_url = upload_cover(sess, cover_path, bili_jct=bili_jct)
     pre = preupload_video(sess, video_path)
     biz_id = pre["biz_id"]
     filename = os.path.splitext(os.path.basename(pre["upos_uri"]))[0]
@@ -377,7 +380,7 @@ def upload_to_bilibili(
     return submit_post(
         sess, cover_url, biz_id, filename,
         title, description, tags,
-        copyright_type, tid, recreate, dynamic, no_reprint
+        copyright_type, tid, recreate, dynamic, no_reprint,bili_jct=bili_jct
     )
 
 
