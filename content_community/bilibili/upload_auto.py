@@ -140,6 +140,7 @@ def auto_upload():
             else best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
         )
         origin_tag = metadata[0].get('tag', [])
+        origin_tag.extend(metadata[0].get('text_extra', []))
         title = best_scheme.get('标题', '欢迎来看我的视频！')
         human_type2 = best_scheme.get('分区编号', 21)
         topic_json = fetch_bili_topics(config[2], type_pid=human_type2)
