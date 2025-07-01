@@ -86,6 +86,14 @@ def auto_upload():
             print(f"⏭️ 跳过 {key}：metadata 字段缺失或格式错误。")
             continue
 
+        # ---------- 选择最佳投稿方案 ----------
+        best_scheme = value.get('best_scheme') or get_best_plan_by_potential(
+            value.get('title_schemes', {})
+        )
+        if not best_scheme:
+            print(f"⏭️ 跳过 {key}：无法选取投稿方案。")
+            continue
+
         video_id = metadata[0].get('id')
         if not video_id:
             print(f"⏭️ 跳过 {key}：metadata 中缺少 id。")
@@ -104,13 +112,7 @@ def auto_upload():
         except Exception as e:
             print(f"⚠️  尾部插图失败，继续使用原视频：{e}")
 
-        # ---------- 选择最佳投稿方案 ----------
-        best_scheme = value.get('best_scheme') or get_best_plan_by_potential(
-            value.get('title_schemes', {})
-        )
-        if not best_scheme:
-            print(f"⏭️ 跳过 {key}：无法选取投稿方案。")
-            continue
+
 
         # ---------- 准备投稿参数 ----------
         cover_path = (
