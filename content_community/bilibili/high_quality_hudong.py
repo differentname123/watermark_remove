@@ -1056,53 +1056,53 @@ def process_single_video(bvid, hudong_info, uid, commenter_map):
     other_commenters = [c for k, c in commenter_map.items() if k != uid]
     owner_danmu_list = hudong_info.get('owner_danmu', [])
     owner_danmu_used_list = hudong_info.get('owner_danmu_used', [])
-    # for detail_owner_danmu in owner_danmu_list:
-    #     danmaku_time_ms = detail_owner_danmu['建议时间戳'] * 1000  # 转换为毫秒
-    #     danmu_text_list = detail_owner_danmu['推荐弹幕内容']
-    #     for danmu_text in danmu_text_list:
-    #         if danmu_text in owner_danmu_used_list or len(danmu_text) == 0:
-    #             continue
-    #         danmaku_sent = owner_commenter.send_danmaku(
-    #             bvid=bvid,
-    #             msg=danmu_text,
-    #             progress=danmaku_time_ms,
-    #             is_up=True
-    #         )
-    #
-    #         if danmaku_sent:
-    #             owner_danmu_used_list.append(danmu_text)
-    #             print(f"弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
-    #         else:
-    #             print(f"弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
-    #         break
-    #     time.sleep(random.uniform(5, 15))
-    # hudong_info['owner_danmu_used'] = owner_danmu_used_list
-    #
-    #
-    # danmu_list = hudong_info.get('danmu_list', [])
-    # danmu_used_list = hudong_info.get('danmu_used', [])
-    #
-    # for detail_danmu in danmu_list:
-    #     danmaku_time_ms = detail_danmu['建议时间戳'] * 1000
-    #     danmu_text_list = detail_danmu['推荐弹幕内容']
-    #     for commenter in other_commenters:
-    #         for danmu_text in danmu_text_list:
-    #             if danmu_text in danmu_used_list or len(danmu_text) == 0:
-    #                 continue
-    #             danmaku_sent = commenter.send_danmaku(
-    #                 bvid=bvid,
-    #                 msg=danmu_text,
-    #                 progress=danmaku_time_ms,
-    #                 is_up=False
-    #             )
-    #             if danmaku_sent:
-    #                 danmu_used_list.append(danmu_text)
-    #                 print(f"弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
-    #             else:
-    #                 print(f"弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
-    #             break
-    #     time.sleep(random.uniform(5, 15))
-    # hudong_info['danmu_used'] = danmu_used_list
+    for detail_owner_danmu in owner_danmu_list:
+        danmaku_time_ms = detail_owner_danmu['建议时间戳'] * 1000  # 转换为毫秒
+        danmu_text_list = detail_owner_danmu['推荐弹幕内容']
+        for danmu_text in danmu_text_list:
+            if danmu_text in owner_danmu_used_list or len(danmu_text) == 0:
+                continue
+            danmaku_sent = owner_commenter.send_danmaku(
+                bvid=bvid,
+                msg=danmu_text,
+                progress=danmaku_time_ms,
+                is_up=True
+            )
+
+            if danmaku_sent:
+                owner_danmu_used_list.append(danmu_text)
+                print(f"弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
+            else:
+                print(f"弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
+            break
+        time.sleep(random.uniform(5, 15))
+    hudong_info['owner_danmu_used'] = owner_danmu_used_list
+
+
+    danmu_list = hudong_info.get('danmu_list', [])
+    danmu_used_list = hudong_info.get('danmu_used', [])
+
+    for detail_danmu in danmu_list:
+        danmaku_time_ms = detail_danmu['建议时间戳'] * 1000
+        danmu_text_list = detail_danmu['推荐弹幕内容']
+        for commenter in other_commenters:
+            for danmu_text in danmu_text_list:
+                if danmu_text in danmu_used_list or len(danmu_text) == 0:
+                    continue
+                danmaku_sent = commenter.send_danmaku(
+                    bvid=bvid,
+                    msg=danmu_text,
+                    progress=danmaku_time_ms,
+                    is_up=False
+                )
+                if danmaku_sent:
+                    danmu_used_list.append(danmu_text)
+                    print(f"弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
+                else:
+                    print(f"弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
+                break
+        time.sleep(random.uniform(5, 15))
+    hudong_info['danmu_used'] = danmu_used_list
 
 
     comment_list = hudong_info.get('comment_list', [])
@@ -1182,8 +1182,6 @@ def fun():
         print(f"正在处理视频 BVID: {video.get('bvid', '未知')}...")
         start_time = time.time()
         bvid = video.get('bvid')
-        if 'BV1zd3bzoEMe' == bvid:
-            continue
         uid = bvid_uid_map.get(bvid, '未知UID')
         hudong_info = gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads)
         hudong_info = process_single_video(bvid, hudong_info, uid, commenter_map)
