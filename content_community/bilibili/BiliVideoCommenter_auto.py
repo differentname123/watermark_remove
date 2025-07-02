@@ -470,7 +470,11 @@ def comment_worker():
     ruru_csrf_token = get_config("ruru_bilibili_csrf_token")
     ruru_commenter = BilibiliCommenter(ruru_total_cookie, ruru_csrf_token)
 
-    commenter_list = [nana_commenter]
+    dahao_total_cookie = get_config("dahao_bilibili_total_cookie")
+    dahao_csrf_token = get_config("dahao_bilibili_csrf_token")
+    dahao_commenter = BilibiliCommenter(dahao_total_cookie, dahao_csrf_token)
+
+    commenter_list = [nana_commenter, dahao_commenter]
 
     commented_video = load_processed_set(CONFIG['COMMENTED_PROCESSED_VIDEOS_FILE'])
     detail_video_info_map = load_processed_dict(CONFIG['GEN_PROCESSED_VIDEOS_FILE'])
