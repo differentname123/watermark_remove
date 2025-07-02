@@ -179,6 +179,7 @@ class BilibiliCommenter:
     _DANMAKU_POST_API_URL = "https://api.bilibili.com/x/v2/dm/post"  # <--- 新增：发送弹幕API
     _NAV_API_URL = "https://api.bilibili.com/x/web-interface/nav"
     _VIEW_API_URL_TEMPLATE = "https://api.bilibili.com/x/web-interface/view?bvid={bvid_str}"
+    _USER_VIDEOS_API_URL = "https://api.bilibili.com/x/space/wbi/arc/search" # <-- 新增
 
     def __init__(self, total_cookie: str, csrf_token: str):
         """
@@ -631,6 +632,89 @@ class BilibiliCommenter:
             print(f"评论点赞时发生未知错误：{e}")
             return False
 
+    # =========================================================================
+    # ===================== 新增的方法：查询用户投稿 ==========================
+    # =========================================================================
+    def get_user_videos(self, mid: int, desired_count: int, order: str = 'pubdate', tid: int = 0, keyword: str = '') -> list[dict] | None:
+        """
+        查询指定用户的投稿视频明细，并自动分页直到满足期望的数量。
+
+        :param mid: 目标用户的 mid。
+        :param desired_count: 期望获取的视频数量。
+        :param order: 排序方式 ('pubdate': 最新发布, 'click': 最多播放, 'stow': 最多收藏)。默认为 'pubdate'。
+        :param tid: 筛选的分区 tid。默认为 0 (不筛选)。
+        :param keyword: 用于搜索的关键词。默认为空。
+        :return: 包含视频信息字典的列表，如果查询过程中发生严重错误则返回 None。
+        """
+        print(f"准备查询用户 mid={mid} 的投稿视频，目标数量: {desired_count}...")
+
+        collected_videos = []
+        current_page = 1
+        page_size = 25  # 根据要求，每页固定查询25条
+
+        while len(collected_videos) < desired_count:
+            print(f"正在获取第 {current_page} 页...")
+
+            # 1. 准备签名前的 URL 参数
+            unsigned_params = {
+                'mid': mid,
+                'order': order,
+                'tid': tid,
+                'keyword': keyword,
+                'pn': current_page,
+                'ps': page_size,
+            }
+
+            # 2. 添加 WBI 签名
+            try:
+                signed_params = self._sign_params_for_wbi(unsigned_params)
+            except ValueError as e:
+                print(f"查询投稿视频失败：WBI签名错误 - {e}")
+                return None  # 签名失败是严重错误，直接返回 None
+
+            # 3. 发起 GET 请求
+            self.session.headers.update({"Referer": f"https://space.bilibili.com/{mid}/video"})
+            try:
+                response = self.session.get(self._USER_VIDEOS_API_URL, params=signed_params)
+                response.raise_for_status()
+                result = response.json()
+
+                # 4. 处理响应
+                if result.get("code") == 0:
+                    data = result.get("data")
+                    if not data:
+                        print("API返回成功但没有data字段，停止获取。")
+                        break
+
+                    new_videos = data.get('list', {}).get('vlist', [])
+                    if not new_videos:
+                        print("当前页没有更多视频，已获取全部内容。")
+                        break  # 如果当前页为空，说明没有更多视频了
+
+                    collected_videos.extend(new_videos)
+
+                    total_server_count = data.get('page', {}).get('count', 0)
+                    if len(collected_videos) >= total_server_count:
+                        print("已获取该用户所有视频。")
+                        break  # 如果收集的数量已达到或超过服务器上的总数，停止
+
+                    current_page += 1
+                else:
+                    print(f"查询投稿视频失败，错误码：{result.get('code')}, 信息：{result.get('message')}")
+                    break  # 遇到API错误，停止循环
+
+            except requests.exceptions.RequestException as e:
+                print(f"请求用户投稿视频接口时发生网络错误：{e}")
+                return None # 网络错误是严重错误
+            except Exception as e:
+                print(f"查询用户投稿视频时发生未知错误：{e}")
+                return None # 未知错误是严重错误
+
+
+        print(f"获取完成，共收集到 {len(collected_videos)} 个视频。")
+        # 返回满足期望长度的视频列表
+        return collected_videos[:desired_count]
+
 
 # --- 主逻辑 ---
 if __name__ == "__main__":
@@ -699,7 +783,7 @@ if __name__ == "__main__":
     print("-" * 30)
     print("步骤 3: 尝试发送一条弹幕...")
     danmaku_text = f"大家怎么样，心情都好"
-    danmaku_time_ms = 2100  # 弹幕出现在视频第 10 秒 (10000毫秒)
+    danmaku_time_ms = 2100  # 弹幕出现在视频第 2.1 秒 (2100毫秒)
 
     danmaku_sent = commenter.send_danmaku(
         bvid=target_bvid,
@@ -712,3 +796,21 @@ if __name__ == "__main__":
         print("弹幕发送流程成功完成！")
     else:
         print("弹幕发送流程失败。")
+
+    # --- 步骤 4: 查询用户投稿视频 ---
+    print("-" * 30)
+    print("步骤 4: 尝试查询用户投稿视频...")
+    user_mid_to_query = 3546909677455941  # 以文档中的"warma"为例
+    videos_data = commenter.get_user_videos(mid=user_mid_to_query, desired_count=50)
+
+    if videos_data:
+        print(f"\n成功获取到用户 {user_mid_to_query} 的视频列表（按播放量前5）:")
+        video_list = videos_data.get('list', {}).get('vlist', [])
+        if not video_list:
+            print("该用户没有视频。")
+        else:
+            for video in video_list:
+                print(f"  - 标题: {video.get('title')}")
+                print(f"    BVID: {video.get('bvid')}, 播放量: {video.get('play')}, 弹幕: {video.get('video_review')}")
+    else:
+        print("查询用户投稿视频失败。")
