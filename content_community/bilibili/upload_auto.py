@@ -51,12 +51,48 @@ def load_json(path: str, default):
         print(f"⚠️  警告：文件 {path} JSON 解析失败，原因：{e}。将使用默认值。")
         return default
 
+def _deep_update(orig: dict, new: dict):
+    """
+    将 new 合并到 orig：
+      - 如果某个 key 在 orig 和 new 中对应的 value 都是 dict，则递归合并；
+      - 否则直接用 new[key] 覆盖 orig[key]（或新增）。
+    """
+    for k, v in new.items():
+        if k in orig and isinstance(orig[k], dict) and isinstance(v, dict):
+            _deep_update(orig[k], v)
+        else:
+            orig[k] = v
 
-def save_json(path: str, data: dict):
-    """将 data 保存成 JSON 文件（带缩进、美化）。"""
+def save_json(path: str, data):
+    """
+    1. 确保目录存在
+    2. 如果 data 不是 dict，直接写入覆盖
+    3. 如果 data 是 dict，则先读已有内容（若不是 dict 则丢弃），深度合并，然后写回
+    """
+    # 1. 确保目录存在
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+
+    # 2. 非 dict 直接写入
+    if not isinstance(data, dict):
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        return
+
+    # 3. 尝试加载已有内容
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            existing = json.load(f)
+            if not isinstance(existing, dict):
+                existing = {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        existing = {}
+
+    # 深度合并
+    _deep_update(existing, data)
+
+    # 写回
     with open(path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
+        json.dump(existing, f, indent=4, ensure_ascii=False)
 
 
 def get_best_plan_by_potential(data: dict) -> dict:
@@ -87,6 +123,7 @@ def auto_upload():
 
     # 2. 遍历权威元数据
     for key, value in metadata_cache.items():
+        start_time = time.time()
         updated_entry = copy.deepcopy(value)
 
         # print("-" * 60)
@@ -217,7 +254,7 @@ def auto_upload():
         if new_uploads_made:
             try:
                 save_json(UPLOAD_LOG_FILE, upload_log)
-                print(f"✅ 上传日志已更新 -> {UPLOAD_LOG_FILE}")
+                print(f"✅ 上传日志已更新 -> {UPLOAD_LOG_FILE} 耗时 {time.time() - start_time:.2f} 秒。")
             except IOError as e:
                 print(f"🔥 写入日志文件失败：{e}")
         else:
