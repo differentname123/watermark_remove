@@ -1054,13 +1054,20 @@ def process_single_video(bvid, hudong_info, uid, commenter_map):
         print(f"今日已处理，跳过 BVID: {bvid}")
         return hudong_info
 
+    watch_video([bvid])
+    result = gen_proper_comment(bvid, dont_need_comment=True)
+    exist_comment = result.get('已有评论', [])
+    exist_comment_text = [comment[0] for comment in exist_comment]
+    exist_danmu = result.get('已有弹幕', [])
+    exist_danmu_text = [danmu[0] for danmu in exist_danmu]
 
+
+    print(f"获得到已有评论：{len(exist_comment_text)} 条，已有弹幕：{len(exist_danmu_text)} 条。| BVID: {bvid}")
     owner_commenter = commenter_map.get(uid, None)
     other_commenters = [c for k, c in commenter_map.items() if k != uid]
     share_video = hudong_info.get("share_video", False)
     triple_like_video = hudong_info.get("triple_like_video", False)
     if not share_video or not  triple_like_video:
-        watch_video([bvid])
         for commenter in commenter_map.values():
             share_success = commenter.share_video(bvid=bvid)
             if share_success:
@@ -1081,9 +1088,8 @@ def process_single_video(bvid, hudong_info, uid, commenter_map):
 
     owner_danmu_list = hudong_info.get('owner_danmu', [])
     owner_danmu_used_list = hudong_info.get('owner_danmu_used', [])
-    if len(owner_danmu_used_list) > 0:
-        print(f"UP主弹幕已全部使用，跳过 BVID: {bvid} | UID: {uid}")
-        return hudong_info
+    owner_danmu_used_list.extend(exist_danmu_text)
+
     for detail_owner_danmu in owner_danmu_list:
         danmaku_time_ms = detail_owner_danmu['建议时间戳'] * 1000  # 转换为毫秒
         danmu_text_list = detail_owner_danmu['推荐弹幕内容']
@@ -1109,6 +1115,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map):
 
     danmu_list = hudong_info.get('danmu_list', [])
     danmu_used_list = hudong_info.get('danmu_used', [])
+    danmu_used_list.extend(exist_danmu_text)
 
     for detail_danmu in danmu_list:
         danmaku_time_ms = detail_danmu['建议时间戳'] * 1000
@@ -1135,6 +1142,8 @@ def process_single_video(bvid, hudong_info, uid, commenter_map):
 
     comment_list = hudong_info.get('comment_list', [])
     comment_used_list = hudong_info.get('comment_used', [])
+    comment_used_list.extend(exist_comment_text)
+
     for commenter in commenter_map.values():
         for detail_comment in comment_list:
             comment_text = detail_comment[0]
@@ -1244,7 +1253,6 @@ def fun():
         interaction_data[bvid] = {'hudong': hudong_info}
         save_json('../../LLM/TikTokDownloader/interaction_data.json', interaction_data)
         print(f"视频 {bvid} 的互动信息已生成并保存。耗时: {time.time() - start_time:.2f} 秒")
-    print(f"完成互动 {len(bvid_list)}")
 
 
 if __name__ == '__main__':

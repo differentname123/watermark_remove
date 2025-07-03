@@ -477,7 +477,7 @@ def string_to_list(input_str: str) -> list:
         except Exception as e2:
             raise ValueError(f"字符串无法被解析为列表: {e2}")
 
-def gen_proper_comment(bvid):
+def gen_proper_comment(bvid, dont_need_comment=False):
     """
     生成适合的评论内容。
     这里可以根据需要实现更复杂的逻辑。
@@ -507,6 +507,9 @@ def gen_proper_comment(bvid):
         else:
             print("\n--- 视频信息获取失败 ---")
             return {}
+        if dont_need_comment:
+            print("不需要生成评论，直接返回视频信息。")
+            return video_info
 
         prompt_template = """你是一位深谙社交媒体传播之道的“神评”制造大师。你擅长从不同的人设和角度出发，用最精炼的语言撰写出能够激发用户互动欲望的评论。你的评论风格多变，可以一针见血，可以阴阳怪气，也可以引发共鸣，尽量幽默，搞笑，或者玩梗脑洞大开，唯一的目标就是获得最大的回复、点赞和讨论。返回结果示例如下，严格按照下面的格式:
         [
@@ -547,9 +550,9 @@ def gen_proper_comment(bvid):
 # --- 主执行部分 ---
 if __name__ == "__main__":
     # 替换为你想要获取弹幕的视频 BVID
-    video_bvid = 'BV1c5NxzqEpa'  # 一个有较多弹幕的鬼畜视频
+    video_bvid = 'BV1zd3bzoEMe'  # 一个有较多弹幕的鬼畜视频
 
-    result = gen_proper_comment(video_bvid)
+    result = gen_proper_comment(video_bvid, dont_need_comment=True)
     # video_bvid = 'BV1Vf4y1P7oD' # 另一个例子
     part_index = 0  # 视频分P，0表示第一个P
 
