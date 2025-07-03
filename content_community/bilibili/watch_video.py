@@ -23,6 +23,12 @@ logging.basicConfig(
 # 心跳间隔时间（秒），Web 端默认为 15 秒
 HEARTBEAT_INTERVAL = 15
 REQUEST_TIMEOUT = 10  # seconds
+config_list = []
+for role in ["dahao_", "mama_", "nana_", "ruru_", ""]:
+    total = get_config(f"{role}bilibili_total_cookie")
+    csrf = get_config(f"{role}bilibili_csrf_token")
+    if total and csrf:
+        config_list.append((total, csrf))
 
 
 def create_session():
@@ -246,15 +252,20 @@ def load_processed_dict(filepath):
     except (json.JSONDecodeError, IOError):
         return {}
 
-if __name__ == "__main__":
-    config_list = []
-    for role in ["dahao_", "mama_", "nana_", "ruru_", ""]:
-        total = get_config(f"{role}bilibili_total_cookie")
-        csrf = get_config(f"{role}bilibili_csrf_token")
-        if total and csrf:
-            config_list.append((total, csrf))
+def watch_video(bv_list):
+    for bv in bv_list:
+        logging.info(f"开始视频 {bv} 的模拟观看任务...")
+        run_parallel_watch(config_list, bv)
+        print(f"已完成视频 {bv} 的模拟观看任务。")
 
+
+if __name__ == "__main__":
+    # watch_video(['BV1Ab3uzyEtM'])
     bv_list = ['BV1Ab3uzyEtM', 'BV1ce3uz3Et8', 'BV1ne3uz3E9h', 'BV1Ab3uzyEPW', 'BV1Wh3uzVEor', 'BV1wh3uzVEMM', 'BV1Wh3uzVE4E', 'BV1w83TzKESH', 'BV1p43TzMEr2', 'BV1w43TzMEfn', 'BV1At3TzqEh4', 'BV1pe3azzEWP', 'BV1ri3azMEoq', 'BV1jC3azYEaW', 'BV1ki3azMEVP', 'BV1jC3azYEYx', 'BV1jC3azYEhT', 'BV1E63azvEF1', 'BV1R43hzsEyx', 'BV1PM3hzBExm', 'BV1mC3hzCExP', 'BV1hG3az9ESW', 'BV1zd3bzoEMe', 'BV1mh34zKEzv', 'BV1WH3tzwEYn', 'BV1pH3xzWE9e', 'BV1AA34zxEJ1', 'BV16n3WzjEyE', 'BV1Hn3WzjEQW', 'BV1A93Wz9ERi', 'BV1QE3sziE2J', 'BV1Vn3szKEGp', 'BV1qS3pzqEEX', 'BV1Xg3nzxEGT', 'BV1JpgQzREYN', 'BV12hgXzME9p', 'BV1b1gSzwEdH', 'BV1TSgSzbEPZ', 'BV1K2gSzhE1i', 'BV1KUgSzFEFr', 'BV1jtgSzCETR', 'BV1dugDzyECk', 'BV1ougDzyEjD', 'BV195gDz3En9', 'BV1GLgDzrERs', 'BV1PdgSzsEFu', 'BV1wdgSzsEo4', 'BV1AdgSzsE6W', 'BV1pogSz9EWb', 'BV1P9gSzdEiS', 'BV1W9gSzdE1Z', 'BV1nwgDznEWF', 'BV1nwgDznEb8', 'BV1SsgDzeEG9', 'BV1aogDzkEmz', 'BV18NgQzTE7i', 'BV18NgQzTEHg', 'BV1SNgQzTEN7', 'BV1bNgQzTEBb', 'BV1tNgQzTEdm', 'BV1vXgDzLEdg', 'BV1fmgDzUEAr', 'BV1qmgDzUExv', 'BV1qmgDzUEx9', 'BV1qmgDzUEpH', 'BV1qmgDzUEp6', 'BV1BmgDzUEEd', 'BV1PSgmzDEs9', 'BV1cdgmz2Ec7', 'BV1Hdgmz2EL2', 'BV1Fdgmz2Em6', 'BV1fZgmz5Ea7', 'BV1N8gUzWEEH', 'BV1y8gUzpELp', 'BV1N8gUzWE3z', 'BV1AhgUzXE1d', 'BV124gUzsEqg', 'BV124gUzsEtz', 'BV1PtgUzREfu', 'BV1YQgUzMEC3', 'BV1hdgUzvE9v', 'BV1eQgUzMEFd', 'BV1YQgUzMEo2', 'BV15QgUzuER8', 'BV1eQgUzMEB9', 'BV1eXgUzqEF3', 'BV1twgSzhEye', 'BV1VXgUzBEW5', 'BV1aXgUzqEoG', 'BV1aZgUzPEjN', 'BV1bwgSzhEyr', 'BV1bwgSzhE3q', 'BV1twgSzhEyB', 'BV1hfgUzYEh7', 'BV1hfgUzYEcC', 'BV18fgUzYEAu', 'BV1fkgUz5Exz', 'BV1qkgUz5EZS', 'BV1BkgUz5E42', 'BV1qCgUzCE13', 'BV1BCgUzCE6t', 'BV1fCgUzCEum', 'BV1ZCgUzCE3S', 'BV1ZCgUzCEwD', 'BV1vSgUzzEkL', 'BV1vSgUzzEaE', 'BV1HEgSzSEMQ', 'BV1JEgSzSEBU', 'BV1nEgSzSEPN', 'BV174gSz5EHR', 'BV1xMgSz4Eju', 'BV14MgSz4EuR', 'BV1RdgrzHEmq', 'BV19BgkzXE23', 'BV1CZg6zwEP5', 'BV1sRg6zPEHo', 'BV1K53NzBECJ', 'BV1BG3KzZEAk', 'BV1xh3wzFEYd', 'BV19X3FzTEso', 'BV15S3FzuEEC', 'BV1X33FzNEoQ', 'BV19G3FzeEHi', 'BV1fw3Fz3E22', 'BV1LYKmzZEF8', 'BV1shK2zgEfb', 'BV1NhK2zgEFV', 'BV1PaK2zzEqp', 'BV1v8KmzfEfL', 'BV1A4Kkz4E51', 'BV1fiKkzJE5A', 'BV1MjKkzPEvL', 'BV1pkKzzUEuQ', 'BV1LFK6zTEp9', 'BV1GcKBzZEqa', 'BV1pLKozcEeQ', 'BV1XBKVzxEZb', 'BV1b1KVzDEUy', 'BV1qTKGzZEes', 'BV1sDK3zzEfe', 'BV1koK3zvEek', 'BV19AN1z1EKn', 'BV1GNN1zLEMA', 'BV1u3N1z3Emm', 'BV1jEN2zsEHi', 'BV1tQNCzNEEP', 'BV1Mq7pzMEW3']
+    # 打乱bv_list
+    import random
+    random.shuffle(bv_list)
+
     try:
         while True:
             bv_list = load_processed_dict('../../LLM/TikTokDownloader/bvid_list.json').get('bvid_list', bv_list)

@@ -17,6 +17,7 @@ from common_utils.common_utils import get_config
 # 评论相关代码保留，但暂时不使用
 from content_community.bilibili.comment import BilibiliCommenter
 from content_community.bilibili.get_danmu import gen_proper_comment
+from content_community.bilibili.watch_video import watch_video
 
 config_map = {}
 
@@ -952,6 +953,7 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads):
     """
     为 bvid 生成相应的推荐弹幕与评论，增强了对 None 和缺失字段的容错能力。
     """
+    bvid = 'BV1fZgmz5Ea7'
     try:
         target_value = find_video_by_bvid(bvid, metadata_cache_with_uploads) or {}
     except Exception as e:
@@ -966,7 +968,7 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads):
     if existing and 'hudong' in existing:
         hud = existing['hudong']
         hudong_info = existing['hudong']
-        if target_value == {}:
+        if target_value.get('hudong', {}).get('comment_list', []) == []:
             if hud:
                 return hud
 
@@ -1059,6 +1061,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map):
     share_video = hudong_info.get("share_video", False)
     triple_like_video = hudong_info.get("triple_like_video", False)
     if not share_video or not  triple_like_video:
+        watch_video([bvid])
         for commenter in commenter_map.values():
             share_success = commenter.share_video(bvid=bvid)
             if share_success:
