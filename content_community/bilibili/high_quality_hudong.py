@@ -958,6 +958,7 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads):
         # 发生异常时记录或打印 e（可选），并使用空 dict 继续
         # logger.warning(f"find_video_by_bvid error for {bvid}: {e}")
         target_value = {}
+        return {}
     hudong_info = {}
     # 1. 如果已有缓存，直接返回
     existing = interaction_data.get(bvid, {})
@@ -1056,6 +1057,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map):
     other_commenters = [c for k, c in commenter_map.items() if k != uid]
     owner_danmu_list = hudong_info.get('owner_danmu', [])
     owner_danmu_used_list = hudong_info.get('owner_danmu_used', [])
+    if len(owner_danmu_used_list) >0:
+        print(f"UP主弹幕已全部使用，跳过 BVID: {bvid} | UID: {uid}")
+        return hudong_info
     for detail_owner_danmu in owner_danmu_list:
         danmaku_time_ms = detail_owner_danmu['建议时间戳'] * 1000  # 转换为毫秒
         danmu_text_list = detail_owner_danmu['推荐弹幕内容']
@@ -1172,11 +1176,13 @@ def fun():
         temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=100)
         bvid_uid_map.update({video.get('bvid'): uid for video in temp_found_videos if 'bvid' in video})
         all_found_videos.extend(temp_found_videos)
+    all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
 
     print(f"共找到 {len(all_found_videos)} 个视频。")
 
     # 遍历all_found_videos
     bvid_list = [bvid for video in all_found_videos if 'bvid' in video for bvid in [video.get('bvid')]]
+    # 保存所有的bvid_list到文件
     for video in all_found_videos:
 
         print(f"正在处理视频 BVID: {video.get('bvid', '未知')}...")
@@ -1184,6 +1190,10 @@ def fun():
         bvid = video.get('bvid')
         uid = bvid_uid_map.get(bvid, '未知UID')
         hudong_info = gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads)
+        if hudong_info == {}:
+            print(f"跳过{bvid}")
+
+            continue
         hudong_info = process_single_video(bvid, hudong_info, uid, commenter_map)
         interaction_data[bvid] = {'hudong': hudong_info}
         save_json('../../LLM/TikTokDownloader/interaction_data.json', interaction_data)
@@ -1191,33 +1201,6 @@ def fun():
 
 
 if __name__ == '__main__':
-    fun()
-    #
-    # if not CONFIG['COOKIE'] or not CONFIG['CSRF_TOKEN']:
-    #     logging.error(
-    #         "错误：请在 common_utils.common_utils.get_config 中配置 bilibili_total_cookie 和 bilibili_csrf_token。")
-    #     exit()
-    #
-    # logging.info("程序启动...")
-    #
-    # # 启动视频拉取线程
-    # video_thread = threading.Thread(target=video_fetcher_worker, name="VideoFetcherWorker", daemon=True)
-    # video_thread.start()
-    #
-    # # --- 启动生成评论线程 ---
-    # follower_thread = threading.Thread(target=gen_comment, name="FollowerWorker",
-    #                                    daemon=True)
-    # follower_thread.start()
-    #
-    # # --- 评论线程已暂停 ---
-    # logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
-    # comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
-    # comment_thread.start()
-    #
-    # # 保持主线程运行
-    # try:
-    #     while True:
-    #         logging.info(f"主线程运行中... 当前待处理视频队列长度: {videos_queue.qsize()} comment_videos_queue长度: {comment_videos_queue.qsize()}")
-    #         time.sleep(60)
-    # except KeyboardInterrupt:
-    #     print("\n程序被用户中断，正在退出...")
+    while True:
+        fun()
+        time.sleep(60 * 30)
