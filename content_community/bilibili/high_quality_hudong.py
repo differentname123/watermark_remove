@@ -1055,9 +1055,30 @@ def path_exists(path) -> bool:
 def process_single_video(bvid, hudong_info, uid, commenter_map):
     owner_commenter = commenter_map.get(uid, None)
     other_commenters = [c for k, c in commenter_map.items() if k != uid]
+    share_video = hudong_info.get("share_video", False)
+    triple_like_video = hudong_info.get("triple_like_video", False)
+    if not share_video or not  triple_like_video:
+        for commenter in commenter_map.values():
+            share_success = commenter.share_video(bvid=bvid)
+            if share_success:
+                share_video = True
+                print("分享操作流程成功完成！")
+            else:
+                print("分享操作流程失败。")
+            print("步骤 6: 尝试对视频进行一键三连...")
+            triple_like_success = commenter.triple_like_video(bvid=bvid)
+            if triple_like_success:
+                triple_like_video = True
+                print("一键三连操作流程成功完成！")
+            else:
+                print("一键三连操作流程失败。")
+
+    hudong_info['share_video'] = share_video
+    hudong_info['triple_like_video'] = triple_like_video
+
     owner_danmu_list = hudong_info.get('owner_danmu', [])
     owner_danmu_used_list = hudong_info.get('owner_danmu_used', [])
-    if len(owner_danmu_used_list) >0:
+    if len(owner_danmu_used_list) > 0:
         print(f"UP主弹幕已全部使用，跳过 BVID: {bvid} | UID: {uid}")
         return hudong_info
     for detail_owner_danmu in owner_danmu_list:
@@ -1198,6 +1219,7 @@ def fun():
         interaction_data[bvid] = {'hudong': hudong_info}
         save_json('../../LLM/TikTokDownloader/interaction_data.json', interaction_data)
         print(f"视频 {bvid} 的互动信息已生成并保存。耗时: {time.time() - start_time:.2f} 秒")
+    print(f"完成互动 {len(bvid_list)}")
 
 
 if __name__ == '__main__':

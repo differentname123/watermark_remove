@@ -174,12 +174,15 @@ class BilibiliCommenter:
 
     # --- API 端点 ---
     _COMMENT_ADD_API_URL = "https://api.bilibili.com/x/v2/reply/add"
-    _COMMENT_ACTION_API_URL = "https://api.bilibili.com/x/v2/reply/action"  # 用于点赞/点踩评论
+    _COMMENT_ACTION_API_URL = "https://api.bilibili.com/x/v2/reply/action"
     _VIDEO_LIKE_API_URL = "https://api.bilibili.com/x/web-interface/archive/like"
-    _DANMAKU_POST_API_URL = "https://api.bilibili.com/x/v2/dm/post"  # <--- 新增：发送弹幕API
+    _DANMAKU_POST_API_URL = "https://api.bilibili.com/x/v2/dm/post"
     _NAV_API_URL = "https://api.bilibili.com/x/web-interface/nav"
     _VIEW_API_URL_TEMPLATE = "https://api.bilibili.com/x/web-interface/view?bvid={bvid_str}"
-    _USER_VIDEOS_API_URL = "https://api.bilibili.com/x/space/wbi/arc/search" # <-- 新增
+    _USER_VIDEOS_API_URL = "https://api.bilibili.com/x/space/wbi/arc/search"
+    # --- 新增的API端点 ---
+    _TRIPLE_LIKE_API_URL = "https://api.bilibili.com/x/web-interface/archive/like/triple"
+    _SHARE_API_URL = "https://api.bilibili.com/x/web-interface/share/add"
 
     def __init__(self, total_cookie: str, csrf_token: str):
         """
@@ -263,7 +266,6 @@ class BilibiliCommenter:
         params_with_wbi['w_rid'] = wbi_sign
         return params_with_wbi
 
-    # <--- 新增：统一获取视频信息的辅助方法 ---
     def _get_video_info(self, bvid_str: str) -> dict | None:
         """根据 BV 号获取视频的 aid 和 cid"""
         url = self._VIEW_API_URL_TEMPLATE.format(bvid_str=bvid_str)
@@ -300,9 +302,6 @@ class BilibiliCommenter:
         if not (self.img_key and self.sub_key):
             print("警告：未能成功加载 WBI Keys，评论或点赞请求可能失败或被风控。")
 
-    # =========================================================================
-    # ===================== 新增的方法：发送视频弹幕 ==========================
-    # =========================================================================
     def send_danmaku(self, bvid: str, msg: str, progress: int, mode: int = 1, fontsize: int = 25, color: int = 16777215,
                      pool: int = 0, is_up: bool = False) -> bool:
         """
@@ -319,7 +318,6 @@ class BilibiliCommenter:
         """
         print(f"准备向视频 {bvid} 发送弹幕: '{msg}'")
 
-        # 1. 获取视频 aid 和 cid
         video_info = self._get_video_info(bvid)
         if not video_info:
             print("弹幕发送失败：无法获取视频信息 (aid, cid)。")
@@ -327,34 +325,29 @@ class BilibiliCommenter:
         cid = video_info['cid']
         aid = video_info['aid']
 
-        # 2. 准备签名前的 Body 参数
-        # 根据文档，我们将所有参数（包括文档中标记为URL参数的）放入 Body 进行WBI签名
-        # 这与评论接口的行为保持一致，也符合代码中将WBI参数放入Body的修正逻辑
         unsigned_data = {
             'type': 1,
             'oid': cid,
             'msg': msg,
-            'aid': aid,  # 文档要求 avid 或 bvid 任选一个，示例中使用 aid
+            'aid': aid,
             'progress': progress,
             'color': color,
             'fontsize': fontsize,
             'pool': pool,
             'mode': mode,
-            'rnd': int(time.time() * 1000000),  # 使用时间戳*10^6可将冷却减至5秒
+            'rnd': int(time.time() * 1000000),
             'csrf': self.csrf_token,
-            'web_location': '1315873',  # 文档中提到的URL参数
+            'web_location': '1315873',
         }
         if is_up:
             unsigned_data['checkbox_type'] = 4
 
-        # 3. 添加 WBI 签名
         try:
             signed_data = self._sign_params_for_wbi(unsigned_data)
         except ValueError as e:
             print(f"弹幕发送失败：{e}")
             return False
 
-        # 4. 发起请求
         self.session.headers.update({"Referer": f"https://www.bilibili.com/video/{bvid}/"})
         try:
             response = self.session.post(self._DANMAKU_POST_API_URL, data=signed_data)
@@ -387,7 +380,6 @@ class BilibiliCommenter:
             "csrf": self.csrf_token,
         }
 
-        # 更新 Referer 头
         self.session.headers.update({
             "Referer": f"https://www.bilibili.com/video/{bvid}/"
         })
@@ -398,10 +390,8 @@ class BilibiliCommenter:
             result = response.json()
 
             if result.get("code") == 0:
-                # print(f"视频 {bvid} 点赞成功。")
                 return True
             elif result.get("code") == 65006:  # 65006 代表已经点赞过
-                # print(f"视频 {bvid} 已点赞。")
                 return True
             else:
                 print(f"视频点赞失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}")
@@ -411,6 +401,101 @@ class BilibiliCommenter:
             return False
         except Exception as e:
             print(f"视频点赞时发生未知错误：{e}")
+            return False
+
+    # =========================================================================
+    # ===================== 新增的方法：一键三连 & 分享 ========================
+    # =========================================================================
+
+    def triple_like_video(self, bvid: str) -> bool:
+        """
+        对指定的视频进行一键三连（点赞、投币、收藏）。
+        此操作会将视频收藏到默认收藏夹。此API不需要WBI签名。
+
+        :param bvid: 视频的 BV 号。
+        :return: True 如果三连操作中至少有一项成功，否则 False。
+        """
+        print(f"准备对视频 {bvid} 进行一键三连...")
+
+        # 修正：根据实际浏览器捕获的请求，补充了必要的参数以避免 -401 错误。
+        # 这些参数可能用于行为验证或风控。
+        post_data = {
+            "bvid": bvid,
+            "csrf": self.csrf_token,
+            "from_spmid": "333.1387.homepage.video_card.click", # 模拟来源，可使用通用值
+            "spmid": "333.788.0.0",                              # 同上
+            "statistics": '{"appId":100,"platform":5}',           # 统计信息，在其他API中也出现
+            "eab_x": 2,                                           # 行为/测试相关参数
+            "ramval": 0,                                          # 行为/测试相关参数 (值可以为0或正整数)
+            "source": "web_normal",                               # 来源标识
+            "ga": 1                                               # 可能与风控相关
+        }
+
+        self.session.headers.update({
+            "Referer": f"https://www.bilibili.com/video/{bvid}/"
+        })
+
+        try:
+            response = self.session.post(self._TRIPLE_LIKE_API_URL, data=post_data)
+            response.raise_for_status()
+            result = response.json()
+
+            if result.get("code") == 0:
+                data = result.get("data", {})
+                like_status = "成功" if data.get('like') else "失败(可能已点赞)"
+                coin_status = "成功" if data.get('coin') else "失败(硬币不足或已投币)"
+                fav_status = "成功" if data.get('fav') else "失败(可能已收藏)"
+                print(f"一键三连操作完成。状态 -> 点赞: {like_status}, 投币: {coin_status}, 收藏: {fav_status}")
+                # 只要三连中有一项成功，就认为操作成功
+                return data.get('like') or data.get('coin') or data.get('fav')
+            else:
+                print(f"一键三连失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}")
+                return False
+        except requests.exceptions.RequestException as e:
+            print(f"请求一键三连时发生错误：{e}")
+            return False
+        except Exception as e:
+            print(f"一键三连时发生未知错误：{e}")
+            return False
+
+    def share_video(self, bvid: str) -> bool:
+        """
+        分享指定的视频以增加分享数。此API不需要WBI签名。
+
+        :param bvid: 视频的 BV 号。
+        :return: True 如果分享成功或已分享过，否则 False。
+        """
+        print(f"准备分享视频 {bvid}...")
+
+        post_data = {
+            "bvid": bvid,
+            "csrf": self.csrf_token,
+        }
+
+        self.session.headers.update({
+            "Referer": f"https://www.bilibili.com/video/{bvid}/"
+        })
+
+        try:
+            response = self.session.post(self._SHARE_API_URL, data=post_data)
+            response.raise_for_status()
+            result = response.json()
+
+            if result.get("code") == 0:
+                share_count = result.get("data")
+                print(f"视频分享成功！当前分享数：{share_count}")
+                return True
+            elif result.get("code") == 71000:  # 重复分享
+                print("视频分享成功（今日已分享过）。")
+                return True
+            else:
+                print(f"视频分享失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}")
+                return False
+        except requests.exceptions.RequestException as e:
+            print(f"请求分享视频时发生错误：{e}")
+            return False
+        except Exception as e:
+            print(f"分享视频时发生未知错误：{e}")
             return False
 
     def reply_to_comment(self, bvid: str, message_content: str, root_rpid: int, parent_rpid: int,
@@ -426,7 +511,6 @@ class BilibiliCommenter:
         :param type_code: 目标类型，1 通常代表视频。
         :return: 新回复的 rpid (评论ID) 如果成功，否则返回 None。
         """
-        # <--- 重构：使用 _get_video_info ---
         video_info = self._get_video_info(bvid)
         if not video_info:
             print("回复失败：无法获取有效的视频信息。")
@@ -505,13 +589,10 @@ class BilibiliCommenter:
         :param image_path: 本地图片路径，若非空则上传并附带到评论中。
         :return: 评论的 rpid (评论ID) 如果成功，否则返回 None。
         """
-        # 如果需要，先给视频点赞
         if like_video:
             print(f"准备评论视频 {bvid}，先尝试为该视频点赞...")
             self.like_video(bvid=bvid)
 
-        # 1. 获取 AID (oid)
-        # <--- 重构：使用 _get_video_info ---
         video_info = self._get_video_info(bvid)
         if not video_info:
             print("评论失败：无法获取有效的视频信息。")
@@ -519,7 +600,6 @@ class BilibiliCommenter:
         oid = video_info['aid']
 
         pictures_data = None
-        # 2. 如果指定了图片路径，就上传
         if image_path:
             print(f"检测到 image_path='{image_path}'，开始上传图片...")
             upload_resp = upload_bilibili_image(
@@ -531,14 +611,12 @@ class BilibiliCommenter:
                 print("图片上传失败，评论将不包含图片。")
             else:
                 data = upload_resp.json().get("data", {})
-                # 按 API 要求字段重命名
                 data["img_src"] = data.get("image_url")
                 data["img_width"] = data.get("image_width")
                 data["img_height"] = data.get("image_height")
                 pictures_data = [data]
                 print("图片上传并组装完成，准备在评论中附带图片。")
 
-        # 3. 准备签名前的 Body 参数
         post_body_data = {
             "plat": 1,
             "oid": oid,
@@ -558,14 +636,12 @@ class BilibiliCommenter:
         if forward_to_dynamic:
             post_body_data["sync_to_dynamic"] = 1
 
-        # 4. 添加 WBI 签名
         try:
             signed_data = self._sign_params_for_wbi(post_body_data)
         except ValueError as e:
             print(f"评论失败：{e}")
             return None
 
-        # 5. 发起请求
         self.session.headers.update({"Referer": f"https://www.bilibili.com/video/{bvid}/"})
         try:
             resp = self.session.post(self._COMMENT_ADD_API_URL, data=signed_data)
@@ -574,7 +650,6 @@ class BilibiliCommenter:
             if result.get("code") == 0:
                 print("评论发送成功！")
                 rpid = result["data"]["reply"]["rpid"]
-                # 给自己评论点赞
                 time.sleep(5)
                 self.like_comment(oid=oid, rpid=rpid, type_code=type_code)
                 return rpid
@@ -595,7 +670,7 @@ class BilibiliCommenter:
         post_body_data_unsigned = {
             "oid": oid,
             "rpid": rpid,
-            "action": 1,  # 1 为点赞
+            "action": 1,
             "type": type_code,
             "csrf": self.csrf_token,
             "statistics": '{"appId":100,"platform":5}',
@@ -622,7 +697,7 @@ class BilibiliCommenter:
                 return True
             else:
                 print(f"评论点赞失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}")
-                if result.get("code") == -653:  # B站新版接口，-653是已点赞
+                if result.get("code") == -653:
                     print("评论点赞失败原因：可能已经点赞过。")
                 return False
         except requests.exceptions.RequestException as e:
@@ -632,9 +707,6 @@ class BilibiliCommenter:
             print(f"评论点赞时发生未知错误：{e}")
             return False
 
-    # =========================================================================
-    # ===================== 新增的方法：查询用户投稿 ==========================
-    # =========================================================================
     def get_user_videos(self, mid: int, desired_count: int, order: str = 'pubdate', tid: int = 0, keyword: str = '') -> list[dict] | None:
         """
         查询指定用户的投稿视频明细，并自动分页直到满足期望的数量。
@@ -650,36 +722,28 @@ class BilibiliCommenter:
 
         collected_videos = []
         current_page = 1
-        page_size = 25  # 根据要求，每页固定查询25条
+        page_size = 25
 
         while len(collected_videos) < desired_count:
             print(f"正在获取第 {current_page} 页...")
 
-            # 1. 准备签名前的 URL 参数
             unsigned_params = {
-                'mid': mid,
-                'order': order,
-                'tid': tid,
-                'keyword': keyword,
-                'pn': current_page,
-                'ps': page_size,
+                'mid': mid, 'order': order, 'tid': tid,
+                'keyword': keyword, 'pn': current_page, 'ps': page_size,
             }
 
-            # 2. 添加 WBI 签名
             try:
                 signed_params = self._sign_params_for_wbi(unsigned_params)
             except ValueError as e:
                 print(f"查询投稿视频失败：WBI签名错误 - {e}")
-                return None  # 签名失败是严重错误，直接返回 None
+                return None
 
-            # 3. 发起 GET 请求
             self.session.headers.update({"Referer": f"https://space.bilibili.com/{mid}/video"})
             try:
                 response = self.session.get(self._USER_VIDEOS_API_URL, params=signed_params)
                 response.raise_for_status()
                 result = response.json()
 
-                # 4. 处理响应
                 if result.get("code") == 0:
                     data = result.get("data")
                     if not data:
@@ -689,30 +753,28 @@ class BilibiliCommenter:
                     new_videos = data.get('list', {}).get('vlist', [])
                     if not new_videos:
                         print("当前页没有更多视频，已获取全部内容。")
-                        break  # 如果当前页为空，说明没有更多视频了
+                        break
 
                     collected_videos.extend(new_videos)
 
                     total_server_count = data.get('page', {}).get('count', 0)
                     if len(collected_videos) >= total_server_count:
                         print("已获取该用户所有视频。")
-                        break  # 如果收集的数量已达到或超过服务器上的总数，停止
+                        break
 
                     current_page += 1
                 else:
                     print(f"查询投稿视频失败，错误码：{result.get('code')}, 信息：{result.get('message')}")
-                    break  # 遇到API错误，停止循环
+                    break
 
             except requests.exceptions.RequestException as e:
                 print(f"请求用户投稿视频接口时发生网络错误：{e}")
-                return None # 网络错误是严重错误
+                return None
             except Exception as e:
                 print(f"查询用户投稿视频时发生未知错误：{e}")
-                return None # 未知错误是严重错误
-
+                return None
 
         print(f"获取完成，共收集到 {len(collected_videos)} 个视频。")
-        # 返回满足期望长度的视频列表
         return collected_videos[:desired_count]
 
 
@@ -726,91 +788,84 @@ if __name__ == "__main__":
         print("请编辑脚本，替换 YOUR_CSRF_TOKEN 和 YOUR_SESSDATA 为您的实际信息。")
         exit()
 
-    # --- 评论、弹幕和点赞配置 ---
-    target_bvid = "BV19G3FzeEHi"  # 目标视频 BV 号
-    comment_text = f"这是一条由脚本发送的顶级评论! [{time.strftime('%Y-%m-%d %H:%M:%S')}]"  # 顶级评论内容
-    comment_type = 1  # 目标类型，1 一般代表视频
+    target_bvid = "BV1w43TzMEfn"
+    comment_text = f"这是一条由脚本发送的顶级评论! [{time.strftime('%Y-%m-%d %H:%M:%S')}]"
+    comment_type = 1
 
-    # 初始化 BilibiliCommenter
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
 
-    # --- 步骤 1: 发送一条顶级评论 (现在会先点赞视频) ---
+    # # --- 步骤 1: 发送一条顶级评论 (现在会先点赞视频) ---
+    # print("-" * 30)
+    # print("步骤 1: 尝试发送一条顶级评论...")
+    # posted_rpid = commenter.post_comment(
+    #     target_bvid, comment_text, comment_type,
+    #     like_video=True,
+    #     image_path="test.jpg",
+    #     forward_to_dynamic=True
+    # )
+    #
+    # # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
+    # if posted_rpid:
+    #     print("-" * 30)
+    #     print(f"步骤 2: 顶级评论发送成功，rpid 为 {posted_rpid}。现在尝试回复这条评论...")
+    #     time.sleep(3)
+    #     reply_text = f"这是对 rpid={posted_rpid} 的回复。[{time.strftime('%Y-%m-%d %H:%M:%S')}]"
+    #     reply_rpid = commenter.reply_to_comment(
+    #         bvid=target_bvid, message_content=reply_text,
+    #         root_rpid=posted_rpid, parent_rpid=posted_rpid, type_code=comment_type
+    #     )
+    #     if reply_rpid:
+    #         print("\n回复操作成功完成！")
+    #     else:
+    #         print("\n回复操作失败。")
+    # else:
+    #     print("-" * 30)
+    #     print("顶级评论发送失败，无法进行回复操作。")
+    #
+    # # --- 步骤 3: 发送一条弹幕 ---
+    # print("-" * 30)
+    # print("步骤 3: 尝试发送一条弹幕...")
+    # danmaku_text = f"大家怎么样，心情都好"
+    # danmaku_time_ms = 2100
+    # danmaku_sent = commenter.send_danmaku(
+    #     bvid=target_bvid, msg=danmaku_text, progress=danmaku_time_ms, is_up=True
+    # )
+    # if danmaku_sent:
+    #     print("弹幕发送流程成功完成！")
+    # else:
+    #     print("弹幕发送流程失败。")
+    #
+    # # --- 步骤 4: 查询用户投稿视频 (修正了结果处理的BUG) ---
+    # print("-" * 30)
+    # print("步骤 4: 尝试查询用户投稿视频...")
+    # user_mid_to_query = 282994  # 以文档中的"warma"为例
+    # videos_list = commenter.get_user_videos(mid=user_mid_to_query, desired_count=5, order='click')
+    #
+    # if videos_list:
+    #     print(f"\n成功获取到用户 {user_mid_to_query} 的视频列表（按播放量前5）:")
+    #     if not videos_list:
+    #         print("该用户没有视频。")
+    #     else:
+    #         for video in videos_list:
+    #             print(f"  - 标题: {video.get('title')}")
+    #             print(f"    BVID: {video.get('bvid')}, 播放量: {video.get('play')}, 弹幕: {video.get('video_review')}")
+    # else:
+    #     print("查询用户投稿视频失败。")
+
+    # --- 新增步骤 5: 分享视频 ---
     print("-" * 30)
-    print("步骤 1: 尝试发送一条顶级评论...")
-    posted_rpid = commenter.post_comment(
-        target_bvid,
-        comment_text,
-        comment_type,
-        like_video=True,
-        image_path="test.jpg",  # 如需带图评论，请提供有效图片路径，如 "test.jpg"
-        forward_to_dynamic=True
-    )
-
-    # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
-    if posted_rpid:
-        print("-" * 30)
-        print(f"步骤 2: 顶级评论发送成功，rpid 为 {posted_rpid}。现在尝试回复这条评论...")
-
-        # 稍作等待，避免操作过快
-        time.sleep(3)
-
-        # 回复内容
-        reply_text = f"这是对 rpid={posted_rpid} 的回复。[{time.strftime('%Y-%m-%d %H:%M:%S')}]"
-
-        # 因为我们是回复刚刚发送的顶级评论，所以 root 和 parent 的 rpid 相同
-        root_comment_id = posted_rpid
-        parent_comment_id = posted_rpid
-
-        # 调用方法进行回复
-        reply_rpid = commenter.reply_to_comment(
-            bvid=target_bvid,
-            message_content=reply_text,
-            root_rpid=root_comment_id,
-            parent_rpid=parent_comment_id,
-            type_code=comment_type
-        )
-
-        if reply_rpid:
-            print("\n回复操作成功完成！")
-        else:
-            print("\n回复操作失败。")
-
+    print("步骤 5: 尝试分享视频...")
+    share_success = commenter.share_video(bvid=target_bvid)
+    if share_success:
+        print("分享操作流程成功完成！")
     else:
-        print("-" * 30)
-        print("顶级评论发送失败，无法进行回复操作。")
+        print("分享操作流程失败。")
 
-    # --- 步骤 3: 发送一条弹幕 ---
+    # --- 新增步骤 6: 一键三连视频 ---
     print("-" * 30)
-    print("步骤 3: 尝试发送一条弹幕...")
-    danmaku_text = f"大家怎么样，心情都好"
-    danmaku_time_ms = 2100  # 弹幕出现在视频第 2.1 秒 (2100毫秒)
-
-    danmaku_sent = commenter.send_danmaku(
-        bvid=target_bvid,
-        msg=danmaku_text,
-        progress=danmaku_time_ms,
-        is_up=True
-    )
-
-    if danmaku_sent:
-        print("弹幕发送流程成功完成！")
+    print("步骤 6: 尝试对视频进行一键三连...")
+    triple_like_success = commenter.triple_like_video(bvid=target_bvid)
+    if triple_like_success:
+        print("一键三连操作流程成功完成！")
     else:
-        print("弹幕发送流程失败。")
-
-    # --- 步骤 4: 查询用户投稿视频 ---
-    print("-" * 30)
-    print("步骤 4: 尝试查询用户投稿视频...")
-    user_mid_to_query = 3546909677455941  # 以文档中的"warma"为例
-    videos_data = commenter.get_user_videos(mid=user_mid_to_query, desired_count=50)
-
-    if videos_data:
-        print(f"\n成功获取到用户 {user_mid_to_query} 的视频列表（按播放量前5）:")
-        video_list = videos_data.get('list', {}).get('vlist', [])
-        if not video_list:
-            print("该用户没有视频。")
-        else:
-            for video in video_list:
-                print(f"  - 标题: {video.get('title')}")
-                print(f"    BVID: {video.get('bvid')}, 播放量: {video.get('play')}, 弹幕: {video.get('video_review')}")
-    else:
-        print("查询用户投稿视频失败。")
+        print("一键三连操作流程失败。")
