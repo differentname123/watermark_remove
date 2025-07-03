@@ -724,28 +724,22 @@ def find_video_by_bvid(bvid_to_find: str, data_dict: dict):
     """
     # 遍历字典中的每一个键值对
     for key, video_info in data_dict.items():
-        # video_info 是我们关心的 value
-        # 使用 .get() 方法安全地访问嵌套的字典键
-        # .get('key', {}) 如果找不到 'key'，会返回一个空字典 {}，
-        # 这样可以安全地在后面继续链式调用 .get() 而不会报错。
-
-        # 尝试从 video_info 中获取 upload_info，如果没有则视为空字典
         upload_info = video_info.get('upload_info', {})
-
-        # 尝试从 upload_info 中获取 upload_result，如果没有则视为空字典
         upload_result = upload_info.get('upload_result', {})
-
-        # 尝试从 upload_result 中获取 bvid
         found_bvid = upload_result.get('bvid')
-
-        # 检查是否找到了 bvid 并且它是否与我们正在寻找的 bvid 匹配
         if found_bvid and found_bvid == bvid_to_find:
-            # 如果匹配，我们找到了目标，返回整个 video_info 字典
             return video_info
-
-    # 如果循环结束后仍未找到匹配项，则返回 None
     return None
 
+
+def find_video_by_title(title_to_find: str, data_dict: dict):
+    for key, video_info in data_dict.items():
+        upload_info = video_info.get('upload_info', {})
+        upload_result = upload_info.get('upload_params', {})
+        found_bvid = upload_result.get('title')
+        if found_bvid and found_bvid == title_to_find:
+            return video_info
+    return None
 
 def parse_and_group_danmaku(data: dict) -> list:
     """
@@ -953,7 +947,6 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads):
     """
     为 bvid 生成相应的推荐弹幕与评论，增强了对 None 和缺失字段的容错能力。
     """
-    bvid = 'BV1fZgmz5Ea7'
     try:
         target_value = find_video_by_bvid(bvid, metadata_cache_with_uploads) or {}
     except Exception as e:
@@ -1056,138 +1049,149 @@ def path_exists(path) -> bool:
     return os.path.exists(stripped)
 
 def process_single_video(bvid, hudong_info, uid, commenter_map):
-    owner_commenter = commenter_map.get(uid, None)
-    other_commenters = [c for k, c in commenter_map.items() if k != uid]
-    share_video = hudong_info.get("share_video", False)
-    triple_like_video = hudong_info.get("triple_like_video", False)
-    if not share_video or not  triple_like_video:
-        watch_video([bvid])
-        for commenter in commenter_map.values():
-            share_success = commenter.share_video(bvid=bvid)
-            if share_success:
-                share_video = True
-                print("分享操作流程成功完成！")
-            else:
-                print("分享操作流程失败。")
-            print("步骤 6: 尝试对视频进行一键三连...")
-            triple_like_success = commenter.triple_like_video(bvid=bvid)
-            if triple_like_success:
-                triple_like_video = True
-                print("一键三连操作流程成功完成！")
-            else:
-                print("一键三连操作流程失败。")
-
-    hudong_info['share_video'] = share_video
-    hudong_info['triple_like_video'] = triple_like_video
-
-    owner_danmu_list = hudong_info.get('owner_danmu', [])
-    owner_danmu_used_list = hudong_info.get('owner_danmu_used', [])
-    if len(owner_danmu_used_list) > 0:
-        print(f"UP主弹幕已全部使用，跳过 BVID: {bvid} | UID: {uid}")
+    """
+    核心流程：
+    1. 每日只运行一次
+    2. 分享和一键三连
+    3. UP 主弹幕发送
+    4. 其他用户弹幕发送
+    5. 评论发送
+    """
+    # 1. 每日检查
+    today = datetime.date.today().isoformat()
+    if hudong_info.get('last_processed_date') == today:
+        print(f"今日已处理，跳过 BVID: {bvid}")
         return hudong_info
-    for detail_owner_danmu in owner_danmu_list:
-        danmaku_time_ms = detail_owner_danmu['建议时间戳'] * 1000  # 转换为毫秒
-        danmu_text_list = detail_owner_danmu['推荐弹幕内容']
-        for danmu_text in danmu_text_list:
-            if danmu_text in owner_danmu_used_list or len(danmu_text) == 0:
-                continue
-            danmaku_sent = owner_commenter.send_danmaku(
-                bvid=bvid,
-                msg=danmu_text,
-                progress=danmaku_time_ms,
-                is_up=True
-            )
+    watch_video([bvid])
+    # 按步骤执行
+    _process_share_and_like(bvid, commenter_map, hudong_info)
+    _process_owner_danmaku(bvid, uid, commenter_map, hudong_info)
+    _process_other_danmaku(bvid, uid, commenter_map, hudong_info)
+    _process_comments(bvid, commenter_map, hudong_info)
 
-            if danmaku_sent:
-                owner_danmu_used_list.append(danmu_text)
-                print(f"弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
-            else:
-                print(f"弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
-            break
-        time.sleep(random.uniform(5, 15))
-    hudong_info['owner_danmu_used'] = owner_danmu_used_list
-
-
-    danmu_list = hudong_info.get('danmu_list', [])
-    danmu_used_list = hudong_info.get('danmu_used', [])
-
-    for detail_danmu in danmu_list:
-        danmaku_time_ms = detail_danmu['建议时间戳'] * 1000
-        danmu_text_list = detail_danmu['推荐弹幕内容']
-        for commenter in other_commenters:
-            for danmu_text in danmu_text_list:
-                if danmu_text in danmu_used_list or len(danmu_text) == 0:
-                    continue
-                danmaku_sent = commenter.send_danmaku(
-                    bvid=bvid,
-                    msg=danmu_text,
-                    progress=danmaku_time_ms,
-                    is_up=False
-                )
-                if danmaku_sent:
-                    danmu_used_list.append(danmu_text)
-                    print(f"弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
-                else:
-                    print(f"弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
-                break
-        time.sleep(random.uniform(5, 15))
-    hudong_info['danmu_used'] = danmu_used_list
-
-
-    comment_list = hudong_info.get('comment_list', [])
-    comment_used_list = hudong_info.get('comment_used', [])
-    for commenter in commenter_map.values():
-        for detail_comment in comment_list:
-            comment_text = detail_comment[0]
-            if comment_text in comment_used_list or len(comment_text) == 0:
-                continue
-            image_path = detail_comment[2] if len(detail_comment) > 2 else None
-            if path_exists(image_path):
-                posted_rpid = commenter.post_comment(
-                    bvid,
-                    comment_text,
-                    1,
-                    like_video=True,
-                    image_path=image_path,
-                    forward_to_dynamic=False
-                )
-
-                # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
-                if posted_rpid:
-                    comment_used_list.append(comment_text)
-                    print(f"评论发送流程成功完成！ {comment_text} BVID: {bvid} | UID: {uid}")
-                else:
-                    print(f"评论发送流程失败。  {comment_text} BVID: {bvid} | UID: {uid}")
-                break
-            else:
-                if comment_text in comment_used_list:
-                    continue
-                posted_rpid = commenter.post_comment(
-                    bvid,
-                    comment_text,
-                    1,
-                    like_video=True,
-                    forward_to_dynamic=False
-                )
-
-                # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
-                if posted_rpid:
-                    comment_used_list.append(comment_text)
-                    print(f"评论发送流程成功完成！ {comment_text} BVID: {bvid} | UID: {uid}")
-                else:
-                    print(f"评论发送流程失败。  {comment_text} BVID: {bvid} | UID: {uid}")
-                break
-    hudong_info['comment_used'] = comment_used_list
+    # 更新处理日期
+    hudong_info['last_processed_date'] = today
     return hudong_info
+
+
+def _process_share_and_like(bvid, commenter_map, hudong_info):
+    """步骤1：分享视频 + 一键三连"""
+    share_done = hudong_info.get('share_video', False)
+    like_done = hudong_info.get('triple_like_video', False)
+
+    if not (share_done and like_done):
+        for commenter in commenter_map.values():
+            # 分享
+            success_share = commenter.share_video(bvid=bvid)
+            hudong_info['share_video'] = share_done or success_share
+            print("分享{}".format("成功" if success_share else "失败"))
+
+            # 一键三连
+            success_like = commenter.triple_like_video(bvid=bvid)
+            hudong_info['triple_like_video'] = like_done or success_like
+            print("一键三连{}".format("成功" if success_like else "失败"))
+    else:
+        print("分享和一键三连已完成，跳过此步骤。")
+
+
+def _process_owner_danmaku(bvid, uid, commenter_map, hudong_info):
+    """步骤2：UP 主弹幕发送"""
+    owner = commenter_map.get(uid)
+    if not owner:
+        return
+
+    used = hudong_info.setdefault('owner_danmu_used', [])
+    for item in hudong_info.get('owner_danmu', []):
+        ts = item['建议时间戳'] * 1000
+        for text in item['推荐弹幕内容']:
+            if not text or text in used:
+                continue
+            success = owner.send_danmaku(bvid=bvid, msg=text, progress=ts, is_up=True)
+            if success:
+                used.append(text)
+                print(f"UP主弹幕发送成功：{text}")
+            else:
+                print(f"UP主弹幕发送失败：{text}")
+            time.sleep(random.uniform(5, 15))
+            return  # 每次仅发送一条
+
+
+def _process_other_danmaku(bvid, uid, commenter_map, hudong_info):
+    """步骤3：其他用户弹幕发送"""
+    used = hudong_info.setdefault('danmu_used', [])
+    others = [c for k, c in commenter_map.items() if k != uid]
+
+    for item in hudong_info.get('danmu_list', []):
+        ts = item['建议时间戳'] * 1000
+        for text in item['推荐弹幕内容']:
+            if not text or text in used:
+                continue
+            for commenter in others:
+                success = commenter.send_danmaku(bvid=bvid, msg=text, progress=ts, is_up=False)
+                if success:
+                    used.append(text)
+                    print(f"其他用户弹幕发送成功：{text}")
+                else:
+                    print(f"其他用户弹幕发送失败：{text}")
+                time.sleep(random.uniform(5, 15))
+                return  # 每次一条
+
+
+def _process_comments(bvid, commenter_map, hudong_info):
+    """步骤4：评论发送"""
+    used = hudong_info.setdefault('comment_used', [])
+    for commenter in commenter_map.values():
+        for detail in hudong_info.get('comment_list', []):
+            text = detail[0]
+            if not text or text in used:
+                continue
+
+            image_path = detail[2] if len(detail) > 2 else None
+            if image_path and path_exists(image_path):
+                kwargs = {'image_path': image_path, 'forward_to_dynamic': False}
+            else:
+                kwargs = {'forward_to_dynamic': False}
+
+            rpid = commenter.post_comment(
+                bvid=bvid,
+                text=text,
+                reply_to=1,
+                like_video=True,
+                **kwargs
+            )
+            if rpid:
+                used.append(text)
+                print(f"评论发送成功：{text}")
+            else:
+                print(f"评论发送失败：{text}")
+            time.sleep(random.uniform(5, 15))
+            return
+
+
+def fix_metadata_cache_with_uploads(all_found_videos, metadata_cache_with_uploads):
+
+    for video in all_found_videos:
+        title = video.get('title', '')
+
+        bvid = video.get('bvid', '')
+        video_info = find_video_by_title(title, metadata_cache_with_uploads)
+        if video_info:
+            if video_info['upload_info']['upload_result']['bvid'] != bvid:
+                print(f"修正视频标题 {title} 的 BVID: {video_info['upload_info']['upload_result']['bvid']} -> {bvid}")
+                video_info['upload_info']['upload_result']['bvid'] = bvid
+                save_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json', metadata_cache_with_uploads)
+
 
 def fun():
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
     commenter_map = {}
     for key, detail_config in config_map.items():
+        name = detail_config.get('name', key)
         commenter_map[key] = BilibiliCommenter(
             total_cookie=detail_config.get('total_cookie', ''),
             csrf_token=detail_config.get('BILI_JCT', '')
         )
+        print(f"已创建评论者 {name} (UID: {key})")
 
     interaction_data = load_processed_dict('../../LLM/TikTokDownloader/interaction_data.json')
     metadata_cache_with_uploads = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
@@ -1201,8 +1205,12 @@ def fun():
         temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=100)
         bvid_uid_map.update({video.get('bvid'): uid for video in temp_found_videos if 'bvid' in video})
         all_found_videos.extend(temp_found_videos)
-    all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
 
+    # fix_metadata_cache_with_uploads(all_found_videos, metadata_cache_with_uploads)
+
+
+    all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
+    # all_found_videos = all_found_videos[:2]
     print(f"共找到 {len(all_found_videos)} 个视频。")
 
     # 遍历all_found_videos
@@ -1218,8 +1226,8 @@ def fun():
         hudong_info = gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads)
         if hudong_info == {}:
             print(f"无互动信息跳过{bvid}")
-
             continue
+
         hudong_info = process_single_video(bvid, hudong_info, uid, commenter_map)
         interaction_data[bvid] = {'hudong': hudong_info}
         save_json('../../LLM/TikTokDownloader/interaction_data.json', interaction_data)
