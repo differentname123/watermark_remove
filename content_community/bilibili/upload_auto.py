@@ -107,6 +107,50 @@ def get_best_plan_by_potential(data: dict) -> dict:
             highest_score, best_plan = score, plan_info
     return best_plan
 
+def time_str_to_seconds(time_str: str) -> int | None:
+    """
+    将 "HH:MM:SS" 或 "MM:SS" 格式的时间字符串转换为总秒数。
+
+    Args:
+        time_str: "时:分:秒" 或 "分:秒" 格式的字符串。
+
+    Returns:
+        一个整数，表示总秒数。
+        如果输入格式无效，则返回 None。
+    """
+    try:
+        # 确保输入是字符串类型
+        if not isinstance(time_str, str):
+            raise TypeError("输入必须是字符串")
+
+        parts = time_str.split(':')
+        num_parts = len(parts)
+
+        if num_parts == 3:  # 格式为 HH:MM:SS
+            h = int(parts[0])
+            m = int(parts[1])
+            s = int(parts[2])
+            # 检查分钟和秒是否在有效范围内（可选，但推荐）
+            if m >= 60 or s >= 60:
+                raise ValueError("分钟或秒的值不能大于等于60")
+            return h * 3600 + m * 60 + s
+
+        elif num_parts == 2:  # 格式为 MM:SS
+            m = int(parts[0])
+            s = int(parts[1])
+            # 检查秒是否在有效范围内（可选）
+            if s >= 60:
+                raise ValueError("秒的值不能大于等于60")
+            return m * 60 + s
+
+        else:
+            # 如果部分数量不是2或3，则格式错误
+            raise ValueError("时间格式应为 'HH:MM:SS' 或 'MM:SS'")
+
+    except (ValueError, TypeError) as e:
+        # 捕获所有可能的错误，例如 int() 转换失败或我们主动抛出的错误
+        print(f"错误: 无法解析时间字符串 '{time_str}'。详情: {e}")
+        return None
 
 # ---------- 主逻辑 ----------
 def auto_upload():
@@ -160,6 +204,8 @@ def auto_upload():
             continue
 
         video_path = value.get('video_path')
+        duration = value.get('duration', "00:10")
+        duration = time_str_to_seconds(duration)  # 确保 duration 格式正确
         if not video_path or not os.path.exists(video_path):
             print(f"⏭️ 跳过 {key} (ID: {video_id})：视频文件缺失 -> {video_path}")
             continue
@@ -167,7 +213,10 @@ def auto_upload():
         # ---------- 预处理：在尾部插入引导图片 ----------
         new_video_path = video_path.replace('.mp4', '_new.mp4')
         try:
-            add_image_to_video_end(video_path, 'final.png', new_video_path)
+            image_duration = int(duration / 100)
+            image_duration = max(1, image_duration)
+            print(f"🔄 尾部插图处理：视频时长 {duration} 秒，插图持续 {image_duration} 秒。")
+            add_image_to_video_end(video_path, 'final.png', new_video_path, image_duration)
             video_path = new_video_path
         except Exception as e:
             print(f"⚠️  尾部插图失败，继续使用原视频：{e}")
