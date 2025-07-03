@@ -958,6 +958,7 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads):
         # 发生异常时记录或打印 e（可选），并使用空 dict 继续
         # logger.warning(f"find_video_by_bvid error for {bvid}: {e}")
         target_value = {}
+    if target_value.get('hudong', {}) == {}:
         return {}
     hudong_info = {}
     # 1. 如果已有缓存，直接返回
@@ -1204,6 +1205,7 @@ def fun():
     # 遍历all_found_videos
     bvid_list = [bvid for video in all_found_videos if 'bvid' in video for bvid in [video.get('bvid')]]
     # 保存所有的bvid_list到文件
+    save_json('../../LLM/TikTokDownloader/bvid_list.json', {'bvid_list': bvid_list})
     for video in all_found_videos:
 
         print(f"正在处理视频 BVID: {video.get('bvid', '未知')}...")
@@ -1212,7 +1214,7 @@ def fun():
         uid = bvid_uid_map.get(bvid, '未知UID')
         hudong_info = gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads)
         if hudong_info == {}:
-            print(f"跳过{bvid}")
+            print(f"无互动信息跳过{bvid}")
 
             continue
         hudong_info = process_single_video(bvid, hudong_info, uid, commenter_map)
