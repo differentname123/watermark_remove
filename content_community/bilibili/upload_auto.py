@@ -31,6 +31,11 @@ mama_BILI_JCT = get_config("mama_bilibili_csrf_token")
 mama_total_cookie = get_config("mama_bilibili_total_cookie")
 config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT, mama_total_cookie)
 
+ruru_SESSDATA = get_config("ruru_bilibili_sessdata_cookie")  # 可选。Ruru账号的 SESSDATA cookie 值。
+ruru_BILI_JCT = get_config("ruru_bilibili_csrf_token")
+ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
+config_map['ruru'] = (ruru_SESSDATA, ruru_BILI_JCT, ruru_total_cookie)
+
 
 from content_community.bilibili.bilibili_uploader import upload_to_bilibili, add_image_to_video_end, fetch_bili_topics
 
@@ -288,7 +293,7 @@ def auto_upload():
 
         # ---------- 结果处理 ----------
         if result and result.get("aid") and result.get("bvid"):
-            print(f"🎉 投稿成功！AID={result['aid']}  BVID={result['bvid']}")
+            print(f"🎉 投稿成功！AID={result['aid']}  BVID={result['bvid']} 时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
 
             # 把「权威元数据 + upload_info」写入日志字典
             updated_entry["upload_info"] = {
