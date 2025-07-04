@@ -19,35 +19,7 @@ from content_community.bilibili.comment import BilibiliCommenter
 from content_community.bilibili.get_danmu import gen_proper_comment
 from content_community.bilibili.watch_video import watch_video
 
-config_map = {}
 
-dahao_SESSDATA = get_config("dahao_bilibili_sessdata_cookie")
-dahao_BILI_JCT = get_config("dahao_bilibili_csrf_token")
-dahao_total_cookie = get_config("dahao_bilibili_total_cookie")
-config_map['443415885'] = {"name":"dahao", "SESSDATA": dahao_SESSDATA, "BILI_JCT": dahao_BILI_JCT, "total_cookie": dahao_total_cookie}
-
-base_SESSDATA = get_config("bilibili_sessdata_cookie")  # 必需。你的B站登录会话 SESSDATA cookie 值。
-base_BILI_JCT = get_config("bilibili_csrf_token")
-base_total_cookie = get_config("bilibili_total_cookie")
-
-config_map['3546909677455941'] = {"name":"base", "SESSDATA": base_SESSDATA, "BILI_JCT": base_BILI_JCT, "total_cookie": base_total_cookie}
-
-mama_SESSDATA = get_config("mama_bilibili_sessdata_cookie")  # 可选。妈妈账号的 SESSDATA cookie 值。
-mama_BILI_JCT = get_config("mama_bilibili_csrf_token")
-mama_total_cookie = get_config("mama_bilibili_total_cookie")
-config_map['1639172564'] = {"name":"mama", "SESSDATA": mama_SESSDATA, "BILI_JCT": mama_BILI_JCT, "total_cookie": mama_total_cookie}
-
-
-ruru_SESSDATA = get_config("ruru_bilibili_sessdata_cookie")  # 可选。小姑姑账号的 SESSDATA cookie 值。
-ruru_BILI_JCT = get_config("ruru_bilibili_csrf_token")
-ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
-config_map['1223805908'] = {"name":"ruru", "SESSDATA": ruru_SESSDATA, "BILI_JCT": ruru_BILI_JCT, "total_cookie": ruru_total_cookie}
-
-
-nana_SESSDATA = get_config("nana_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
-nana_BILI_JCT = get_config("nana_bilibili_csrf_token")
-nana_total_cookie = get_config("nana_bilibili_total_cookie")
-config_map['3546717871934392'] = {"name":"nana", "SESSDATA": nana_SESSDATA, "BILI_JCT": nana_BILI_JCT, "total_cookie": nana_total_cookie}
 
 # --- 1. 全局常量 ---
 URL_MODIFY_RELATION = "https://api.bilibili.com/x/relation/modify"
@@ -1203,56 +1175,95 @@ def fix_metadata_cache_with_uploads(all_found_videos, metadata_cache_with_upload
                 video_info['upload_info']['upload_result']['bvid'] = bvid
                 save_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json', metadata_cache_with_uploads)
 
+def init_config():
+    config_map = {}
+
+    dahao_SESSDATA = get_config("dahao_bilibili_sessdata_cookie")
+    dahao_BILI_JCT = get_config("dahao_bilibili_csrf_token")
+    dahao_total_cookie = get_config("dahao_bilibili_total_cookie")
+    config_map['443415885'] = {"name": "dahao", "SESSDATA": dahao_SESSDATA, "BILI_JCT": dahao_BILI_JCT,
+                               "total_cookie": dahao_total_cookie}
+
+    base_SESSDATA = get_config("bilibili_sessdata_cookie")  # 必需。你的B站登录会话 SESSDATA cookie 值。
+    base_BILI_JCT = get_config("bilibili_csrf_token")
+    base_total_cookie = get_config("bilibili_total_cookie")
+
+    config_map['3546909677455941'] = {"name": "base", "SESSDATA": base_SESSDATA, "BILI_JCT": base_BILI_JCT,
+                                      "total_cookie": base_total_cookie}
+
+    mama_SESSDATA = get_config("mama_bilibili_sessdata_cookie")  # 可选。妈妈账号的 SESSDATA cookie 值。
+    mama_BILI_JCT = get_config("mama_bilibili_csrf_token")
+    mama_total_cookie = get_config("mama_bilibili_total_cookie")
+    config_map['1639172564'] = {"name": "mama", "SESSDATA": mama_SESSDATA, "BILI_JCT": mama_BILI_JCT,
+                                "total_cookie": mama_total_cookie}
+
+    ruru_SESSDATA = get_config("ruru_bilibili_sessdata_cookie")  # 可选。小姑姑账号的 SESSDATA cookie 值。
+    ruru_BILI_JCT = get_config("ruru_bilibili_csrf_token")
+    ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
+    config_map['1223805908'] = {"name": "ruru", "SESSDATA": ruru_SESSDATA, "BILI_JCT": ruru_BILI_JCT,
+                                "total_cookie": ruru_total_cookie}
+
+    nana_SESSDATA = get_config("nana_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
+    nana_BILI_JCT = get_config("nana_bilibili_csrf_token")
+    nana_total_cookie = get_config("nana_bilibili_total_cookie")
+    config_map['3546717871934392'] = {"name": "nana", "SESSDATA": nana_SESSDATA, "BILI_JCT": nana_BILI_JCT,
+                                      "total_cookie": nana_total_cookie}
+    return config_map
 
 def fun():
-    commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
-    commenter_map = {}
-    for key, detail_config in config_map.items():
-        name = detail_config.get('name', key)
-        commenter_map[key] = BilibiliCommenter(
-            total_cookie=detail_config.get('total_cookie', ''),
-            csrf_token=detail_config.get('BILI_JCT', '')
-        )
-        print(f"已创建评论者 {name} (UID: {key})")
+    try:
+        config_map = init_config()
+        commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
+        commenter_map = {}
+        for key, detail_config in config_map.items():
+            name = detail_config.get('name', key)
+            commenter_map[key] = BilibiliCommenter(
+                total_cookie=detail_config.get('total_cookie', ''),
+                csrf_token=detail_config.get('BILI_JCT', '')
+            )
+            print(f"已创建评论者 {name} (UID: {key})")
 
-    interaction_data = load_processed_dict('../../LLM/TikTokDownloader/interaction_data.json')
-    metadata_cache_with_uploads = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
-    bvid_uid_map = {}
-    # all_found_videos = [{'bvid': 'BV1Qgg2ztE4T'}]
-    all_found_videos = []
-    for uid in config_map.keys():
-        if uid == '443415885':
-            continue
-        logging.info(f"  > 正在获取UP主(UID: {uid})的最新动态...")
-        temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=100)
-        bvid_uid_map.update({video.get('bvid'): uid for video in temp_found_videos if 'bvid' in video})
-        all_found_videos.extend(temp_found_videos)
+        interaction_data = load_processed_dict('../../LLM/TikTokDownloader/interaction_data.json')
+        metadata_cache_with_uploads = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
+        bvid_uid_map = {}
+        # all_found_videos = [{'bvid': 'BV1Qgg2ztE4T'}]
+        all_found_videos = []
+        for uid in config_map.keys():
+            if uid == '443415885':
+                continue
+            logging.info(f"  > 正在获取UP主(UID: {uid})的最新动态...")
+            temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=100)
+            bvid_uid_map.update({video.get('bvid'): uid for video in temp_found_videos if 'bvid' in video})
+            all_found_videos.extend(temp_found_videos)
 
-    # fix_metadata_cache_with_uploads(all_found_videos, metadata_cache_with_uploads)
+        # fix_metadata_cache_with_uploads(all_found_videos, metadata_cache_with_uploads)
 
 
-    all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
-    # all_found_videos = all_found_videos[:2]
-    print(f"共找到 {len(all_found_videos)} 个视频。")
-    # # 遍历all_found_videos
-    # bvid_list = [bvid for video in all_found_videos if 'bvid' in video for bvid in [video.get('bvid')]]
-    # # 保存所有的bvid_list到文件
-    # save_json('../../LLM/TikTokDownloader/bvid_list.json', {'bvid_list': bvid_list})
-    for video in all_found_videos:
+        all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
+        # all_found_videos = all_found_videos[:2]
+        print(f"共找到 {len(all_found_videos)} 个视频。")
+        # # 遍历all_found_videos
+        # bvid_list = [bvid for video in all_found_videos if 'bvid' in video for bvid in [video.get('bvid')]]
+        # # 保存所有的bvid_list到文件
+        # save_json('../../LLM/TikTokDownloader/bvid_list.json', {'bvid_list': bvid_list})
+        for video in all_found_videos:
 
-        print(f"正在处理视频 BVID: {video.get('bvid', '未知')}...")
-        start_time = time.time()
-        bvid = video.get('bvid')
-        uid = bvid_uid_map.get(bvid, '未知UID')
-        hudong_info = gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads)
-        if hudong_info == {}:
-            print(f"无互动信息跳过{bvid}")
-            continue
+            print(f"正在处理视频 BVID: {video.get('bvid', '未知')}...")
+            start_time = time.time()
+            bvid = video.get('bvid')
+            uid = bvid_uid_map.get(bvid, '未知UID')
+            hudong_info = gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads)
+            if hudong_info == {}:
+                print(f"无互动信息跳过{bvid}")
+                continue
 
-        hudong_info = process_single_video(bvid, hudong_info, uid, commenter_map)
-        interaction_data[bvid] = {'hudong': hudong_info}
-        save_json('../../LLM/TikTokDownloader/interaction_data.json', interaction_data)
-        print(f"视频 {bvid} 的互动信息已生成并保存。耗时: {time.time() - start_time:.2f} 秒")
+            hudong_info = process_single_video(bvid, hudong_info, uid, commenter_map)
+            interaction_data[bvid] = {'hudong': hudong_info}
+            save_json('../../LLM/TikTokDownloader/interaction_data.json', interaction_data)
+            print(f"视频 {bvid} 的互动信息已生成并保存。耗时: {time.time() - start_time:.2f} 秒")
+    except Exception as e:
+        traceback.print_exc()
+        return
 
 
 if __name__ == '__main__':
