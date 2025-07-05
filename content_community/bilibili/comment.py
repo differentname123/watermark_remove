@@ -296,8 +296,13 @@ class BilibiliCommenter:
                 self.sub_key = sub_url.rsplit('/', 1)[1].split('.')[0]
             else:
                 print(f"获取 WBI Keys 失败：{json_content.get('message')}")
+                cookies = self.session.cookies.get_dict()
+                print(f"当前 Cookies: {cookies}")
         except requests.exceptions.RequestException as e:
             print(f"请求 WBI Keys 发生错误：{e}")
+            # 打印当前 session 的 cookies
+            cookies = self.session.cookies.get_dict()
+            print(f"当前 Cookies: {cookies}")
 
         if not (self.img_key and self.sub_key):
             print("警告：未能成功加载 WBI Keys，评论或点赞请求可能失败或被风控。")

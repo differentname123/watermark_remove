@@ -508,9 +508,9 @@ def video_fetcher_worker():
 def comment_worker():
     """评论线程：从队列获取视频并发表评论。"""
     base_commenter = BilibiliCommenter(CONFIG['COOKIE'], CONFIG['CSRF_TOKEN'])
-    # nana_total_cookie = get_config("nana_bilibili_total_cookie")
-    # nana_csrf_token = get_config("nana_bilibili_csrf_token")
-    # nana_commenter = BilibiliCommenter(nana_total_cookie, nana_csrf_token)
+    nana_total_cookie = get_config("nana_bilibili_total_cookie")
+    nana_csrf_token = get_config("nana_bilibili_csrf_token")
+    nana_commenter = BilibiliCommenter(nana_total_cookie, nana_csrf_token)
     #
     mama_total_cookie = get_config("mama_bilibili_total_cookie")
     mama_csrf_token = get_config("mama_bilibili_csrf_token")
@@ -520,11 +520,11 @@ def comment_worker():
     ruru_csrf_token = get_config("ruru_bilibili_csrf_token")
     ruru_commenter = BilibiliCommenter(ruru_total_cookie, ruru_csrf_token)
 
-    daba_total_cookie = get_config("daba_bilibili_total_cookie")
-    daba_csrf_token = get_config("daba_bilibili_csrf_token")
-    daba_commenter = BilibiliCommenter(daba_total_cookie, daba_csrf_token)
+    # daba_total_cookie = get_config("daba_bilibili_total_cookie")
+    # daba_csrf_token = get_config("daba_bilibili_csrf_token")
+    # daba_commenter = BilibiliCommenter(daba_total_cookie, daba_csrf_token)
 
-    commenter_list = [ruru_commenter, base_commenter, mama_commenter]
+    commenter_list = [ruru_commenter, base_commenter, mama_commenter, nana_commenter]
 
 
 
