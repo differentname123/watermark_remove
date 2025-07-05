@@ -329,7 +329,7 @@ def auto_upload():
         persistent_tasks.update(temp_set)
         save_json(persistent_tasks_file, list(persistent_tasks))
 
-    print("全部任务处理完毕。")
+    print("全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 # ---------- CLI ----------
