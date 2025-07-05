@@ -36,6 +36,11 @@ ruru_BILI_JCT = get_config("ruru_bilibili_csrf_token")
 ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
 config_map['ruru'] = (ruru_SESSDATA, ruru_BILI_JCT, ruru_total_cookie)
 
+nana_SESSDATA = get_config("nana_bilibili_sessdata_cookie")  # 可选。Ruru账号的 SESSDATA cookie 值。
+nana_BILI_JCT = get_config("nana_bilibili_csrf_token")
+nana_total_cookie = get_config("nana_bilibili_total_cookie")
+config_map['nana'] = (nana_SESSDATA, nana_BILI_JCT, nana_total_cookie)
+
 
 from content_community.bilibili.bilibili_uploader import upload_to_bilibili, add_image_to_video_end, fetch_bili_topics
 
@@ -209,7 +214,7 @@ def auto_upload():
             continue
 
         video_path = value.get('video_path')
-        duration = value.get('duration', "00:10")
+        duration = metadata[0].get('duration', "00:10")
         duration = time_str_to_seconds(duration)  # 确保 duration 格式正确
         if not video_path or not os.path.exists(video_path):
             print(f"⏭️ 跳过 {key} (ID: {video_id})：视频文件缺失 -> {video_path}")

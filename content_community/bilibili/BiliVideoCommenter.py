@@ -520,6 +520,10 @@ def comment_worker():
     ruru_csrf_token = get_config("ruru_bilibili_csrf_token")
     ruru_commenter = BilibiliCommenter(ruru_total_cookie, ruru_csrf_token)
 
+    daba_total_cookie = get_config("daba_bilibili_total_cookie")
+    daba_csrf_token = get_config("daba_bilibili_csrf_token")
+    daba_commenter = BilibiliCommenter(daba_total_cookie, daba_csrf_token)
+
     commenter_list = [ruru_commenter, base_commenter, mama_commenter]
 
 
