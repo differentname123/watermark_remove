@@ -303,6 +303,14 @@ def auto_upload():
         # ---------- 结果处理 ----------
         if result and result.get("aid") and result.get("bvid"):
             print(f"🎉 投稿成功！AID={result['aid']}  BVID={result['bvid']} 时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+            # 尝试删除video_path和new_video_path
+            try:
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+                if new_video_path and os.path.exists(new_video_path):
+                    os.remove(new_video_path)
+            except Exception as e:
+                print(f"⚠️ 删除视频文件失败：{e}")
 
             # 把「权威元数据 + upload_info」写入日志字典
             updated_entry["upload_info"] = {
