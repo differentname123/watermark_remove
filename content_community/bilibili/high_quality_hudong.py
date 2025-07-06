@@ -1036,9 +1036,10 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads, all_emo
     owner_danmu_list = []  # 用于存储UP主的弹幕
     owner_danmu_list.extend(interaction_danmu_list)  # 将互动引导弹幕添加到UP主弹幕列表中
     owner_danmu_list.extend(supplementary_notes_list)  # 将补充信息弹幕添加到UP主弹幕列表中
+    format_bilibili_emote(comment_list, all_emote_list)
     # 5. 组装结果，写回缓存，并返回
     hudong_info["duration"] = total_seconds
-    hudong_info['comment_list'] = format_bilibili_emote(comment_list, all_emote_list)
+    hudong_info['comment_list'] = comment_list
     hudong_info['danmu_list'] = danmu_list
     hudong_info['owner_danmu'] = owner_danmu_list
     # 写回 interaction_data 时包裹在 'hudong' 字段里，以保持与入口逻辑一致
