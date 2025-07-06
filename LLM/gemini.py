@@ -2,10 +2,10 @@ import os
 import time
 import base64
 from common_utils.common_utils import get_config
-
-# 设置代理环境变量
-os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
-os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
+#
+# # 设置代理环境变量
+# os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
+# os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
 
 import google.genai as genai
 from google.genai import types
