@@ -177,11 +177,15 @@ def auto_upload():
         return
 
     new_uploads_made = False
-
+    error_count = 0
     # 2. 遍历权威元数据
     for key, value in metadata_cache.items():
         start_time = time.time()
         updated_entry = copy.deepcopy(value)
+        status = value.get('status', '未处理')
+        if status == 'error':
+            error_count += 1
+            continue
 
         # print("-" * 60)
 
@@ -329,7 +333,7 @@ def auto_upload():
         persistent_tasks.update(temp_set)
         save_json(persistent_tasks_file, list(persistent_tasks))
 
-    print(f"全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"错误数量为{error_count}  全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 # ---------- CLI ----------
