@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import datetime
 import random
+import re
 import traceback
 from collections import defaultdict
 
@@ -102,6 +103,45 @@ session.headers.update({
     'Cookie': CONFIG['COOKIE']
 })
 
+import difflib
+from typing import List, Optional
+
+def most_similar_text(text_list: List[str], target_text: str) -> Optional[str]:
+    """
+    返回 text_list 中与 target_text 最为相似的字符串。
+    """
+    if not text_list:
+        return None
+
+    best_match = '[吃瓜]'
+    best_score = -1.0
+    for text in text_list:
+        score = difflib.SequenceMatcher(None, text, target_text).ratio()
+        if score > best_score:
+            best_score = score
+            best_match = text
+
+    return best_match
+
+def replace_bracketed(text: str, text_list: List[str]) -> str:
+    """
+    找到 text 中所有被 [ 和 ] 包围的子串，提取其中内容 item，
+    用 most_similar_text(text_list, item) 的返回值去替换整个 [item]。
+
+    :param text: 包含若干 […] 片段的原始字符串
+    :param text_list: 用于匹配的候选字符串列表
+    :return: 所有带括号片段都被对应最佳匹配替换后的新字符串
+    """
+
+    # 回调函数：为每一个匹配项计算替换结果
+    def _replacer(match: re.Match) -> str:
+        inner = match.group(1)
+        best = most_similar_text(text_list, inner)
+        # 如果没找到任何匹配，保留原括号内容
+        return best if best is not None else match.group(0)
+
+    # 使用正则替换所有 [内容]
+    return re.sub(r'\[([^\]]+)\]', _replacer, text)
 
 # --- 4. API请求核心函数 ---
 def send_get_request(url, params=None):
@@ -914,8 +954,17 @@ def extract_guides(data):
 
     return interaction_prompts, supplementary_notes
 
+def format_bilibili_emote(comment_list, all_emote_list):
+    """
+    进行b站的emote转换，避免没有正常输出表情
+    """
+    for comment in comment_list:
+        # 将第一个元素调用 replace_bracketed
+        comment[0] = replace_bracketed(comment[0], all_emote_list)
 
-def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads):
+
+
+def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads, all_emote_list):
     """
     为 bvid 生成相应的推荐弹幕与评论，增强了对 None 和缺失字段的容错能力。
     """
@@ -989,7 +1038,7 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads):
     owner_danmu_list.extend(supplementary_notes_list)  # 将补充信息弹幕添加到UP主弹幕列表中
     # 5. 组装结果，写回缓存，并返回
     hudong_info["duration"] = total_seconds
-    hudong_info['comment_list'] = comment_list
+    hudong_info['comment_list'] = format_bilibili_emote(comment_list, all_emote_list)
     hudong_info['danmu_list'] = danmu_list
     hudong_info['owner_danmu'] = owner_danmu_list
     # 写回 interaction_data 时包裹在 'hudong' 字段里，以保持与入口逻辑一致
@@ -1218,6 +1267,8 @@ def init_config():
 
 def fun():
     try:
+        # 加载all_emote.json
+        all_emote_list = load_processed_dict('all_emote.json')
         config_map = init_config()
         commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
         commenter_map = {}
@@ -1258,7 +1309,7 @@ def fun():
             start_time = time.time()
             bvid = video.get('bvid')
             uid = bvid_uid_map.get(bvid, '未知UID')
-            hudong_info = gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads)
+            hudong_info = gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads, all_emote_list)
             if hudong_info == {}:
                 print(f"无互动信息跳过{bvid}")
                 continue
