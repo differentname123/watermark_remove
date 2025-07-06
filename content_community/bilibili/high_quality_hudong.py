@@ -1261,6 +1261,7 @@ def fun():
             interaction_data[bvid] = {'hudong': hudong_info}
             save_json('../../LLM/TikTokDownloader/interaction_data.json', interaction_data)
             print(f"视频 {bvid} 的互动信息已生成并保存。耗时: {time.time() - start_time:.2f} 秒")
+        print(f"所有视频处理完成，正在保存数据..当前时间: {datetime.datetime.now().isoformat()}")
     except Exception as e:
         traceback.print_exc()
         return
