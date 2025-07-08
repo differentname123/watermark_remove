@@ -43,10 +43,10 @@ nana_BILI_JCT = get_config("nana_bilibili_csrf_token")
 nana_total_cookie = get_config("nana_bilibili_total_cookie")
 config_map['nana'] = (nana_SESSDATA, nana_BILI_JCT, nana_total_cookie)
 
-jie_SESSDATA = get_config("jie_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
-jie_BILI_JCT = get_config("jie_bilibili_csrf_token")
-jie_total_cookie = get_config("jie_bilibili_total_cookie")
-config_map['jie'] = (jie_SESSDATA, jie_BILI_JCT, jie_BILI_JCT)
+# jie_SESSDATA = get_config("jie_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
+# jie_BILI_JCT = get_config("jie_bilibili_csrf_token")
+# jie_total_cookie = get_config("jie_bilibili_total_cookie")
+# config_map['jie'] = (jie_SESSDATA, jie_BILI_JCT, jie_BILI_JCT)
 
 
 from content_community.bilibili.bilibili_uploader import upload_to_bilibili, fetch_bili_topics
@@ -203,7 +203,11 @@ def auto_upload():
 
         # ---------- 数据合法性检查 ----------
         metadata = value.get('metadata')
-        userName = value.get('userName', 'base')
+        userName = value.get('userName', 'other')
+        if userName not in config_map.keys():
+            print(f"⚠️ 跳过 {userName} 用户上传 请检查配置数据。")
+            error_count += 1
+            continue
         config = config_map.get(userName, config_map['base'])
         print(f"🔍 处理 {key} (用户: {userName})")
         if not (isinstance(metadata, list) and metadata):
