@@ -270,7 +270,7 @@ def auto_upload():
                 topic_detail['from_topic_id'] = topic_id
                 topic_detail['topic_name'] = topic_name
         else:
-            print(f"⚠️ 获取分区 {human_type2} 的话题失败，使用默认值。")
+            print(f"⚠️ 获取分区 {human_type2} 的话题失败，使用默认值。{topic_json}")
 
 
         description_json = best_scheme.get('简介', {})
