@@ -18,6 +18,8 @@ import copy
 import time
 
 from common_utils.common_utils import get_config
+from common_utils.video_utils import add_image_to_video_end
+
 config_map = {}
 
 base_SESSDATA = get_config("bilibili_sessdata_cookie")  # 必需。你的B站登录会话 SESSDATA cookie 值。
@@ -41,8 +43,13 @@ nana_BILI_JCT = get_config("nana_bilibili_csrf_token")
 nana_total_cookie = get_config("nana_bilibili_total_cookie")
 config_map['nana'] = (nana_SESSDATA, nana_BILI_JCT, nana_total_cookie)
 
+jie_SESSDATA = get_config("jie_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
+jie_BILI_JCT = get_config("jie_bilibili_csrf_token")
+jie_total_cookie = get_config("jie_bilibili_total_cookie")
+config_map['jie'] = (jie_SESSDATA, jie_BILI_JCT, jie_BILI_JCT)
 
-from content_community.bilibili.bilibili_uploader import upload_to_bilibili, add_image_to_video_end, fetch_bili_topics
+
+from content_community.bilibili.bilibili_uploader import upload_to_bilibili, fetch_bili_topics
 
 # ---------- 文件路径常量 ----------
 METADATA_FILE = '../../LLM/TikTokDownloader/metadata_cache.json'           # 权威源
