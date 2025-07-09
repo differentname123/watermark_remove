@@ -1,9 +1,86 @@
+import ast
 import json
 import os
+import re
+
 import cv2
 import numpy as np
 
 import pandas as pd
+
+def string_to_object(input_str: str):
+    """
+    从字符串中提取并解析出 Python 列表或字典对象，设计得更加健壮。
+
+    该函数增强了对不规范格式的容忍度，特别适合处理来自 LLM 的输出。
+
+    核心功能：
+    1.  **智能提取**: 自动在整个字符串中定位 JSON/Python 对象的边界（从第一个 '{' 或 '[' 到最后一个 '}' 或 ']'），
+        忽略前导和尾随的无关文本（例如 "当然，这是您要的JSON："）。
+    2.  **兼容 Markdown**: 能够处理被 ```json ... ``` 代码块包裹的内容。
+    3.  **错误修正**:
+        - 自动移除常见的行内 (//) 和块级 (/* */) 注释。
+        - 自动移除导致 JSON 解析失败的尾随逗号 (trailing commas)。
+    4.  **双引擎解析**:
+        - 首先尝试使用 `json.loads`，因为它更符合标准，速度更快。
+        - 如果失败，则回退到 `ast.literal_eval`，以支持 Python 特有的字面量
+          （如 `None`, `True`, `False` 以及单引号字符串）。
+
+    如果无法找到或解析出有效的对象，则抛出 ValueError 异常。
+
+    :param input_str: 包含列表或字典的输入字符串。
+    :return: 解析后的 Python 列表或字典。
+    :raises ValueError: 如果无法从字符串中找到或解析出有效的对象。
+    """
+    try:
+        # 1. 智能提取：在字符串中寻找对象边界
+        try:
+            # 寻找第一个 '{' 或 '['
+            start_pos = min(
+                i for i in (input_str.find('{'), input_str.find('[')) if i != -1
+            )
+            # 寻找最后一个 '}' 或 ']'
+            end_pos = max(input_str.rfind('}'), input_str.rfind(']'))
+
+            if end_pos <= start_pos:
+                raise ValueError("未找到匹配的括号/方括号。")
+
+            # 提取出最可能包含对象的子字符串
+            potential_obj_str = input_str[start_pos: end_pos + 1]
+
+        except (ValueError, IndexError):
+            raise ValueError("输入字符串中未找到疑似列表或字典的结构。")
+
+        # 2. 错误修正：清理提取出的字符串
+        # 移除 JavaScript/JSONC 风格的注释
+        # 移除 // 单行注释
+        potential_obj_str = re.sub(r"//.*", "", potential_obj_str)
+        # 移除 /* */ 多行注释
+        potential_obj_str = re.sub(r"/\*[\s\S]*?\*/", "", potential_obj_str, flags=re.MULTILINE)
+
+        # 移除尾随逗号 (例如, [1, 2,])
+        potential_obj_str = re.sub(r",\s*([}\]])", r"\1", potential_obj_str)
+
+        # 清理字符串前后的空白字符
+        cleaned_str = potential_obj_str.strip()
+
+        # 3. 双引擎解析
+        # 首先尝试使用 json.loads (更标准，通常更快)
+        try:
+            return json.loads(cleaned_str)
+        except json.JSONDecodeError:
+            # 如果 json.loads 失败，回退到 ast.literal_eval (更宽容，支持 Python 语法)
+            try:
+                return ast.literal_eval(cleaned_str)
+            except (ValueError, SyntaxError, MemoryError) as e:
+                # 如果两种方法都失败，则抛出最终的异常
+                error_msg = f"无法将提取的字符串解析为列表或字典。错误: {e}"
+                # 附上清理后待解析的字符串片段，便于调试
+                preview = (cleaned_str[:150] + '...') if len(cleaned_str) > 150 else cleaned_str
+                raise ValueError(f"{error_msg}\n尝试解析的内容 (清理后): '''{preview}'''")
+    except Exception as e:
+        print(f"解析字符串时发生错误: {e} {input_str}")
+        return None
 
 
 def get_frame_at_time_safe(video_path: str, time_str: str) -> np.ndarray | None:
