@@ -1259,11 +1259,11 @@ def init_config():
     config_map['3546717871934392'] = {"name": "nana", "SESSDATA": nana_SESSDATA, "BILI_JCT": nana_BILI_JCT,
                                       "total_cookie": nana_total_cookie}
 
-    jie_SESSDATA = get_config("jie_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
-    jie_BILI_JCT = get_config("jie_bilibili_csrf_token")
-    jie_total_cookie = get_config("jie_bilibili_total_cookie")
-    config_map['202157045'] = {"name": "jie", "SESSDATA": jie_SESSDATA, "BILI_JCT": jie_BILI_JCT,
-                                      "total_cookie": jie_total_cookie}
+    # jie_SESSDATA = get_config("jie_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
+    # jie_BILI_JCT = get_config("jie_bilibili_csrf_token")
+    # jie_total_cookie = get_config("jie_bilibili_total_cookie")
+    # config_map['202157045'] = {"name": "jie", "SESSDATA": jie_SESSDATA, "BILI_JCT": jie_BILI_JCT,
+    #                                   "total_cookie": jie_total_cookie}
     return config_map
 
 def fun():

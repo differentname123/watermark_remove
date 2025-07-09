@@ -1,16 +1,17 @@
 import scenedetect
 import os
-import csv  # 导入 csv 模块用于写入时间戳
+import csv
+import pprint  # <-- 1. 导入 pprint 模块，用于美观地打印字典
 
 from scenedetect.video_manager import VideoManager
 from scenedetect.scene_manager import SceneManager
-from scenedetect.stats_manager import StatsManager  # <-- 1. 导入 StatsManager
+from scenedetect.stats_manager import StatsManager
 from scenedetect.detectors import ContentDetector
 
 
 def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix=''):
     """
-    检测视频中的场景，分割视频，并存储精确的时间戳。
+    检测视频中的场景，分割视频，存储精确的时间戳，并打印场景信息字典。
 
     参数:
     video_path (str): 输入视频文件的路径。
@@ -20,10 +21,10 @@ def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix='')
     # 创建一个 VideoManager 来管理视频文件
     video_manager = VideoManager([video_path])
 
-    # 创建一个 StatsManager 来保存每个场景的详细统计信息，这是获取精确时间戳的关键
+    # 创建一个 StatsManager 来保存每个场景的详细统计信息
     stats_manager = StatsManager()
 
-    # 创建一个 SceneManager，并将 StatsManager 传递给它
+    # 创建一个 SceneManager
     scene_manager = SceneManager(stats_manager=stats_manager)
 
     # 添加内容检测器
@@ -39,29 +40,43 @@ def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix='')
         print(f'正在分析视频 {video_path}...')
         scene_manager.detect_scenes(frame_source=video_manager)
 
-        # 获取检测到的场景列表 (包含开始和结束的时间码)
+        # 获取检测到的场景列表 (包含开始和结束的时间码对象)
         scene_list = scene_manager.get_scene_list(base_timecode)
 
         print(f'成功检测到 {len(scene_list)} 个场景/片段。')
 
-        # <-- 2. 保存精确时间戳到 CSV 文件
+        # --------------------------------------------------------------------
+        # <-- 2. 新增部分：创建并打印你需要的场景信息字典
+        # --------------------------------------------------------------------
         if scene_list:
-            # 如果未指定前缀，则使用视频文件名作为前缀
+            scene_info_dict = {}
+            print("\n" + "=" * 20)
+            print("场景详细信息字典:")
+            for i, scene in enumerate(scene_list):
+                start_time, end_time = scene
+                # 构建字典的键，例如 "场景1"
+                scene_key = f"场景{i + 1}"
+                # 构建值，即一个包含开始和结束精确时间码字符串的元组
+                # .get_timecode() 方法返回 "HH:MM:SS.ms" 格式的字符串
+                scene_info_dict[scene_key] = (start_time.get_timecode(), end_time.get_timecode())
+
+            # 使用 pprint 美观地打印字典
+            pprint.pprint(scene_info_dict)
+            print("=" * 20 + "\n")
+        # --------------------------------------------------------------------
+        # <-- 新增部分结束
+        # --------------------------------------------------------------------
+
+        # 保存精确时间戳到 CSV 文件
+        if scene_list:
             if not stats_file_prefix:
                 stats_file_prefix = os.path.splitext(os.path.basename(video_path))[0]
 
             stats_csv_path = os.path.join(output_dir, f'{stats_file_prefix}_timestamps.csv')
-
             print(f'正在将精确时间戳保存到 {stats_csv_path}...')
-
-            # 确保输出目录存在
             os.makedirs(output_dir, exist_ok=True)
 
-            # 写入 CSV 文件
             with open(stats_csv_path, 'w', newline='') as csv_file:
-                # 使用 PySceneDetect 导出的场景列表来写入
-                # 每个 scene 是一个元组 (开始时间码, 结束时间码)
-                # 时间码对象有 .get_seconds() 和 .get_frames() 方法
                 csv_writer = csv.writer(csv_file)
                 csv_writer.writerow([
                     'Scene Number',
@@ -82,9 +97,7 @@ def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix='')
 
         # 如果检测到了场景，就进行分割
         if scene_list:
-            # 确保输出目录存在
             os.makedirs(output_dir, exist_ok=True)
-
             print(f'开始分割视频，输出到 ./{output_dir} 目录...')
             scenedetect.split_video_ffmpeg(
                 video_path,
