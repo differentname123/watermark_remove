@@ -1,4 +1,5 @@
 import ast
+import copy
 import json
 import os
 import re
@@ -613,3 +614,143 @@ def get_config(key):
         raise KeyError(f"配置文件中缺少字段: {key}")
 
     return config_data[key]
+
+
+import copy
+import re
+
+
+# --- 辅助函数 (time_to_ms 保持不变，ms_to_time 修改) ---
+
+def time_to_ms(time_input: str | float | int) -> int:
+    """
+    将多种时间格式统一转换为毫秒。
+    该函数非常稳健，可以处理以下格式：
+    - 数字 (int/float): 12.345 (代表秒)
+    - 纯秒数字符串: "12.345"
+    - 标准SRT时间码: "00:01:02,345" 或 "00:01:02.345"
+    - 省略小时的时间码: "01:02.345"
+    - 只有分秒的时间码: "03.482"
+
+    Args:
+        time_input: 多种格式的时间输入。
+
+    Returns:
+        总毫秒数 (int)。
+    """
+    if isinstance(time_input, (int, float)):
+        return int(time_input * 1000)
+
+    time_str = str(time_input).strip()
+
+    try:
+        return int(float(time_str.replace(',', '.')) * 1000)
+    except ValueError:
+        pass
+
+    time_str = time_str.replace(',', '.')
+
+    parts = time_str.split(':')
+    h, m, s = 0, 0, 0.0
+
+    try:
+        if len(parts) == 3:  # HH:MM:SS.ms
+            h = int(parts[0])
+            m = int(parts[1])
+            s = float(parts[2])
+        elif len(parts) == 2:  # MM:SS.ms
+            m = int(parts[0])
+            s = float(parts[1])
+        elif len(parts) == 1:  # SS.ms
+            s = float(parts[0])
+        else:
+            raise ValueError("时间码中的冒号过多")
+
+        return int((h * 3600 + m * 60 + s) * 1000)
+
+    except (ValueError, IndexError):
+        raise ValueError(f"无法解析的时间格式: '{time_input}'")
+
+
+def ms_to_time(ms: int) -> str:
+    """将毫秒转换为'HH:MM:SS.ms'格式的时间字符串。"""
+    if ms < 0: ms = 0
+    s, ms_rem = divmod(ms, 1000)
+    m, s = divmod(s, 60)
+    h, m = divmod(m, 60)
+    # --- 修改点：将逗号改为点 ---
+    return f"{h:02d}:{m:02d}:{s:02d}.{ms_rem:03d}"
+
+
+# --- 主函数 (无需修改) ---
+
+def optimize_subtitle_timing(subtitle_list: list) -> list:
+    """
+    优化字幕列表的时间占用，调整间隔，记录移动时间，并计算持续时长。
+
+    Args:
+        subtitle_list: 存放字幕信息的字典列表。
+
+    Returns:
+        处理后的新字幕列表，增加了 duration 字段，并且所有时间戳统一为 'HH:MM:SS.ms' 格式。
+    """
+    if not subtitle_list:
+        return []
+
+    processed_list = copy.deepcopy(subtitle_list)
+
+    for segment in processed_list:
+        segment['old_startTime'] = segment['startTime']
+        segment['old_endTime'] = segment['endTime']
+        segment['forward_shift_ms'] = 0
+        segment['backward_shift_ms'] = 0
+
+    first_segment = processed_list[0]
+    start_ms = time_to_ms(first_segment['startTime'])
+    if start_ms > 0:
+        new_start_ms = start_ms // 2
+        shift = start_ms - new_start_ms
+        first_segment['startTime'] = ms_to_time(new_start_ms)
+        first_segment['forward_shift_ms'] = shift
+
+    for i in range(len(processed_list) - 1):
+        current_segment = processed_list[i]
+        next_segment = processed_list[i + 1]
+
+        current_end_ms = time_to_ms(current_segment['endTime'])
+        next_start_ms = time_to_ms(next_segment['startTime'])
+
+        if next_start_ms < current_end_ms:
+            next_start_ms = current_end_ms
+
+        gap_ms = next_start_ms - current_end_ms
+
+        if gap_ms > 0:
+            adjustment_ms = gap_ms / 2
+            max_adjustment_ms = 500
+            actual_adjustment_ms = min(adjustment_ms, max_adjustment_ms)
+
+            new_current_end_ms = current_end_ms + actual_adjustment_ms
+            current_segment['endTime'] = ms_to_time(int(new_current_end_ms))
+
+            new_next_start_ms = next_start_ms - actual_adjustment_ms
+            next_segment['startTime'] = ms_to_time(int(new_next_start_ms))
+
+            current_segment['backward_shift_ms'] += actual_adjustment_ms
+            next_segment['forward_shift_ms'] += actual_adjustment_ms
+
+    for segment in processed_list:
+        segment['forward_shift_ms'] = int(segment['forward_shift_ms'])
+        segment['backward_shift_ms'] = int(segment['backward_shift_ms'])
+
+    for segment in processed_list:
+        start_ms = time_to_ms(segment['startTime'])
+        end_ms = time_to_ms(segment['endTime'])
+
+        segment['startTime'] = ms_to_time(start_ms)
+        segment['endTime'] = ms_to_time(end_ms)
+
+        duration_seconds = (end_ms - start_ms) / 1000.0
+        segment['duration'] = round(duration_seconds, 3)
+
+    return processed_list

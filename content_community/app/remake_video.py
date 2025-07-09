@@ -9,7 +9,7 @@
     重制视频
 """
 from LLM.gemini import get_llm_content_gemini_flash_video
-from common_utils.common_utils import string_to_object
+from common_utils.common_utils import string_to_object, optimize_subtitle_timing
 from common_utils.split_scenes import find_and_split_scenes
 from common_utils.video_utils import cover_video_area_gently
 
@@ -68,6 +68,10 @@ def get_owner_speech(video_path):
     # 直接读取result.json文件
     with open('result.json', 'r', encoding='utf-8') as f:
         result = json.load(f)
+
+    optimized_subtitles = optimize_subtitle_timing(result)
+    with open('result1.json', 'w', encoding='utf-8') as f:
+        json.dump(optimized_subtitles, f, ensure_ascii=False, indent=4)
     return result
 
 def cover_subtitle(video_path):
