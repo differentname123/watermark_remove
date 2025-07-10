@@ -13,7 +13,7 @@ import os
 import subprocess
 import json
 
-from common_utils import time_to_ms
+from common_utils.common_utils import time_to_ms
 
 
 def probe_video(path):
@@ -146,39 +146,89 @@ def cover_video_area(
         raise
 
 
+import subprocess
+import json
+import shlex
+
+def _get_video_resolution(video_path: str):
+    """
+    调用 ffprobe 自动获取视频宽高（像素）。
+    返回 (width, height)。
+    """
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "json",
+        video_path
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffprobe 获取分辨率失败：{proc.stderr.strip()}")
+    info = json.loads(proc.stdout)
+    stream = info.get("streams", [{}])[0]
+    return int(stream["width"]), int(stream["height"])
+
+
 def cover_video_area_gently(
         video_path: str,
         output_path: str,
-        top_left,
-        bottom_right,
-        mode='blur',
+        top_left: tuple[int,int],
+        bottom_right: tuple[int,int],
+        mode: str = 'blur',
         strength: int = 50
-) -> None:
-    # ... (“温和遮挡”函数保持不变) ...
+):
+    """
+    在 video_path 指定的视频上，对 [top_left, bottom_right] 区域做遮挡，
+    并输出到 output_path。支持 'blur'、'gblur'（更灵活的 Gaussian Blur）和 'pixelate' 三种模式。
+    strength 参数：
+      - blur 模式：控制 luma_radius（及 gblur 的 sigma）
+      - pixelate 模式：控制方格大小
+    """
+    # 1. 检查坐标合法性
     x1, y1 = top_left
     x2, y2 = bottom_right
-
-    if not (x2 > x1 and y2 > y1):
+    if not (isinstance(x1, int) and isinstance(y1, int)
+            and isinstance(x2, int) and isinstance(y2, int)):
+        raise ValueError("坐标必须为整数元组 (x, y)")
+    if x2 <= x1 or y2 <= y1:
         raise ValueError("右下角坐标必须大于左上角坐标")
+
+    # 2. 获取视频分辨率并校验区域不超出边界
+    vid_w, vid_h = _get_video_resolution(video_path)
+    if not (0 <= x1 < vid_w and 0 <= x2 <= vid_w
+            and 0 <= y1 < vid_h and 0 <= y2 <= vid_h):
+        raise ValueError(f"裁剪区域超出视频范围 ({vid_w}x{vid_h})")
 
     width = x2 - x1
     height = y2 - y1
 
-    print(f"准备 '{mode}' 遮挡区域：位置=({x1}, {y1}), 尺寸={width}x{height}, 强度={strength}")
+    print(f"[INFO] 输入视频分辨率：{vid_w}x{vid_h}")
+    print(f"[INFO] 遮挡区域：位置=({x1},{y1}), 大小={width}x{height}, 模式={mode}, 强度={strength}")
 
+    # 3. 构造滤镜
     if mode == 'blur':
-        chroma_strength = min(strength, 27)
-        effect_filter = f"boxblur=luma_radius={strength}:lr={strength}:chroma_radius={chroma_strength}:cr={chroma_strength}"
+        # luma 模糊 + 动态 chroma 上限
+        max_chroma = height // 4
+        chroma = min(strength, max_chroma)
+        effect = f"boxblur=luma_radius={strength}:lr={strength}" \
+                 f":chroma_radius={chroma}:cr={chroma}"
+    elif mode == 'gblur':
+        # Gaussian blur（没有色度半径限制）
+        effect = f"gblur=sigma={strength}"
     elif mode == 'pixelate':
-        effect_filter = f"pixelize={strength}"
+        effect = f"pixelize={strength}"
     else:
-        raise ValueError(f"不支持的模式: '{mode}'。请选择 'blur' 或 'pixelate'。")
+        raise ValueError("不支持的模式，请选择 'blur'、'gblur' 或 'pixelate'")
 
+    # 4. 完整 filter_complex
     filter_complex = (
-        f"[0:v]split=2[main][cropped];"
-        f"[cropped]crop={width}:{height}:{x1}:{y1},"
-        f"{effect_filter}[effect];"
-        f"[main][effect]overlay={x1}:{y1}"
+        # split 主流和裁剪流
+        f"[0:v]split=2[main][crop];"
+        # 裁剪 + 效果
+        f"[crop]crop={width}:{height}:{x1}:{y1},{effect}[eff];"
+        # 合成
+        f"[main][eff]overlay={x1}:{y1}"
     )
 
     cmd = [
@@ -188,24 +238,18 @@ def cover_video_area_gently(
         "-c:a", "copy",
         output_path
     ]
+
+    # 5. 执行并捕获任何错误
     try:
-        print(f"正在执行 ffmpeg 命令: {' '.join(cmd)}")
-        subprocess.run(cmd, check=True)
-        print(f"成功！已将带 '{mode}' 遮挡的视频保存至: {output_path}")
+        print(f"[INFO] 运行命令：{' '.join(shlex.quote(c) for c in cmd)}")
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f"FFmpeg 错误（{proc.returncode}）：\n{proc.stderr}")
+        print(f"[SUCCESS] 已生成：{output_path}")
     except FileNotFoundError:
-        print("[错误] ffmpeg 未安装或未在系统 PATH 中。请先安装 ffmpeg。")
-        raise
-    except subprocess.CalledProcessError as e:
-        print(f"[错误] ffmpeg 执行失败。返回码: {e.returncode}")
-        print(f"命令: {' '.join(e.cmd)}")
-        stderr_output = ""
-        if e.stderr:
-            try:
-                stderr_output = e.stderr.decode('utf-8', errors='ignore')
-            except Exception:
-                stderr_output = repr(e.stderr)
-        print(f"FFMPEG 错误输出:\n{stderr_output}")
-        raise
+        raise FileNotFoundError("未检测到 ffmpeg，请先安装并添加到 PATH。")
+    return vid_w, vid_h
+
 
 
 # ==============================================================================
