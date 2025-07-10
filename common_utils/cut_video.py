@@ -29,7 +29,7 @@ def main():
     global img_display, pts # 假设 pts 是全局变量
 
     # 1. 打开视频
-    cap = cv2.VideoCapture('test1.mp4')
+    cap = cv2.VideoCapture('test2.mp4')
     if not cap.isOpened():
         print("无法打开视频文件")
         return

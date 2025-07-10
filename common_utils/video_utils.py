@@ -146,35 +146,34 @@ def cover_video_area(
         raise
 
 
+import shlex
 import subprocess
 import json
-import shlex
+import re
 
-def _get_video_resolution(video_path: str):
-    """
-    调用 ffprobe 自动获取视频宽高（像素）。
-    返回 (width, height)。
-    """
+
+# 假设 _get_video_resolution 已经定义好了，这里提供一个实现
+def _get_video_resolution(video_path: str) -> tuple[int, int]:
+    """使用 ffprobe 获取视频分辨率"""
     cmd = [
-        "ffprobe", "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height",
-        "-of", "json",
-        video_path
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=width,height", "-of", "json", video_path
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(f"ffprobe 获取分辨率失败：{proc.stderr.strip()}")
-    info = json.loads(proc.stdout)
-    stream = info.get("streams", [{}])[0]
-    return int(stream["width"]), int(stream["height"])
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(proc.stdout)
+        width = data['streams'][0]['width']
+        height = data['streams'][0]['height']
+        return width, height
+    except (FileNotFoundError, subprocess.CalledProcessError, KeyError, IndexError) as e:
+        raise RuntimeError(f"无法获取视频分辨率: {e}")
 
 
 def cover_video_area_gently(
         video_path: str,
         output_path: str,
-        top_left: tuple[int,int],
-        bottom_right: tuple[int,int],
+        top_left: tuple[int, int],
+        bottom_right: tuple[int, int],
         mode: str = 'blur',
         strength: int = 50
 ):
@@ -208,11 +207,21 @@ def cover_video_area_gently(
 
     # 3. 构造滤镜
     if mode == 'blur':
-        # luma 模糊 + 动态 chroma 上限
-        max_chroma = height // 4
-        chroma = min(strength, max_chroma)
-        effect = f"boxblur=luma_radius={strength}:lr={strength}" \
-                 f":chroma_radius={chroma}:cr={chroma}"
+        # 根据 FFmpeg 错误日志，boxblur 的半径有上限（此环境下为 23）。
+        # 我们需要将 strength 限制在这个范围内。
+        # gblur 的 sigma 则没有这个硬性限制，因此更灵活。
+        BLUR_RADIUS_MAX = 23
+
+        # 限制 luma 强度
+        luma_strength = min(strength, BLUR_RADIUS_MAX)
+
+        # 限制 chroma 强度，它同时受限于 strength、动态上限和滤镜本身的最大值
+        max_chroma_dynamic = height // 4
+        chroma_strength = min(strength, max_chroma_dynamic, BLUR_RADIUS_MAX)
+
+        effect = f"boxblur=luma_radius={luma_strength}:lr={luma_strength}" \
+                 f":chroma_radius={chroma_strength}:cr={chroma_strength}"
+
     elif mode == 'gblur':
         # Gaussian blur（没有色度半径限制）
         effect = f"gblur=sigma={strength}"
@@ -242,15 +251,14 @@ def cover_video_area_gently(
     # 5. 执行并捕获任何错误
     try:
         print(f"[INFO] 运行命令：{' '.join(shlex.quote(c) for c in cmd)}")
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        # 注意：在Windows上，text=True可能会导致编码问题，如果stderr出现乱码，可以尝试指定encoding
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='ignore')
         if proc.returncode != 0:
             raise RuntimeError(f"FFmpeg 错误（{proc.returncode}）：\n{proc.stderr}")
         print(f"[SUCCESS] 已生成：{output_path}")
     except FileNotFoundError:
         raise FileNotFoundError("未检测到 ffmpeg，请先安装并添加到 PATH。")
     return vid_w, vid_h
-
-
 
 # ==============================================================================
 # ========================   新增的“添加字幕”函数   =========================

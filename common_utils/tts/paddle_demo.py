@@ -99,7 +99,7 @@ if __name__ == '__main__':
     output_dir = "tts_output"
     os.makedirs(output_dir, exist_ok=True)
 
-    text_to_synthesize = "你好，欢迎使用飞桨语音合成工具，这是一个测试句子。"
+    text_to_synthesize = "你好，welcome to 使用飞桨语音合成工具，这是一个测试句子。"
 
     # 示例1：使用默认的2倍速
     print("\n--- 示例1: 默认2倍速 ---")
@@ -110,25 +110,3 @@ if __name__ == '__main__':
         output_file_2x
     )
     print(f"最终音频 '{output_file_2x}' 时长: {duration_2x:.2f} 秒")
-
-    # 示例2：使用1.5倍速
-    print("\n--- 示例2: 1.5倍速 ---")
-    output_file_1_5x = os.path.join(output_dir, "test_audio_1.5x.wav")
-    duration_1_5x = synthesize_and_get_duration(
-        mock_tts_executor,
-        text_to_synthesize,
-        output_file_1_5x,
-        speed=1.5
-    )
-    print(f"最终音频 '{output_file_1_5x}' 时长: {duration_1_5x:.2f} 秒")
-
-    # 示例3：使用原始速度（1倍速）
-    print("\n--- 示例3: 1倍速 (不处理) ---")
-    output_file_1x = os.path.join(output_dir, "test_audio_1x.wav")
-    duration_1x = synthesize_and_get_duration(
-        mock_tts_executor,
-        text_to_synthesize,
-        output_file_1x,
-        speed=1.0
-    )
-    print(f"最终音频 '{output_file_1x}' 时长: {duration_1x:.2f} 秒")
