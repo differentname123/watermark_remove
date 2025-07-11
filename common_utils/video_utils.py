@@ -351,86 +351,84 @@ def _process_and_split_subtitles(
         max_width: int
 ):
     """
-    预处理字幕列表，将过长的字幕分割成多段。
+    预处理字幕列表，将过长的字幕分割成多段，直到每段都不超过最大宽度 max_width。
     """
     processed_subs = []
     split_chars = ['，', '。', '？', '！', '；', ',', '.', '?', '!', ';']
 
     for sub in subtitles_info:
-        # 使用一个队列来处理可能需要多次分割的片段
+        # 队列：存放 (startTime_str, endTime_str, text) 待处理
         segments_to_process = [(sub['startTime'], sub['endTime'], sub['optimizedText'])]
 
         while segments_to_process:
-            start_time, end_time, text = segments_to_process.pop(0)
-
-            # 使用Pillow的 getlength 方法计算渲染宽度
-            # Pillow >= 10.0.0 使用 getbbox()[2], 旧版本使用 getsize()[0]
+            start_str, end_str, text = segments_to_process.pop(0)
+            # 计算渲染宽度
             try:
                 text_width = font.getlength(text)
-            except AttributeError:  # 兼容旧版Pillow
+            except AttributeError:
                 text_width = font.getsize(text)[0]
 
+            # 如果宽度合格，直接输出
             if text_width <= max_width:
-                # 字幕长度合格，直接添加
                 processed_subs.append({
-                    'startTime': start_time,
-                    'endTime': end_time,
+                    'startTime': start_str,
+                    'endTime': end_str,
                     'optimizedText': text
                 })
+                continue  # 处理下一个队列项
+
+            # 否则需要拆分
+            t_start = _parse_subtitle_time(start_str)
+            t_end   = _parse_subtitle_time(end_str)
+            duration = t_end - t_start
+            if duration <= 0:
+                # 畸形时间区间，跳过
                 continue
 
-            # --- 字幕过长，需要分割 ---
-            original_duration = _parse_subtitle_time(end_time) - _parse_subtitle_time(start_time)
-            if original_duration <= 0:  # 避免除以零
-                continue
-
-            # 1. 寻找最佳分割点（尽量均匀）
-            best_split_index = -1
-            min_diff = float('inf')
-
-            # 优先按标点分割
-            for char in split_chars:
-                last_pos = 0
+            # --- 1. 找标点做最佳拆分点 ---
+            best_split = -1
+            min_offset = float('inf')
+            for ch in split_chars:
+                idx = 0
                 while True:
-                    pos = text.find(char, last_pos)
+                    pos = text.find(ch, idx)
                     if pos == -1:
                         break
+                    # 考虑标点后面作为拆点
+                    offset = abs(pos + 1 - len(text) / 2)
+                    if offset < min_offset:
+                        min_offset = offset
+                        best_split = pos + 1
+                    idx = pos + 1
 
-                    # 我们希望分割点靠近中间
-                    diff = abs(pos - len(text) // 2)
-                    if diff < min_diff:
-                        min_diff = diff
-                        best_split_index = pos + 1  # 分割点包含标点符号
-                    last_pos = pos + 1
+            # --- 2. 如果没有标点就硬拆中间 ---
+            if best_split == -1:
+                best_split = len(text) // 2
 
-            # 2. 如果没有标点，直接从中间分割
-            if best_split_index == -1:
-                best_split_index = len(text) // 2
+            # 切成两段，去除首尾空白
+            part1 = text[:best_split].strip()
+            part2 = text[best_split:].strip()
 
-            part1 = text[:best_split_index].strip()
-            part2 = text[best_split_index:].strip()
+            # 特殊情况：如果某段为空，就强制中点拆分一次
+            if not part1 or not part2:
+                mid = len(text) // 2
+                part1 = text[:mid].strip()
+                part2 = text[mid:].strip()
 
-            if not part1 or not part2:  # 避免产生空片段
-                # 如果分割失败（例如标点在句首），则退回到强制均分
-                best_split_index = len(text) // 2
-                part1 = text[:best_split_index].strip()
-                part2 = text[best_split_index:].strip()
+            # --- 3. 按字符比例分配时间 ---
+            ratio1 = len(part1) / len(text)
+            split_time_sec = t_start + duration * ratio1
+            split_time_str = _format_time_for_ffmpeg(split_time_sec)
 
-            # 3. 按字符长度比例，重新计算时间
-            part1_ratio = len(part1) / len(text)
-            split_time = _parse_subtitle_time(start_time) + original_duration * part1_ratio
+            # **改动点**：不再直接输出 part1，而是把两段都入队再检测
+            segments_to_process.append((start_str, split_time_str, part1))
+            segments_to_process.append((split_time_str, end_str,   part2))
 
-            # 将第一部分加入最终列表
-            processed_subs.append({
-                'startTime': start_time,
-                'endTime': _format_time_for_ffmpeg(split_time),
-                'optimizedText': part1
-            })
+        # end while
 
-            # 将第二部分放回队列，因为它可能仍然过长，需要再次检查和分割
-            segments_to_process.append((_format_time_for_ffmpeg(split_time), end_time, part2))
-
+    # end for
     return processed_subs
+
 
 
 def add_subtitles_to_video(
@@ -441,15 +439,22 @@ def add_subtitles_to_video(
         font_size: int = 48,
         font_color: str = 'white',
         box_color: str = 'black@0.5',
-        bottom_margin: int = 50
+        bottom_margin: int = 50,
+        fixed_rect: list = [[180, 641], [1099, 699]]  # [[x1, y1], [x2, y2]]
 ) -> None:
     """
-    将字幕信息“烧录”到视频中，并自动分割过长的字幕行。
+    将字幕信息“烧录”到视频中，并自动分割过长的字幕行，
+    并在每条字幕出现的时段内，先绘制一个固定大小的矩形背景。
 
     :param video_path: 输入视频的路径。
     :param subtitles_info: 原始字幕信息列表。
-    ... (其他参数不变) ...
-    :raises ...
+    :param output_path: 输出视频的路径。
+    :param font_path: 字体文件路径。
+    :param font_size: 字体大小，默认 48。
+    :param font_color: 字体颜色，默认白色。
+    :param box_color: 半透明背景色，默认黑@0.5。
+    :param bottom_margin: 距离底部的像素偏移，默认 50。
+    :param fixed_rect: 固定矩形区域 [[x1,y1],[x2,y2]]，示例 [[180,641],[1099,699]]。
     """
     if not os.path.exists(font_path):
         raise FileNotFoundError(f"字体文件未找到: {font_path}")
@@ -463,7 +468,6 @@ def add_subtitles_to_video(
         print(f"视频宽度: {video_width}px, 字幕最大允许宽度: {max_subtitle_width:.0f}px")
     except (ValueError, FileNotFoundError) as e:
         print(f"警告: 无法获取视频尺寸，将不执行字幕分割。错误: {e}")
-        # 如果无法获取宽度，则退回原始行为，不分割
         processed_subtitles = subtitles_info
     else:
         # 2. 加载字体用于计算文本宽度
@@ -483,23 +487,35 @@ def add_subtitles_to_video(
 
     # ------------------- [ 核心修改结束 ] -------------------
 
-    # 为ffmpeg的滤镜语法格式化字体路径
+    # 为 ffmpeg 的滤镜语法格式化字体路径
     formatted_font_path = font_path.replace('\\', '/')
     if os.name == 'nt':
         formatted_font_path = formatted_font_path.replace(':', '\\:')
 
-    drawtext_filters = []
-    # 使用处理后的字幕列表
-    for sub in processed_subtitles:
-        try:
-            # 注意：时间可能已经是浮点数或格式化后的字符串，_parse_subtitle_time 需要能处理
-            start_time = _parse_subtitle_time(sub['startTime'])
-            end_time = _parse_subtitle_time(sub['endTime'])
-            text = _escape_ffmpeg_text(sub['optimizedText'])
-        except (KeyError, ValueError) as e:
-            raise ValueError(f"字幕条目格式错误: {sub}. 错误: {e}")
+    # 计算固定矩形的位置和尺寸
+    x1, y1 = fixed_rect[0]
+    x2, y2 = fixed_rect[1]
+    rect_w = x2 - x1
+    rect_h = y2 - y1
 
-        filter_part = (
+    filters = []
+    for sub in processed_subtitles:
+        # 解析时间和文本
+        start_time = _parse_subtitle_time(sub['startTime'])
+        end_time   = _parse_subtitle_time(sub['endTime'])
+        text       = _escape_ffmpeg_text(sub['optimizedText'])
+
+        # 1) 先画固定大小的矩形
+        drawbox = (
+            f"drawbox="
+            f"x={x1}:y={y1}:w={rect_w}:h={rect_h}:"
+            f"color={box_color}:t=fill:"
+            f"enable='between(t,{start_time},{end_time})'"
+        )
+        filters.append(drawbox)
+
+        # 2) 再画字幕文字（关闭内置的 box）
+        drawtext = (
             f"drawtext="
             f"fontfile='{formatted_font_path}':"
             f"text='{text}':"
@@ -507,32 +523,30 @@ def add_subtitles_to_video(
             f"fontcolor={font_color}:"
             f"x=(w-text_w)/2:"
             f"y=h-text_h-{bottom_margin}:"
-            f"box=1:boxcolor={box_color}:boxborderw=15:"
+            f"box=0:"
             f"enable='between(t,{start_time},{end_time})'"
         )
-        drawtext_filters.append(filter_part)
+        filters.append(drawtext)
 
-    if not drawtext_filters:
+    if not filters:
         print("没有可烧录的字幕，将直接复制视频。")
-        # 如果没有字幕，可以直接复制视频或根据需求报错
         import shutil
         shutil.copy(video_path, output_path)
         return
 
-    final_filter_string = ",".join(drawtext_filters)
-
+    vf_arg = ",".join(filters)
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", video_path,
-        "-vf", final_filter_string,
+        "-vf", vf_arg,
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         "-c:a", "copy",
         output_path
     ]
 
     try:
-        print(f"正在为视频添加字幕...")
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
+        print("正在为视频添加字幕和固定矩形...")
+        subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
         print(f"成功！已将带字幕的视频保存至: {output_path}")
     except FileNotFoundError:
         print("[错误] ffmpeg 未安装或未在系统 PATH 中。请先安装 ffmpeg。")
@@ -541,6 +555,7 @@ def add_subtitles_to_video(
         print(f"[错误] ffmpeg 执行失败。返回码: {e.returncode}")
         print(f"FFMPEG 错误输出:\n{e.stderr}")
         raise
+
 
 if __name__ == '__main__':
     # --- 使用示例 ---

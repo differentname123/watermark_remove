@@ -11,9 +11,11 @@
 import os
 import time
 
+import cv2
+
 from LLM.gemini import get_llm_content_gemini_flash_video
 from common_utils.common_utils import string_to_object, optimize_subtitle_timing
-from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box
+from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box, find_overall_subtitle_box_target_number
 from common_utils.split_scenes import find_and_split_scenes
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
 from common_utils.tts.paddle_speech_demo import synthesize_and_get_duration
@@ -178,7 +180,7 @@ def gen_new_audio(optimized_subtitles):
     # 直接返回内存中已更新的列表，无需重新读取文件
     return optimized_subtitles
 
-def add_subtitle(input_video, subtitle_data, output_with_subtitles, bottom_margin, font_size):
+def add_subtitle(input_video, subtitle_data, output_with_subtitles, bottom_margin, font_size, fixed_rect):
     try:
         # 尝试查找一个常见的系统字体
         font_file_path = ""
@@ -212,7 +214,8 @@ def add_subtitle(input_video, subtitle_data, output_with_subtitles, bottom_margi
             output_path=output_with_subtitles,
             font_path=font_file_path,
             font_size=font_size,
-            bottom_margin=bottom_margin
+            bottom_margin=bottom_margin,
+            fixed_rect=fixed_rect
         )
 
     except (FileNotFoundError, ValueError) as err:
@@ -221,6 +224,38 @@ def add_subtitle(input_video, subtitle_data, output_with_subtitles, bottom_margi
         print("1. `test.mp4` 文件存在于脚本相同目录下。")
         print("2. 你的系统中安装了 ffmpeg 并已添加到环境变量(PATH)。")
         print("3. 如果自动字体检测失败，请在代码中手动指定一个有效的中文字体路径。")
+
+
+def adjust_subtitle_box(video_path: str, final_box: list[list[int, int]]):
+    """
+    调整字幕框左右边距为视频宽度的 10%，高度保持不变。
+
+    参数:
+        video_path: 视频文件路径
+        final_box: 原始字幕框，格式 [[x0, y0], [x1, y1], [x2, y2], [x3, y3]]
+
+    返回:
+        (top_left, bottom_right)：调整后的左上角和右下角坐标
+    """
+    # 1. 打开视频，获取分辨率
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise IOError(f"无法打开视频文件: {video_path}")
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+
+    # 2. 计算新的左右边界x坐标，保留上下y坐标不变
+    x_left = int(width * 0.1)  # 左侧距离视频宽度的 10%
+    x_right = int(width * 0.9)  # 右侧距离视频宽度的 10%
+    y_top = final_box[0][1]  # 原框上边 y 不变
+    y_bottom = final_box[2][1]  # 原框下边 y 不变
+
+    # 3. 构造新的 top_left 和 bottom_right
+    top_left = [x_left, y_top]
+    bottom_right = [x_right, y_bottom]
+
+    return top_left, bottom_right
 
 
 def remake_video(video_path):
@@ -232,10 +267,10 @@ def remake_video(video_path):
 
 
 
-    # final_box = find_overall_subtitle_box(video_path)
-    final_box = [[180, 641], [1099, 641], [1099, 699], [180, 699]]
-    top_left = final_box[0]
-    bottom_right = final_box[2]
+    final_box = find_overall_subtitle_box_target_number(video_path)
+    # final_box = [[180, 641], [1099, 641], [1099, 699], [180, 699]]
+    top_left, bottom_right = adjust_subtitle_box(video_path, final_box)
+
     # 覆盖字幕区域
     covered_video_path = video_path.replace('.mp4', '_covered.mp4')
     vid_w, vid_h = cover_subtitle(video_path, covered_video_path, top_left, bottom_right)
@@ -244,18 +279,18 @@ def remake_video(video_path):
     font_size = bottom_right[1] - top_left[1]
     font_size = int(font_size * 0.8)
     bottom_margin = vid_h - bottom_right[1] + int(int(bottom_right[1] - top_left[1]) * 0.1)
-    add_subtitle(covered_video_path, owner_speech_list, add_subtitle_output_path, bottom_margin=bottom_margin, font_size=font_size)
+    add_subtitle(covered_video_path, owner_speech_list, add_subtitle_output_path, bottom_margin=bottom_margin, font_size=font_size, fixed_rect=[top_left, bottom_right])
 
-    # # 生成新的音频
-    # optimized_subtitles = gen_new_audio(owner_speech_list)
-    #
-    # output_file_path = 'output_with_new_audio.mp4'
-    # # 使用ffmpeg重制视频
-    # redub_video_with_ffmpeg(add_subtitle_output_path, optimized_subtitles, output_path=output_file_path)
-    #
-    # bgm_file = "background_music.mp3"
-    # output_file = "output_with_bgm.mp4"
-    # add_bgm_to_video(output_file_path, bgm_file, output_file)
+    # 生成新的音频
+    optimized_subtitles = gen_new_audio(owner_speech_list)
+
+    redub_output_file_path = add_subtitle_output_path.replace('.mp4', '_redub.mp4')
+    # 使用ffmpeg重制视频
+    redub_video_with_ffmpeg(add_subtitle_output_path, optimized_subtitles, output_path=redub_output_file_path)
+
+    bgm_file = "background_music.mp3"
+    output_file = redub_output_file_path.replace('.mp4', '_with_bgm.mp4')
+    add_bgm_to_video(redub_output_file_path, bgm_file, output_file)
 
 if __name__ == '__main__':
-    remake_video('test2.mp4')
+    remake_video('test3.mp4')
