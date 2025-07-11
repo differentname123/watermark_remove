@@ -1131,3 +1131,105 @@ if __name__ == '__main__':
         print("1. `test.mp4` 文件存在于脚本相同目录下。")
         print("2. 你的系统中安装了 ffmpeg 并已添加到环境变量(PATH)。")
         print("3. 如果自动字体检测失败，请在代码中手动指定一个有效的中文字体路径。")
+
+def re_edit_video_ffmpeg(video_path, time_segments, output_path="output_video_ffmpeg.mp4"):
+    """
+    使用 FFmpeg 根据给定的时间段列表重新剪辑视频。(已修正开头画面冻结问题)
+
+    此版本通过对第一个剪辑片段进行强制重新编码来确保其以关键帧开头，
+    后续片段则继续使用快速的流复制方法。
+    """
+    if not time_segments:
+        print("[ERROR] 时间段列表为空，操作中止。")
+        return
+
+    if not os.path.exists(video_path):
+        print(f"[ERROR] 视频文件未找到: {video_path}")
+        return
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        clip_files = []
+
+        print("[INFO] 开始剪辑视频片段...")
+        for i, segment in enumerate(time_segments):
+            start_time = segment['original_start_time']
+            end_time = segment['original_end_time']
+            temp_clip_path = os.path.join(temp_dir, f"clip_{i}.mp4")
+
+            # 核心修正：对第一个片段 (i == 0) 特殊处理
+            if i == 0:
+                # 对于第一个片段，我们必须进行重新编码以确保它以关键帧开头
+                print(f"[INFO] 正在创建第一个片段 (方法: 重新编码): 从 {start_time} 到 {end_time}")
+                cmd_clip = [
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-ss", start_time,
+                    "-i", video_path,
+                    "-to", end_time,
+                    "-c:v", "libx264", "-c:a", "aac",  # 强制重新编码视频和音频
+                    temp_clip_path
+                ]
+            else:
+                # 对于后续片段，我们可以继续使用快速的流复制
+                print(f"[INFO] 正在创建片段 {i + 1}/{len(time_segments)} (方法: copy): 从 {start_time} 到 {end_time}")
+                cmd_clip = [
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-ss", start_time,
+                    "-i", video_path,
+                    "-to", end_time,
+                    "-c", "copy",
+                    "-avoid_negative_ts", "1",
+                    temp_clip_path
+                ]
+
+            try:
+                subprocess.run(cmd_clip, check=True, capture_output=True, text=True, encoding='utf-8')
+                clip_files.append(temp_clip_path)
+            except subprocess.CalledProcessError as e:
+                # 如果出现任何错误，打印详细信息并跳过
+                print(f"    [ERROR] 创建片段 {i + 1} 失败 (返回码 {e.returncode})。")
+                print(f"    [DEBUG] 失败的命令: {' '.join(e.cmd)}")
+                if e.stderr:
+                    print(f"    [DEBUG] FFmpeg Stderr:\n---(start) ---\n{e.stderr.strip()}\n--- (end) ---")
+                print(f"[WARNING] 将跳过此时间段继续。")
+                continue
+
+        # --- 后续拼接逻辑 (无需改动) ---
+        if not clip_files:
+            print("\n[ERROR] 未能成功创建任何剪辑片段，拼接操作中止。")
+            return
+
+        print(f"\n[INFO] 成功创建 {len(clip_files)} 个片段，现在开始拼接...")
+        concat_list_path = os.path.join(temp_dir, "concat_list.txt")
+        with open(concat_list_path, 'w', encoding='utf-8') as f:
+            for clip_path in clip_files:
+                safe_clip_path = os.path.abspath(clip_path).replace('\\', '/')
+                f.write(f"file '{safe_clip_path}'\n")
+
+        cmd_concat = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "concat", "-safe", "0",
+            "-i", concat_list_path,
+            "-c", "copy",
+            output_path
+        ]
+
+        try:
+            subprocess.run(cmd_concat, check=True, capture_output=True, text=True, encoding='utf-8')
+            print(f"[SUCCESS] 视频已成功合并并保存至: {output_path}")
+        except subprocess.CalledProcessError:
+            print("[WARNING] 使用流复制进行拼接失败，将尝试重新编码拼接。")
+            cmd_concat_recode = [
+                "ffmpeg", "-y", "-loglevel", "error",
+                "-f", "concat", "-safe", "0",
+                "-i", concat_list_path,
+                "-c:v", "libx264", "-c:a", "aac",
+                output_path
+            ]
+            try:
+                subprocess.run(cmd_concat_recode, check=True, capture_output=True, text=True, encoding='utf-8')
+                print(f"[SUCCESS] 视频已成功合并（通过重新编码）并保存至: {output_path}")
+            except subprocess.CalledProcessError as e3:
+                print(f"[FATAL] 重新编码拼接也失败了。")
+                if e3.stderr:
+                    print(f"    [DEBUG] FFmpeg Stderr:\n---(start) ---\n{e3.stderr.strip()}\n--- (end) ---")
+

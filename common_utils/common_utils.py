@@ -754,3 +754,88 @@ def optimize_subtitle_timing(subtitle_list: list) -> list:
         segment['duration'] = round(duration_seconds, 3)
 
     return processed_list
+
+def merge_time_segments(segments: list) -> list:
+    """
+    合并列表中相邻且连续的时间段。
+
+    Args:
+        segments (list): 一个包含时间段字典的列表。
+                         每个字典需包含 'original_start_time' 和 'original_end_time'。
+                         列表应预先按开始时间排序。
+
+    Returns:
+        list: 一个新的列表，其中包含了合并后的时间段。
+    """
+    # 如果列表为空或只有一个元素，无需合并，直接返回副本
+    if not segments or len(segments) < 2:
+        return segments[:]
+
+    # 用于存放最终结果的列表
+    merged_list = []
+
+    # 将第一个时间段作为起始合并段，注意使用 .copy() 以免修改原始输入
+    current_merged_segment = segments[0].copy()
+
+    # 从第二个元素开始遍历
+    for i in range(1, len(segments)):
+        next_segment = segments[i]
+
+        # 检查当前合并段的结束时间是否与下一个段的开始时间完全相同
+        if current_merged_segment['original_end_time'] == next_segment['original_start_time']:
+            # --- 条件满足，进行合并 ---
+
+            # 1. 更新结束时间
+            current_merged_segment['original_end_time'] = next_segment['original_end_time']
+
+            # 2. 合并其他描述性信息（这里我们用 '&' 连接场景ID，用换行和分隔符连接理由）
+            current_merged_segment['scene_id'] += f" & {next_segment['scene_id']}"
+            current_merged_segment[
+                'reasoning'] += f"\n\n--- [合并自 {next_segment['scene_id']}] ---\n{next_segment['reasoning']}"
+
+            # new_sequence_index 保持为合并段的第一个索引，所以不做任何操作
+        else:
+            # --- 条件不满足，无法合并 ---
+
+            # 1. 将已经完成的合并段添加到结果列表
+            merged_list.append(current_merged_segment)
+
+            # 2. 将当前遍历到的这个时间段作为新的起始合并段
+            current_merged_segment = next_segment.copy()
+
+    # 循环结束后，不要忘记将最后一个正在处理的 current_merged_segment 添加到结果中
+    merged_list.append(current_merged_segment)
+
+    return merged_list
+
+
+def read_json(json_path):
+    """
+    读取 JSON 文件并返回内容。
+
+    Args:
+        json_path (str): JSON 文件的路径。
+
+    Returns:
+        dict: 解析后的 JSON 内容。
+    """
+    if not os.path.exists(json_path):
+        return {}
+
+    with open(json_path, 'r', encoding='utf-8') as f:
+        try:
+            data = json.load(f)
+            return data
+        except json.JSONDecodeError as e:
+            raise ValueError(f"无法解析 JSON 文件 '{json_path}': {e}")
+
+def save_json(json_path, data):
+    """
+    将数据保存为 JSON 文件。
+
+    Args:
+        json_path (str): 要保存的 JSON 文件路径。
+        data (dict): 要保存的数据。
+    """
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)

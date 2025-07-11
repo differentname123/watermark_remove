@@ -10,16 +10,19 @@
 """
 import os
 import time
+import traceback
 
 import cv2
 
 from LLM.gemini import get_llm_content_gemini_flash_video
-from common_utils.common_utils import string_to_object, optimize_subtitle_timing
+from common_utils.common_utils import string_to_object, optimize_subtitle_timing, merge_time_segments, read_json, \
+    save_json
 from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box, find_overall_subtitle_box_target_number
 from common_utils.split_scenes import find_and_split_scenes
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
 from common_utils.tts.paddle_speech_demo import synthesize_and_get_duration
-from common_utils.video_utils import cover_video_area_gently, add_subtitles_to_video, cover_video_area_simple
+from common_utils.video_utils import cover_video_area_gently, add_subtitles_to_video, cover_video_area_simple, \
+    re_edit_video_ffmpeg
 from paddlespeech.cli.tts.infer import TTSExecutor
 
 import json
@@ -89,13 +92,8 @@ def get_owner_speech(video_path):
             print("重试次数超过3次，退出程序。")
             return []
         print("正在生成和优化字幕...")
-        if os.path.exists(output_path):
-            print(f"检测到{output_path}已存在的字幕文件，直接读取...")
-            with open(output_path, 'r', encoding='utf-8') as f:
-                result = json.load(f)
-        else:
-            raw = get_llm_content_gemini_flash_video(prompt=prompt, video_path=video_path)
-            result = string_to_object(raw)
+        raw = get_llm_content_gemini_flash_video(prompt=prompt, video_path=video_path)
+        result = string_to_object(raw)
 
         # 步骤 3: 优化字幕计时
         optimized_subtitles = optimize_subtitle_timing(result)
@@ -273,116 +271,173 @@ def gen_cut_suggestion(video_path):
     """
     生成剪辑的建议，交换场景顺序或者删除场景。
     """
-    scene_info_dict = find_and_split_scenes(video_path)
-    if not scene_info_dict:
-        print("未能成功获取视频场景信息。")
-        return
-    prompt = """# 角色
-                你是一位拥有十年经验的资深视频剪辑师和顶级社交媒体内容策略专家。你精通各种平台（如抖音、Bilibili、YouTube Shorts）的流量算法和用户心理，知道如何通过剪辑创造“黄金三秒”、提升完播率和互动率。
-                
-                # 目标
-                你的核心目标是分析我提供的视频场景信息，并输出一个最优化的剪辑方案，旨在最大化视频的**观众吸引力、叙事流畅性、信息价值和传播潜力**。所有决策都必须以“让最终视频效果更好”为唯一标准。如果原始顺序已是最佳，则保持原样。
-                
-                # 背景信息
-                
-                
-                # 任务指令
-                1.  **全面分析**：基于提供的视频，深入理解整个视频的核心主题、叙事结构和关键信息点。
-                2.  **逐一评估**：结合“原始场景分割”，独立评估每个场景的作用和质量。评估维度包括：
-                    *   **信息密度**：该场景是否传递了关键信息？
-                    *   **视觉冲击力**：画面是否吸引人？
-                    *   **情绪价值**：该场景能否引发观众的情绪（好奇、共鸣、兴奋等）？
-                    *   **叙事功能**：它在故事中扮演什么角色（开端、发展、高潮、结尾、铺垫、转折）？
-                    *   **冗余性**：该场景是否多余、拖沓或可被替代？
-                3.  **策略决策**：基于以上评估，构建最终的剪辑方案。你可以执行以下操作：
-                    *   **保留 (Keep)**：当场景质量高且位置合适时。
-                    *   **重排 (Reorder)**：调整场景顺序以优化叙事节奏或将最精彩的部分前置（例如，创建钩子）。
-                    *   **删除 (Delete)**：移除内容冗余、质量低下或对主线故事无益的场景。
-                4.  **生成最终方案**：将你的决策结果以纯JSON格式输出。
-                
-                # 输出要求
-                *   **严格的JSON格式**：你的输出必须是**一个完整且格式正确的JSON对象**，不能包含任何JSON格式之外的标记、注释、代码块标识（如 ```json ... ```）或任何解释性文本。
-                *   **内容结构**：JSON对象必须包含以下三个顶级键：`overall_strategy`, `final_cut_sequence`, `deleted_scenes`。
-                
-                ---
-                ### JSON输出格式定义与示例
-                
-                ```json
-                {
-                  "overall_strategy": "将成品展示（场景4）提前至开头作为钩子，吸引用户停留。删除了冗长的备料介绍（场景2），并整合了核心烹饪步骤，使节奏更紧凑，重点突出。",
-                  "final_cut_sequence": [
+    base_name = os.path.basename(video_path)
+    output_path = base_name.replace('.mp4', '_cut_suggestion.json')
+    try:
+        if os.path.exists(output_path):
+            print(f"检测到 {output_path} 已存在，直接读取...")
+            with open(output_path, 'r', encoding='utf-8') as f:
+                result = json.load(f)
+            return result
+        scene_info_dict = find_and_split_scenes(video_path)
+        if not scene_info_dict:
+            print("未能成功获取视频场景信息。")
+            return
+        prompt = """# 角色
+                    你是一位拥有十年经验的资深视频剪辑师和顶级社交媒体内容策略专家。你精通各种平台（如抖音、Bilibili、YouTube Shorts）的流量算法和用户心理，知道如何通过剪辑创造“黄金三秒”、提升完播率和互动率。
+                    # 目标
+                    你的核心目标是分析我提供的视频场景信息，并输出一个最优化的剪辑方案，旨在最大化视频的**观众吸引力、叙事流畅性、信息价值和传播潜力**。所有决策都必须以“让最终视频效果更好”为唯一标准。如果原始顺序已是最佳，则保持原样。
+                    # 任务指令
+                    1.  **全面分析**：基于提供的视频，深入理解整个视频的核心主题、叙事结构和关键信息点。
+                    2.  **逐一评估**：结合“原始场景分割”，独立评估每个场景的作用和质量。评估维度包括：
+                        *   **信息密度**：该场景是否传递了关键信息？
+                        *   **视觉冲击力**：画面是否吸引人？
+                        *   **情绪价值**：该场景能否引发观众的情绪（好奇、共鸣、兴奋等）？
+                        *   **叙事功能**：它在故事中扮演什么角色（开端、发展、高潮、结尾、铺垫、转折）？
+                        *   **冗余性**：该场景是否多余、拖沓或可被替代？
+                    3.  **策略决策**：基于以上评估，构建最终的剪辑方案。你可以执行以下操作：
+                        *   **保留 (Keep)**：当场景质量高且位置合适时。
+                        *   **重排 (Reorder)**：调整场景顺序以优化叙事节奏或将最精彩的部分前置（例如，创建钩子）。
+                        *   **删除 (Delete)**：移除内容冗余、质量低下或对主线故事无益的场景。
+                    4.  **生成最终方案**：将你的决策结果以纯JSON格式输出。
+                    
+                    # 输出要求
+                    *   **严格的JSON格式**：你的输出必须是**一个完整且格式正确的JSON对象**，不能包含任何JSON格式之外的标记、注释、代码块标识（如 ```json ... ```）或任何解释性文本。
+                    *   **内容结构**：JSON对象必须包含以下三个顶级键：`overall_strategy`, `final_cut_sequence`, `deleted_scenes`。
+                    
+                    ---
+                    ### JSON输出格式定义与示例
+                    
+                    ```json
                     {
-                      "scene_id": "场景4",
-                      "original_start_time": "00:02:19.827",
-                      "original_end_time": "00:04:17.194",
-                      "new_sequence_index": 1,
-                      "reasoning": "作为视频钩子，快速展示最终成果，引发观众好奇心。"
-                    },
-                    {
-                      "scene_id": "场景1",
-                      "original_start_time": "00:00:00.000",
-                      "original_end_time": "00:00:02.188",
-                      "new_sequence_index": 2,
-                      "reasoning": "简短的开场白，承接钩子，引入主题。"
-                    },
-                    {
-                      "scene_id": "场景3",
-                      "original_start_time": "00:00:53.328",
-                      "original_end_time": "00:02:19.827",
-                      "new_sequence_index": 3,
-                      "reasoning": "核心内容，展示了关键的制作过程，保留以确保信息完整性。"
+                      "overall_strategy": "将成品展示（场景4）提前至开头作为钩子，吸引用户停留。删除了冗长的备料介绍（场景2），并整合了核心烹饪步骤，使节奏更紧凑，重点突出。",
+                      "final_cut_sequence": [
+                        {
+                          "scene_id": "场景4",
+                          "original_start_time": "00:02:19.827",
+                          "original_end_time": "00:04:17.194",
+                          "new_sequence_index": 1,
+                          "reasoning": "作为视频钩子，快速展示最终成果，引发观众好奇心。"
+                        },
+                        {
+                          "scene_id": "场景1",
+                          "original_start_time": "00:00:00.000",
+                          "original_end_time": "00:00:02.188",
+                          "new_sequence_index": 2,
+                          "reasoning": "简短的开场白，承接钩子，引入主题。"
+                        },
+                        {
+                          "scene_id": "场景3",
+                          "original_start_time": "00:00:53.328",
+                          "original_end_time": "00:02:19.827",
+                          "new_sequence_index": 3,
+                          "reasoning": "核心内容，展示了关键的制作过程，保留以确保信息完整性。"
+                        }
+                      ],
+                      "deleted_scenes": [
+                        {
+                          "scene_id": "场景2",
+                          "original_start_time": "00:00:02.188",
+                          "original_end_time": "00:00:53.328",
+                          "reasoning": "此场景为详细的备料过程，节奏过于缓慢且信息密度低，删除可以使视频更紧凑，直接进入核心制作环节。"
+                        }
+                      ]
                     }
-                  ],
-                  "deleted_scenes": [
-                    {
-                      "scene_id": "场景2",
-                      "original_start_time": "00:00:02.188",
-                      "original_end_time": "00:00:53.328",
-                      "reasoning": "此场景为详细的备料过程，节奏过于缓慢且信息密度低，删除可以使视频更紧凑，直接进入核心制作环节。"
-                    }
-                  ]
-                }
-                **原始场景分割信息如下**:
+                    **原始场景分割信息如下**:
+        """
+        prompt = f"{prompt}\n{scene_info_dict}"
+        raw = get_llm_content_gemini_flash_video(prompt=prompt, video_path=video_path)
+        result = string_to_object(raw)
+        return result
+    except Exception as e:
+        traceback.print_exc()
+        return None
+
+def auto_cut(video_path, all_info, output_path):
     """
-    prompt = f"{prompt}\n{scene_info_dict}"
-    print()
+    尝试进行场景的切换或者删除部分场景
+    """
+    if 'cut_suggestion_info' in all_info:
+        cut_suggestion_info = all_info['cut_suggestion_info']
+        print(f"检测到 {len(cut_suggestion_info.get('final_cut_sequence', []))} 个自动切割建议，直接使用...")
+    else:
+        cut_suggestion_info = gen_cut_suggestion(video_path)
+        all_info['cut_suggestion_info'] = cut_suggestion_info
+
+    if not cut_suggestion_info:
+        pass
+    final_cut_sequence = cut_suggestion_info.get('final_cut_sequence', [])
+    merged_list = merge_time_segments(final_cut_sequence)
+    re_edit_video_ffmpeg(video_path, merged_list, output_path=output_path)
+
+    return cut_suggestion_info
+
+
 
 def remake_video(video_path):
     """
     重制视频
     """
-    # 获取主人公语音片段
-    owner_speech_list = get_owner_speech(video_path)
+    base_name = os.path.basename(video_path)
+    all_info_json_path = base_name.replace('.mp4', '_all_info.json')
+    all_info = read_json(all_info_json_path)
 
-    final_box = find_overall_subtitle_box_target_number(video_path)
-    # final_box =  [[137, 1497], [945, 1497], [945, 1602], [137, 1602]]
-    top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(video_path, final_box)
+    # # 获取主人公语音片段
+    # if all_info and 'owner_speech' in all_info:
+    #     owner_speech_list = all_info['owner_speech']
+    #     print(f"检测到 {len(owner_speech_list)} 个主人公语音片段，直接使用...")
+    # else:
+    #     owner_speech_list = get_owner_speech(video_path)
+    #     all_info['owner_speech'] = owner_speech_list
+    #     save_json(all_info_json_path, all_info)
+    #
+    #
+    # # 获取字幕框
+    # if 'final_subtitle_box' in all_info:
+    #     final_box = all_info['final_subtitle_box']
+    #     print(f"检测到 {final_box} 已存在的字幕框，直接使用...")
+    # else:
+    #     final_box = find_overall_subtitle_box(video_path)
+    #     all_info['final_subtitle_box'] = final_box
+    # top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(video_path, final_box)
+    #
+    # # 覆盖字幕区域
+    # covered_video_path = video_path.replace('.mp4', '_covered.mp4')
+    # if os.path.exists(covered_video_path):
+    #     print(f"检测到 {covered_video_path} 已存在，直接使用...")
+    # else:
+    #     print(f"正在覆盖字幕区域，输出文件: {covered_video_path}...")
+    #     cover_subtitle(video_path, covered_video_path, top_left, bottom_right)
+    #
+    #
+    # # 增加新的文案和字幕
+    # add_subtitle_output_path = covered_video_path.replace('.mp4', '_with_subtitles.mp4')
+    # font_size = bottom_right[1] - top_left[1]
+    # font_size = int(font_size * 0.8)
+    # bottom_margin = vid_h - bottom_right[1] + int(int(bottom_right[1] - top_left[1]) * 0.1)
+    # add_subtitle(covered_video_path, owner_speech_list, add_subtitle_output_path, bottom_margin=bottom_margin, font_size=font_size, fixed_rect=[top_left, bottom_right])
+    #
+    #
+    # # 生成新的音频并且配上新的声音
+    # optimized_subtitles = gen_new_audio(owner_speech_list)
+    # redub_output_file_path = add_subtitle_output_path.replace('.mp4', '_redub.mp4')
+    # # 使用ffmpeg重制视频
+    # redub_video_with_ffmpeg(add_subtitle_output_path, optimized_subtitles, output_path=redub_output_file_path)
 
-    # 覆盖字幕区域
-    covered_video_path = video_path.replace('.mp4', '_covered.mp4')
-    if os.path.exists(covered_video_path):
-        print(f"检测到 {covered_video_path} 已存在，直接使用...")
+    redub_output_file_path = 'test_covered_with_subtitles_redub.mp4'
+    # 自动切割视频，删除场景或者交换场景顺序
+    auto_cut_output_path = redub_output_file_path.replace('.mp4', '_auto_cut.mp4')
+    if os.path.exists(auto_cut_output_path):
+        print(f"检测到 {auto_cut_output_path} 已存在，直接使用...")
     else:
-        print(f"正在覆盖字幕区域，输出文件: {covered_video_path}...")
-        cover_subtitle(video_path, covered_video_path, top_left, bottom_right)
+        print(f"正在自动切割视频，输出文件: {auto_cut_output_path}...")
+        cut_suggestion_info = auto_cut(redub_output_file_path, all_info, auto_cut_output_path)
+        save_json(all_info_json_path, all_info)
 
-    add_subtitle_output_path = covered_video_path.replace('.mp4', '_with_subtitles.mp4')
-    font_size = bottom_right[1] - top_left[1]
-    font_size = int(font_size * 0.8)
-    bottom_margin = vid_h - bottom_right[1] + int(int(bottom_right[1] - top_left[1]) * 0.1)
-    add_subtitle(covered_video_path, owner_speech_list, add_subtitle_output_path, bottom_margin=bottom_margin, font_size=font_size, fixed_rect=[top_left, bottom_right])
 
-    # 生成新的音频
-    optimized_subtitles = gen_new_audio(owner_speech_list)
-
-    redub_output_file_path = add_subtitle_output_path.replace('.mp4', '_redub.mp4')
-    # 使用ffmpeg重制视频
-    redub_video_with_ffmpeg(add_subtitle_output_path, optimized_subtitles, output_path=redub_output_file_path)
-
-    bgm_file = "background_music.mp3"
-    output_file = redub_output_file_path.replace('.mp4', '_with_bgm.mp4')
-    add_bgm_to_video(redub_output_file_path, bgm_file, output_file)
+    # bgm_file = "background_music.mp3"
+    # output_file = redub_output_file_path.replace('.mp4', '_with_bgm.mp4')
+    # add_bgm_to_video(redub_output_file_path, bgm_file, output_file)
 
 if __name__ == '__main__':
-    # gen_cut_suggestion('test.mp4')
-    remake_video('test1.mp4')
+    remake_video('test.mp4')
