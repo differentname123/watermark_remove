@@ -461,23 +461,23 @@ def remake_video(video_path):
     redub_output_file_path = add_subtitle_output_path.replace('.mp4', '_redub.mp4')
     # 使用ffmpeg重制视频
     # 过滤掉new_owner_speech_with_audio_list中text为"[无声]"的片段
-    new_owner_speech_with_audio_list = [speech for speech in new_owner_speech_with_audio_list if speech['text'] !="[无声]"]
+    # new_owner_speech_with_audio_list = [speech for speech in new_owner_speech_with_audio_list if speech['text'] =="[无声]"]
     redub_video_with_ffmpeg(add_subtitle_output_path, new_owner_speech_with_audio_list, output_path=redub_output_file_path)
 
-    # # redub_output_file_path = 'test_covered_with_subtitles_redub.mp4'
-    # # 自动切割视频，删除场景或者交换场景顺序
-    # auto_cut_output_path = redub_output_file_path.replace('.mp4', '_auto_cut.mp4')
-    # if os.path.exists(auto_cut_output_path):
-    #     print(f"检测到 {auto_cut_output_path} 已存在，直接使用...")
-    # else:
-    #     print(f"正在自动切割视频，输出文件: {auto_cut_output_path}...")
-    #     auto_cut(redub_output_file_path, all_info, auto_cut_output_path)
-    #     save_json(all_info_json_path, all_info)
-    #
-    #
-    # bgm_file = "background_music.mp3"
-    # output_file = auto_cut_output_path.replace('.mp4', '_with_bgm.mp4')
-    # add_bgm_to_video(redub_output_file_path, bgm_file, output_file)
+    # redub_output_file_path = 'test_covered_with_subtitles_redub.mp4'
+    # 自动切割视频，删除场景或者交换场景顺序
+    auto_cut_output_path = redub_output_file_path.replace('.mp4', '_auto_cut.mp4')
+    if os.path.exists(auto_cut_output_path):
+        print(f"检测到 {auto_cut_output_path} 已存在，直接使用...")
+    else:
+        print(f"正在自动切割视频，输出文件: {auto_cut_output_path}...")
+        auto_cut(redub_output_file_path, all_info, auto_cut_output_path)
+        save_json(all_info_json_path, all_info)
+
+
+    bgm_file = "background_music.mp3"
+    output_file = auto_cut_output_path.replace('.mp4', '_with_bgm.mp4')
+    add_bgm_to_video(auto_cut_output_path, bgm_file, output_file)
 
 
 

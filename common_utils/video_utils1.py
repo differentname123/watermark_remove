@@ -101,22 +101,30 @@ def redub_video_with_ffmpeg(video_path: str, segments_info: list, output_path="f
             print(f"原片段时长: {original_duration:.3f}s, 新音频时长: {new_audio_duration:.3f}s")
             print(f"视频速度调整为: {1 / speed_multiplier:.2f}x (setpts乘数: {speed_multiplier:.2f})")
 
-            # 构建FFmpeg命令
+            audio_sample_rate = "44100"
+            audio_channels = "2"
+
+            print(f"标准化音频参数为: 采样率 {audio_sample_rate} Hz, 声道数 {audio_channels}")
+
             cmd = [
                 "ffmpeg",
-                "-y",  # 覆盖输出文件
-                "-loglevel", "error",  # 只显示错误信息
+                "-y",
+                "-loglevel", "error",
                 "-ss", start_time_str,
                 "-to", end_time_str,
                 "-i", video_path,
                 "-i", audio_path,
-                "-filter_complex", f"[0:v]setpts={speed_multiplier:.4f}*PTS[v]",  # 变速
-                "-map", "[v]",  # 映射处理后的视频
-                "-map", "1:a",  # 映射新音频
-                "-c:v", "libx264",  # 使用标准视频编码器
-                "-preset", "veryfast",  # 快速编码
-                "-c:a", "aac",  # 使用标准音频编码器
-                "-shortest",  # 以最短的流为准结束
+                "-filter_complex", f"[0:v]setpts={speed_multiplier:.4f}*PTS[v]",
+                "-map", "[v]",
+                "-map", "1:a",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                # --- 关键修改在这里 ---
+                "-c:a", "aac",  # 指定音频编码器为AAC
+                "-ar", audio_sample_rate,  # 指定音频采样率
+                "-ac", audio_channels,  # 指定音频声道数
+                # ---------------------
+                "-shortest",
                 temp_output_path
             ]
 
