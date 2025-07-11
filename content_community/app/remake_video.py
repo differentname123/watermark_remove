@@ -16,13 +16,14 @@ import cv2
 
 from LLM.gemini import get_llm_content_gemini_flash_video
 from common_utils.common_utils import string_to_object, optimize_subtitle_timing, merge_time_segments, read_json, \
-    save_json
+    save_json, fill_time_gaps, time_to_ms, find_file_by_name
 from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box, find_overall_subtitle_box_target_number
+from common_utils.split_audio import separate_with_cli
 from common_utils.split_scenes import find_and_split_scenes
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
 from common_utils.tts.paddle_speech_demo import synthesize_and_get_duration
 from common_utils.video_utils import cover_video_area_gently, add_subtitles_to_video, cover_video_area_simple, \
-    re_edit_video_ffmpeg
+    re_edit_video_ffmpeg, extract_audio_from_video, cut_audio_segment
 from paddlespeech.cli.tts.infer import TTSExecutor
 
 import json
@@ -102,10 +103,6 @@ def get_owner_speech(video_path):
             print("检测到无效的负数时长，将在2秒后重试...")
             continue  # 如果存在负数，则跳过本次循环的剩余部分，重新开始
         else:
-            print("字幕优化成功，所有时长均为有效值。")
-            # 步骤 5: 如果所有duration都有效，则保存最终结果并退出循环
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(optimized_subtitles, f, ensure_ascii=False, indent=4)
             break  # 成功，跳出 while 循环
 
     # 步骤 6: 返回最终的、验证过的结果
@@ -126,7 +123,7 @@ def cover_subtitle(video_path, output_path, top_left, bottom_right):
     )
     print(f"覆盖字幕区域完成，输出文件: {output_path} 耗时: {time.time() - start_time:.2f} 秒")
 
-def gen_new_audio(optimized_subtitles):
+def gen_new_audio(optimized_subtitles,voice_name="zh-CN-YunjianNeural"):
     """
     生成语音文件，并更新字幕信息。
 
@@ -156,7 +153,7 @@ def gen_new_audio(optimized_subtitles):
         audio_length = generate_audio_and_get_duration_sync(
             text=text_to_speak,
             output_filename=output_file,
-            voice_name="zh-CN-YunjianNeural"
+            voice_name=voice_name
         )
 
         # 检查方式二是否成功，如果不成功 (audio_length为0)，则切换到方式一
@@ -374,6 +371,38 @@ def auto_cut(video_path, all_info, output_path):
 
 
 
+def add_origin_audio(video_path, owner_speech_with_audio_list):
+    """
+    补充原来的声音，因为有些时候视频中引用了其他人的声音，现在需要保留下来
+    """
+    new_owner_speech_with_audio_list = fill_time_gaps(owner_speech_with_audio_list)
+    if len(new_owner_speech_with_audio_list) > len(owner_speech_with_audio_list):
+        origin_audio_path = video_path.replace('.mp4', '_origin_audio.wav')
+        # 说明新增了片段，需要进行处理
+        extract_audio_from_video(video_path, origin_audio_path)
+        separate_with_cli(origin_audio_path, output_dir='origin_audio', two_stems=True)
+        vocals_path = find_file_by_name('origin_audio', 'vocals.wav')
+        if not vocals_path:
+            vocals_path = origin_audio_path
+            print("未找到分离的原始音频，使用原始音频作为补充。")
+
+        for speech in new_owner_speech_with_audio_list:
+            text = speech['text']
+            if "[无声]" == text:
+                speech_id = speech['id']
+                audio_path = f'origin_audio/{speech_id}_origin.wav'
+                startTime = speech['startTime']
+                endTime = speech['endTime']
+                start_time_s = time_to_ms(startTime) / 1000
+                end_time_s = time_to_ms(endTime) / 1000
+                cut_audio_segment(vocals_path, start_time_s, end_time_s, audio_path)
+                if os.path.exists(audio_path):
+                    speech['outputPath'] = audio_path
+                print(f"已将无声片段 {speech_id} 的音频补充为原始音频: {audio_path}")
+
+
+    return new_owner_speech_with_audio_list
+
 def remake_video(video_path):
     """
     重制视频
@@ -382,62 +411,75 @@ def remake_video(video_path):
     all_info_json_path = base_name.replace('.mp4', '_all_info.json')
     all_info = read_json(all_info_json_path)
 
-    # # 获取主人公语音片段
-    # if all_info and 'owner_speech' in all_info:
-    #     owner_speech_list = all_info['owner_speech']
-    #     print(f"检测到 {len(owner_speech_list)} 个主人公语音片段，直接使用...")
+    # 获取主人公语音片段
+    if all_info and 'owner_speech' in all_info:
+        owner_speech_list = all_info['owner_speech']
+        print(f"检测到 {len(owner_speech_list)} 个主人公语音片段，直接使用...")
+    else:
+        owner_speech_list = get_owner_speech(video_path)
+        all_info['owner_speech'] = owner_speech_list
+        save_json(all_info_json_path, all_info)
+
+    # 获取字幕框
+    if 'final_subtitle_box' in all_info:
+        final_box = all_info['final_subtitle_box']
+        print(f"检测到 {final_box} 已存在的字幕框，直接使用...")
+    else:
+        final_box = find_overall_subtitle_box(video_path)
+        all_info['final_subtitle_box'] = final_box
+    top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(video_path, final_box)
+
+    # 覆盖字幕区域
+    covered_video_path = video_path.replace('.mp4', '_covered.mp4')
+    if os.path.exists(covered_video_path):
+        print(f"检测到 {covered_video_path} 已存在，直接使用...")
+    else:
+        print(f"正在覆盖字幕区域，输出文件: {covered_video_path}...")
+        cover_subtitle(video_path, covered_video_path, top_left, bottom_right)
+
+
+    # 增加新的文案和字幕
+    add_subtitle_output_path = covered_video_path.replace('.mp4', '_with_subtitles.mp4')
+    if os.path.exists(add_subtitle_output_path):
+        print(f"检测到 {add_subtitle_output_path} 已存在，直接使用...")
+    else:
+        font_size = bottom_right[1] - top_left[1]
+        font_size = int(font_size * 0.8)
+        bottom_margin = vid_h - bottom_right[1] + int(int(bottom_right[1] - top_left[1]) * 0.1)
+        add_subtitle(covered_video_path, owner_speech_list, add_subtitle_output_path, bottom_margin=bottom_margin, font_size=font_size, fixed_rect=[top_left, bottom_right])
+
+    # add_subtitle_output_path = 'test_covered_with_subtitles.mp4'
+    # 生成新的音频并且配上新的声音
+    if 'new_owner_speech_with_audio_list' in all_info:
+        new_owner_speech_with_audio_list = all_info['new_owner_speech_with_audio_list']
+        print(f"检测到 {len(new_owner_speech_with_audio_list)} 个优化后的字幕，直接使用...")
+    else:
+        owner_speech_wiht_audio_list = gen_new_audio(owner_speech_list)
+        new_owner_speech_with_audio_list = add_origin_audio(video_path, owner_speech_wiht_audio_list)
+        all_info['new_owner_speech_with_audio_list'] = new_owner_speech_with_audio_list
+        save_json(all_info_json_path, all_info)
+    redub_output_file_path = add_subtitle_output_path.replace('.mp4', '_redub.mp4')
+    # 使用ffmpeg重制视频
+    # 过滤掉new_owner_speech_with_audio_list中text为"[无声]"的片段
+    new_owner_speech_with_audio_list = [speech for speech in new_owner_speech_with_audio_list if speech['text'] !="[无声]"]
+    redub_video_with_ffmpeg(add_subtitle_output_path, new_owner_speech_with_audio_list, output_path=redub_output_file_path)
+
+    # # redub_output_file_path = 'test_covered_with_subtitles_redub.mp4'
+    # # 自动切割视频，删除场景或者交换场景顺序
+    # auto_cut_output_path = redub_output_file_path.replace('.mp4', '_auto_cut.mp4')
+    # if os.path.exists(auto_cut_output_path):
+    #     print(f"检测到 {auto_cut_output_path} 已存在，直接使用...")
     # else:
-    #     owner_speech_list = get_owner_speech(video_path)
-    #     all_info['owner_speech'] = owner_speech_list
+    #     print(f"正在自动切割视频，输出文件: {auto_cut_output_path}...")
+    #     auto_cut(redub_output_file_path, all_info, auto_cut_output_path)
     #     save_json(all_info_json_path, all_info)
     #
     #
-    # # 获取字幕框
-    # if 'final_subtitle_box' in all_info:
-    #     final_box = all_info['final_subtitle_box']
-    #     print(f"检测到 {final_box} 已存在的字幕框，直接使用...")
-    # else:
-    #     final_box = find_overall_subtitle_box(video_path)
-    #     all_info['final_subtitle_box'] = final_box
-    # top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(video_path, final_box)
-    #
-    # # 覆盖字幕区域
-    # covered_video_path = video_path.replace('.mp4', '_covered.mp4')
-    # if os.path.exists(covered_video_path):
-    #     print(f"检测到 {covered_video_path} 已存在，直接使用...")
-    # else:
-    #     print(f"正在覆盖字幕区域，输出文件: {covered_video_path}...")
-    #     cover_subtitle(video_path, covered_video_path, top_left, bottom_right)
-    #
-    #
-    # # 增加新的文案和字幕
-    # add_subtitle_output_path = covered_video_path.replace('.mp4', '_with_subtitles.mp4')
-    # font_size = bottom_right[1] - top_left[1]
-    # font_size = int(font_size * 0.8)
-    # bottom_margin = vid_h - bottom_right[1] + int(int(bottom_right[1] - top_left[1]) * 0.1)
-    # add_subtitle(covered_video_path, owner_speech_list, add_subtitle_output_path, bottom_margin=bottom_margin, font_size=font_size, fixed_rect=[top_left, bottom_right])
-    #
-    #
-    # # 生成新的音频并且配上新的声音
-    # optimized_subtitles = gen_new_audio(owner_speech_list)
-    # redub_output_file_path = add_subtitle_output_path.replace('.mp4', '_redub.mp4')
-    # # 使用ffmpeg重制视频
-    # redub_video_with_ffmpeg(add_subtitle_output_path, optimized_subtitles, output_path=redub_output_file_path)
-
-    redub_output_file_path = 'test_covered_with_subtitles_redub.mp4'
-    # 自动切割视频，删除场景或者交换场景顺序
-    auto_cut_output_path = redub_output_file_path.replace('.mp4', '_auto_cut.mp4')
-    if os.path.exists(auto_cut_output_path):
-        print(f"检测到 {auto_cut_output_path} 已存在，直接使用...")
-    else:
-        print(f"正在自动切割视频，输出文件: {auto_cut_output_path}...")
-        cut_suggestion_info = auto_cut(redub_output_file_path, all_info, auto_cut_output_path)
-        save_json(all_info_json_path, all_info)
-
-
     # bgm_file = "background_music.mp3"
-    # output_file = redub_output_file_path.replace('.mp4', '_with_bgm.mp4')
+    # output_file = auto_cut_output_path.replace('.mp4', '_with_bgm.mp4')
     # add_bgm_to_video(redub_output_file_path, bgm_file, output_file)
+
+
 
 if __name__ == '__main__':
     remake_video('test.mp4')

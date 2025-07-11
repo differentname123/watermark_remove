@@ -839,3 +839,87 @@ def save_json(json_path, data):
     """
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+
+
+
+def fill_time_gaps(segments: list) -> list:
+    """
+    填充列表中时间轴的断层。
+
+    Args:
+        segments (list): 包含时间段字典的原始列表。
+
+    Returns:
+        list: 填充了时间间隙并重新排序ID后的新列表。
+    """
+    if not segments or len(segments) < 2:
+        return segments
+
+    # 为防止原始列表顺序不正确，先根据 startTime 排序
+    # (虽然你的例子是按顺序的，但这是一个好习惯)
+    segments.sort(key=lambda x: time_to_ms(x['startTime']))
+
+    new_segments = []
+    # 遍历列表，检查相邻两个元素之间是否存在间隙
+    for i in range(len(segments) - 1):
+        current_segment = segments[i]
+        next_segment = segments[i+1]
+
+        # 1. 首先将当前元素添加到新列表中
+        new_segments.append(current_segment)
+
+        # 2. 比较当前元素的 endTime 和下一个元素的 startTime
+        end_time_current = current_segment['endTime']
+        start_time_next = next_segment['startTime']
+
+        if end_time_current != start_time_next:
+            # 发现时间断层，创建一个新的字典来填充
+
+            gap_start_ms = time_to_ms(end_time_current)
+            gap_end_ms = time_to_ms(start_time_next)
+            gap_duration_ms = gap_end_ms - gap_start_ms
+
+            print(f"发现时间断层: 从 {end_time_current} 到 {start_time_next} {gap_duration_ms}")
+
+
+            # 创建一个表示无声间隙的新字典
+            gap_segment = {
+                "id": 0,  # ID 稍后会统一重新编号
+                "startTime": end_time_current,
+                "endTime": start_time_next,
+                "text": "[无声]",  # 使用特殊文本标记这是填充的间隙
+                "optimizedText": "[无声]",
+                "old_startTime": None,
+                "old_endTime": None,
+                "forward_shift_ms": 0,
+                "backward_shift_ms": 0,
+                "duration": gap_duration_ms / 1000.0,
+                "outputPath": None,
+                "trimmedDuration": gap_duration_ms / 1000.0
+            }
+            new_segments.append(gap_segment)
+
+    # 3. 添加原始列表中的最后一个元素
+    new_segments.append(segments[-1])
+
+    # 4. 重新为所有元素编号，确保 ID 是连续的
+    for index, segment in enumerate(new_segments):
+        segment['id'] = index + 1
+
+    return new_segments
+
+def find_file_by_name(root_dir: str, target_filename: str) -> str | None:
+    """
+    在指定目录（包括子目录）中查找指定文件名的文件。
+
+    参数：
+    - root_dir: 要搜索的起始目录
+    - target_filename: 要查找的文件名（完全匹配）
+
+    返回：
+    - 找到时返回完整文件路径；找不到时返回 None
+    """
+    for dirpath, _, filenames in os.walk(root_dir):
+        if target_filename in filenames:
+            return os.path.join(dirpath, target_filename)
+    return None

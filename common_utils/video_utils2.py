@@ -126,6 +126,8 @@ def add_bgm_to_video(video_path: str, bgm_path: str, output_path: str, volume_pe
 
     cmd = [
         "ffmpeg", "-y",
+        "-loglevel", "error",  # 只输出错误信息
+        "-hide_banner",  # 隐藏启动横幅
         "-i", video_path,
         "-stream_loop", "-1",
         "-i", bgm_path,

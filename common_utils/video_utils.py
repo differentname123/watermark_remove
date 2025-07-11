@@ -19,6 +19,47 @@ from PIL import ImageFont
 from common_utils.common_utils import time_to_ms
 
 
+def cut_audio_segment(input_audio_path: str, start_time: float, end_time: float, output_audio_path: str):
+    """
+    从音频中截取指定时间段，保存为新的音频文件。
+
+    参数说明：
+    - input_audio_path: 输入音频文件路径
+    - start_time: 开始时间（单位：秒，可为小数）
+    - end_time: 结束时间（单位：秒）
+    - output_audio_path: 输出音频文件路径
+    """
+    duration = end_time - start_time
+    if duration <= 0:
+        raise ValueError("end_time 必须大于 start_time")
+
+    cmd = [
+        "ffmpeg", "-y",           # <--- 添加自动覆盖参数
+        "-v", "error",
+        "-ss", str(start_time),
+        "-i", input_audio_path,
+        "-t", str(duration),
+        "-c", "copy",             # 快速截取，不转码
+        output_audio_path
+    ]
+    subprocess.run(cmd, check=True)
+
+def extract_audio_from_video(video_path: str, audio_output_path: str):
+    """
+    从视频中提取音频为 wav 格式，适用于 Demucs 分离。
+    """
+    cmd = [
+        "ffmpeg", "-y",          # <--- 自动覆盖已存在文件
+        "-v", "error",
+        "-i", video_path,
+        "-vn",
+        "-acodec", "pcm_s16le",
+        "-ar", "44100",
+        "-ac", "2",
+        audio_output_path
+    ]
+    subprocess.run(cmd, check=True)
+
 def probe_video(path):
     """用 ffprobe 返回字典：{width, height, fps}"""
     cmd = [
