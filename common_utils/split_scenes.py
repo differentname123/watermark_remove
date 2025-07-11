@@ -9,7 +9,7 @@ from scenedetect.stats_manager import StatsManager
 from scenedetect.detectors import ContentDetector
 
 
-def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix=''):
+def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix='', threshold=50, min_scene_len=25):
     """
     检测视频中的场景，分割视频，存储精确的时间戳，并打印场景信息字典。
 
@@ -28,7 +28,7 @@ def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix='')
     scene_manager = SceneManager(stats_manager=stats_manager)
 
     # 添加内容检测器
-    scene_manager.add_detector(ContentDetector(threshold=50, min_scene_len=25))
+    scene_manager.add_detector(ContentDetector(threshold=threshold, min_scene_len=min_scene_len))
 
     try:
         # 设置 VideoManager 的属性
@@ -63,6 +63,7 @@ def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix='')
             # 使用 pprint 美观地打印字典
             pprint.pprint(scene_info_dict)
             print("=" * 20 + "\n")
+        return scene_info_dict
         # --------------------------------------------------------------------
         # <-- 新增部分结束
         # --------------------------------------------------------------------
@@ -114,8 +115,9 @@ def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix='')
 # --- 主程序入口 ---
 if __name__ == '__main__':
     # 把这里换成你的视频文件路径
-    my_video_path = 'test.mp4'
+    my_video_path = '../content_community/app/test6_covered_with_subtitles_redub.mp4'
     # 指定输出目录名
     output_directory = 'videos'
 
-    find_and_split_scenes(my_video_path, output_dir=output_directory)
+    scene_info_dict = find_and_split_scenes(my_video_path)
+    print("\n场景信息字典已生成并打印。")

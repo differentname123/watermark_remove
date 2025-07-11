@@ -12,6 +12,7 @@
 import os
 import subprocess
 import json
+import tempfile
 
 from PIL import ImageFont
 
@@ -430,6 +431,34 @@ def _process_and_split_subtitles(
     return processed_subs
 
 
+def cover_video_area_simple(
+    video_path: str,
+    output_path: str,
+    top_left: tuple[int, int],
+    bottom_right: tuple[int, int],
+    color: str = "black@1.0"
+):
+    """
+    用 drawbox 滤镜在指定区域做纯色遮挡——极简、无坑版。
+    color: 'RRGGBB@alpha' 格式，alpha 范围 0.0~1.0。
+    """
+    x1, y1 = top_left
+    x2, y2 = bottom_right
+    w, h = x2 - x1, y2 - y1
+
+    vf = f"drawbox=x={x1}:y={y1}:w={w}:h={h}:color={color}:t=fill"
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-i", video_path,
+        "-vf", vf,
+        "-c:a", "copy",
+        output_path
+    ]
+    print(f"[INFO] Running: {' '.join(shlex.quote(c) for c in cmd)}")
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"FFmpeg failed (code {proc.returncode}):\n{proc.stderr}")
+    print(f"[SUCCESS] Output saved to {output_path}")
 
 def add_subtitles_to_video(
         video_path: str,
@@ -535,10 +564,28 @@ def add_subtitles_to_video(
         return
 
     vf_arg = ",".join(filters)
+
+    if not vf_arg:
+        print("没有可烧录的字幕，将直接复制视频。")
+        import shutil
+        shutil.copy(video_path, output_path)
+        return
+
+    # 使用临时文件来保存滤镜链，避免命令行过长
+    # tempfile.NamedTemporaryFile 在 with 块结束时会自动删除
+    with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix=".txt", encoding='utf-8') as temp_filter_file:
+        temp_filter_file.write(vf_arg)
+        filter_script_path = temp_filter_file.name
+
+    # 注意：在Windows上，临时文件路径可能包含反斜杠，需要处理
+    formatted_filter_path = filter_script_path.replace('\\', '/')
+
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", video_path,
-        "-vf", vf_arg,
+        # 使用 -filter_complex_script 或 -vf_script
+        # -filter_complex_script 更通用，推荐使用
+        "-filter_complex_script", formatted_filter_path,
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         "-c:a", "copy",
         output_path
@@ -546,6 +593,7 @@ def add_subtitles_to_video(
 
     try:
         print("正在为视频添加字幕和固定矩形...")
+        # 注意：这里 cmd 列表里不再包含那个超长的 vf_arg
         subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
         print(f"成功！已将带字幕的视频保存至: {output_path}")
     except FileNotFoundError:
@@ -554,8 +602,14 @@ def add_subtitles_to_video(
     except subprocess.CalledProcessError as e:
         print(f"[错误] ffmpeg 执行失败。返回码: {e.returncode}")
         print(f"FFMPEG 错误输出:\n{e.stderr}")
+        # 可以在这里打印命令，帮助调试，但不要打印 vf_arg
+        # print(f"执行的命令（不含滤镜内容）: {' '.join(cmd)}")
+        print(f"滤镜脚本内容保存在: {filter_script_path}") # 告知用户可以检查这个文件
         raise
-
+    finally:
+        # 确保临时文件在任何情况下都被删除
+        if os.path.exists(filter_script_path):
+            os.remove(filter_script_path)
 
 if __name__ == '__main__':
     # --- 使用示例 ---

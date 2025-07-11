@@ -19,7 +19,7 @@ from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box, find_ov
 from common_utils.split_scenes import find_and_split_scenes
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
 from common_utils.tts.paddle_speech_demo import synthesize_and_get_duration
-from common_utils.video_utils import cover_video_area_gently, add_subtitles_to_video
+from common_utils.video_utils import cover_video_area_gently, add_subtitles_to_video, cover_video_area_simple
 from paddlespeech.cli.tts.infer import TTSExecutor
 
 import json
@@ -80,33 +80,33 @@ def get_owner_speech(video_path):
       }
     ]
     """
-
+    base_name = os.path.basename(video_path)
+    output_path = base_name.replace('.mp4', '_owner_speech.json')
+    count = 0
     while True:
+        count += 1
+        if count > 3:
+            print("重试次数超过3次，退出程序。")
+            return []
         print("正在生成和优化字幕...")
-        raw = get_llm_content_gemini_flash_video(prompt=prompt, video_path=video_path)
-        result = string_to_object(raw)
-
-        # 步骤 2: 将原始LLM结果保存到 result.json (可选，但有助于调试)
-        with open('result.json', 'w', encoding='utf-8') as f:
-            json.dump(result, f, ensure_ascii=False, indent=4)
-
-        # 从文件重新加载（如果上面的保存步骤是必须的）
-        # 如果不是必须的，可以直接使用上面的 `result` 变量
-        with open('result.json', 'r', encoding='utf-8') as f:
-            result_from_file = json.load(f)
+        if os.path.exists(output_path):
+            print(f"检测到{output_path}已存在的字幕文件，直接读取...")
+            with open(output_path, 'r', encoding='utf-8') as f:
+                result = json.load(f)
+        else:
+            raw = get_llm_content_gemini_flash_video(prompt=prompt, video_path=video_path)
+            result = string_to_object(raw)
 
         # 步骤 3: 优化字幕计时
-        optimized_subtitles = optimize_subtitle_timing(result_from_file)
+        optimized_subtitles = optimize_subtitle_timing(result)
 
-        # 步骤 4: 检查是否存在负数的 duration
-        # 使用 any() 和一个生成器表达式来高效地检查
         if any(subtitle.get('duration', 0) < 0 for subtitle in optimized_subtitles):
             print("检测到无效的负数时长，将在2秒后重试...")
             continue  # 如果存在负数，则跳过本次循环的剩余部分，重新开始
         else:
             print("字幕优化成功，所有时长均为有效值。")
             # 步骤 5: 如果所有duration都有效，则保存最终结果并退出循环
-            with open('result1.json', 'w', encoding='utf-8') as f:
+            with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(optimized_subtitles, f, ensure_ascii=False, indent=4)
             break  # 成功，跳出 while 循环
 
@@ -120,17 +120,13 @@ def cover_subtitle(video_path, output_path, top_left, bottom_right):
     """
     start_time = time.time()
 
-    vid_w, vid_h = cover_video_area_gently(
+    cover_video_area_simple(
         video_path=video_path,
         output_path=output_path,
         top_left=top_left,
-        bottom_right=bottom_right,
-        mode='blur',
-        strength=30  # 模糊强度，可以调整
+        bottom_right=bottom_right
     )
     print(f"覆盖字幕区域完成，输出文件: {output_path} 耗时: {time.time() - start_time:.2f} 秒")
-    return vid_w, vid_h
-
 
 def gen_new_audio(optimized_subtitles):
     """
@@ -159,8 +155,6 @@ def gen_new_audio(optimized_subtitles):
 
         print(f"\n--- [字幕 {subtitle['id']}] 正在处理: '{text_to_speak}' ---")
 
-        # 默认使用方式二
-        print("--> 尝试使用默认方式 (方式二) 生成语音...")
         audio_length = generate_audio_and_get_duration_sync(
             text=text_to_speak,
             output_filename=output_file,
@@ -272,8 +266,14 @@ def adjust_subtitle_box(video_path: str, final_box: list[list[int, int]]):
     top_left = [x_left, y_top]
     bottom_right = [x_right, y_bottom]
 
-    return top_left, bottom_right
+    return top_left, bottom_right, width, height
 
+
+def gen_cut_suggestion(video_path):
+    """
+    生成
+    """
+    find_and_split_scenes(video_path)
 
 def remake_video(video_path):
     """
@@ -282,15 +282,17 @@ def remake_video(video_path):
     # 获取主人公语音片段
     owner_speech_list = get_owner_speech(video_path)
 
-
-
     final_box = find_overall_subtitle_box_target_number(video_path)
-    # final_box = [[180, 641], [1099, 641], [1099, 699], [180, 699]]
-    top_left, bottom_right = adjust_subtitle_box(video_path, final_box)
+    # final_box =  [[137, 1497], [945, 1497], [945, 1602], [137, 1602]]
+    top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(video_path, final_box)
 
     # 覆盖字幕区域
     covered_video_path = video_path.replace('.mp4', '_covered.mp4')
-    vid_w, vid_h = cover_subtitle(video_path, covered_video_path, top_left, bottom_right)
+    if os.path.exists(covered_video_path):
+        print(f"检测到 {covered_video_path} 已存在，直接使用...")
+    else:
+        print(f"正在覆盖字幕区域，输出文件: {covered_video_path}...")
+        cover_subtitle(video_path, covered_video_path, top_left, bottom_right)
 
     add_subtitle_output_path = covered_video_path.replace('.mp4', '_with_subtitles.mp4')
     font_size = bottom_right[1] - top_left[1]
@@ -310,4 +312,4 @@ def remake_video(video_path):
     add_bgm_to_video(redub_output_file_path, bgm_file, output_file)
 
 if __name__ == '__main__':
-    remake_video('test5.mp4')
+    remake_video('test6.mp4')
