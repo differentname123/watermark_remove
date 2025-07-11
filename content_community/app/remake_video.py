@@ -81,19 +81,36 @@ def get_owner_speech(video_path):
     ]
     """
 
-    # raw = get_llm_content_gemini_flash_video(prompt=prompt, video_path=video_path)
-    # result = string_to_object(raw)
-    # # 将result保存到result.json
-    # with open('result.json', 'w', encoding='utf-8') as f:
-    #     json.dump(result, f, ensure_ascii=False, indent=4)
+    while True:
+        print("正在生成和优化字幕...")
+        raw = get_llm_content_gemini_flash_video(prompt=prompt, video_path=video_path)
+        result = string_to_object(raw)
 
-    # 直接读取result.json文件
-    with open('result.json', 'r', encoding='utf-8') as f:
-        result = json.load(f)
+        # 步骤 2: 将原始LLM结果保存到 result.json (可选，但有助于调试)
+        with open('result.json', 'w', encoding='utf-8') as f:
+            json.dump(result, f, ensure_ascii=False, indent=4)
 
-    optimized_subtitles = optimize_subtitle_timing(result)
-    with open('result1.json', 'w', encoding='utf-8') as f:
-        json.dump(optimized_subtitles, f, ensure_ascii=False, indent=4)
+        # 从文件重新加载（如果上面的保存步骤是必须的）
+        # 如果不是必须的，可以直接使用上面的 `result` 变量
+        with open('result.json', 'r', encoding='utf-8') as f:
+            result_from_file = json.load(f)
+
+        # 步骤 3: 优化字幕计时
+        optimized_subtitles = optimize_subtitle_timing(result_from_file)
+
+        # 步骤 4: 检查是否存在负数的 duration
+        # 使用 any() 和一个生成器表达式来高效地检查
+        if any(subtitle.get('duration', 0) < 0 for subtitle in optimized_subtitles):
+            print("检测到无效的负数时长，将在2秒后重试...")
+            continue  # 如果存在负数，则跳过本次循环的剩余部分，重新开始
+        else:
+            print("字幕优化成功，所有时长均为有效值。")
+            # 步骤 5: 如果所有duration都有效，则保存最终结果并退出循环
+            with open('result1.json', 'w', encoding='utf-8') as f:
+                json.dump(optimized_subtitles, f, ensure_ascii=False, indent=4)
+            break  # 成功，跳出 while 循环
+
+    # 步骤 6: 返回最终的、验证过的结果
     return optimized_subtitles
 
 
@@ -293,4 +310,4 @@ def remake_video(video_path):
     add_bgm_to_video(redub_output_file_path, bgm_file, output_file)
 
 if __name__ == '__main__':
-    remake_video('test3.mp4')
+    remake_video('test5.mp4')
