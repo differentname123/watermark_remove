@@ -271,9 +271,81 @@ def adjust_subtitle_box(video_path: str, final_box: list[list[int, int]]):
 
 def gen_cut_suggestion(video_path):
     """
-    生成
+    生成剪辑的建议，交换场景顺序或者删除场景。
     """
-    find_and_split_scenes(video_path)
+    scene_info_dict = find_and_split_scenes(video_path)
+    if not scene_info_dict:
+        print("未能成功获取视频场景信息。")
+        return
+    prompt = """# 角色
+                你是一位拥有十年经验的资深视频剪辑师和顶级社交媒体内容策略专家。你精通各种平台（如抖音、Bilibili、YouTube Shorts）的流量算法和用户心理，知道如何通过剪辑创造“黄金三秒”、提升完播率和互动率。
+                
+                # 目标
+                你的核心目标是分析我提供的视频场景信息，并输出一个最优化的剪辑方案，旨在最大化视频的**观众吸引力、叙事流畅性、信息价值和传播潜力**。所有决策都必须以“让最终视频效果更好”为唯一标准。如果原始顺序已是最佳，则保持原样。
+                
+                # 背景信息
+                
+                
+                # 任务指令
+                1.  **全面分析**：基于提供的视频，深入理解整个视频的核心主题、叙事结构和关键信息点。
+                2.  **逐一评估**：结合“原始场景分割”，独立评估每个场景的作用和质量。评估维度包括：
+                    *   **信息密度**：该场景是否传递了关键信息？
+                    *   **视觉冲击力**：画面是否吸引人？
+                    *   **情绪价值**：该场景能否引发观众的情绪（好奇、共鸣、兴奋等）？
+                    *   **叙事功能**：它在故事中扮演什么角色（开端、发展、高潮、结尾、铺垫、转折）？
+                    *   **冗余性**：该场景是否多余、拖沓或可被替代？
+                3.  **策略决策**：基于以上评估，构建最终的剪辑方案。你可以执行以下操作：
+                    *   **保留 (Keep)**：当场景质量高且位置合适时。
+                    *   **重排 (Reorder)**：调整场景顺序以优化叙事节奏或将最精彩的部分前置（例如，创建钩子）。
+                    *   **删除 (Delete)**：移除内容冗余、质量低下或对主线故事无益的场景。
+                4.  **生成最终方案**：将你的决策结果以纯JSON格式输出。
+                
+                # 输出要求
+                *   **严格的JSON格式**：你的输出必须是**一个完整且格式正确的JSON对象**，不能包含任何JSON格式之外的标记、注释、代码块标识（如 ```json ... ```）或任何解释性文本。
+                *   **内容结构**：JSON对象必须包含以下三个顶级键：`overall_strategy`, `final_cut_sequence`, `deleted_scenes`。
+                
+                ---
+                ### JSON输出格式定义与示例
+                
+                ```json
+                {
+                  "overall_strategy": "将成品展示（场景4）提前至开头作为钩子，吸引用户停留。删除了冗长的备料介绍（场景2），并整合了核心烹饪步骤，使节奏更紧凑，重点突出。",
+                  "final_cut_sequence": [
+                    {
+                      "scene_id": "场景4",
+                      "original_start_time": "00:02:19.827",
+                      "original_end_time": "00:04:17.194",
+                      "new_sequence_index": 1,
+                      "reasoning": "作为视频钩子，快速展示最终成果，引发观众好奇心。"
+                    },
+                    {
+                      "scene_id": "场景1",
+                      "original_start_time": "00:00:00.000",
+                      "original_end_time": "00:00:02.188",
+                      "new_sequence_index": 2,
+                      "reasoning": "简短的开场白，承接钩子，引入主题。"
+                    },
+                    {
+                      "scene_id": "场景3",
+                      "original_start_time": "00:00:53.328",
+                      "original_end_time": "00:02:19.827",
+                      "new_sequence_index": 3,
+                      "reasoning": "核心内容，展示了关键的制作过程，保留以确保信息完整性。"
+                    }
+                  ],
+                  "deleted_scenes": [
+                    {
+                      "scene_id": "场景2",
+                      "original_start_time": "00:00:02.188",
+                      "original_end_time": "00:00:53.328",
+                      "reasoning": "此场景为详细的备料过程，节奏过于缓慢且信息密度低，删除可以使视频更紧凑，直接进入核心制作环节。"
+                    }
+                  ]
+                }
+                **原始场景分割信息如下**:
+    """
+    prompt = f"{prompt}\n{scene_info_dict}"
+    print()
 
 def remake_video(video_path):
     """
@@ -312,4 +384,5 @@ def remake_video(video_path):
     add_bgm_to_video(redub_output_file_path, bgm_file, output_file)
 
 if __name__ == '__main__':
-    remake_video('test6.mp4')
+    # gen_cut_suggestion('test.mp4')
+    remake_video('test1.mp4')
