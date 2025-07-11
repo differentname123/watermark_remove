@@ -13,9 +13,10 @@ import time
 
 from LLM.gemini import get_llm_content_gemini_flash_video
 from common_utils.common_utils import string_to_object, optimize_subtitle_timing
+from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box
 from common_utils.split_scenes import find_and_split_scenes
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
-from common_utils.tts.paddle_demo import synthesize_and_get_duration
+from common_utils.tts.paddle_speech_demo import synthesize_and_get_duration
 from common_utils.video_utils import cover_video_area_gently, add_subtitles_to_video
 from paddlespeech.cli.tts.infer import TTSExecutor
 
@@ -229,8 +230,12 @@ def remake_video(video_path):
     # 获取主人公语音片段
     owner_speech_list = get_owner_speech(video_path)
 
-    top_left = (129, 643)
-    bottom_right = (1111, 700)
+
+
+    # final_box = find_overall_subtitle_box(video_path)
+    final_box = [[180, 641], [1099, 641], [1099, 699], [180, 699]]
+    top_left = final_box[0]
+    bottom_right = final_box[2]
     # 覆盖字幕区域
     covered_video_path = video_path.replace('.mp4', '_covered.mp4')
     vid_w, vid_h = cover_subtitle(video_path, covered_video_path, top_left, bottom_right)
@@ -241,16 +246,16 @@ def remake_video(video_path):
     bottom_margin = vid_h - bottom_right[1] + int(int(bottom_right[1] - top_left[1]) * 0.1)
     add_subtitle(covered_video_path, owner_speech_list, add_subtitle_output_path, bottom_margin=bottom_margin, font_size=font_size)
 
-    # 生成新的音频
-    optimized_subtitles = gen_new_audio(owner_speech_list)
-
-    output_file_path = 'output_with_new_audio.mp4'
-    # 使用ffmpeg重制视频
-    redub_video_with_ffmpeg(add_subtitle_output_path, optimized_subtitles, output_path=output_file_path)
-
-    bgm_file = "background_music.mp3"
-    output_file = "output_with_bgm.mp4"
-    add_bgm_to_video(output_file_path, bgm_file, output_file)
+    # # 生成新的音频
+    # optimized_subtitles = gen_new_audio(owner_speech_list)
+    #
+    # output_file_path = 'output_with_new_audio.mp4'
+    # # 使用ffmpeg重制视频
+    # redub_video_with_ffmpeg(add_subtitle_output_path, optimized_subtitles, output_path=output_file_path)
+    #
+    # bgm_file = "background_music.mp3"
+    # output_file = "output_with_bgm.mp4"
+    # add_bgm_to_video(output_file_path, bgm_file, output_file)
 
 if __name__ == '__main__':
     remake_video('test2.mp4')

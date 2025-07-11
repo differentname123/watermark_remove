@@ -13,6 +13,8 @@ import os
 import subprocess
 import json
 
+from PIL import ImageFont
+
 from common_utils.common_utils import time_to_ms
 
 
@@ -284,6 +286,153 @@ def _escape_ffmpeg_text(text: str) -> str:
     return text.replace('\\', '\\\\').replace("'", "’").replace('%', r'\%').replace(':', r'\:')
 
 
+# [新增] 辅助函数：获取视频的宽度和高度
+def get_video_dimensions(video_path: str) -> (int, int):
+    """
+    使用 ffprobe 获取视频的宽度和高度。
+    此版本确保 video_path 被正确传递，并提供详细的错误处理。
+    """
+    # 检查文件是否存在，提前给出更友好的提示
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"视频文件未找到，请检查路径: {video_path}")
+
+    cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "json",
+        video_path  # <-- 修正：将 video_path 作为命令的一部分
+    ]
+
+    try:
+        # 使用 check=True, ffprobe 失败时会抛出 CalledProcessError
+        result = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding='utf-8'
+        )
+        data = json.loads(result.stdout)
+
+        # 健壮性检查：确保返回的 JSON 结构符合预期
+        if "streams" in data and len(data["streams"]) > 0:
+            stream = data["streams"][0]
+            if "width" in stream and "height" in stream:
+                return stream["width"], stream["height"]
+
+        # 如果 JSON 结构不符
+        raise ValueError("在 ffprobe 的输出中未找到有效的视频流信息。")
+
+    except FileNotFoundError:
+        # 如果 ffprobe 命令本身就找不到
+        print("错误: ffprobe 命令未找到。请确保 ffmpeg (及 ffprobe) 已安装并在系统 PATH 中。")
+        raise
+    except subprocess.CalledProcessError as e:
+        # 捕获 ffprobe 执行失败的错误，并打印其 stderr
+        print(f"ffprobe 执行失败。返回码: {e.returncode}")
+        # ffprobe 的错误信息通常在 stderr 中，这对于调试至关重要
+        print(f"ffprobe 的原始错误输出:\n---\n{e.stderr.strip()}\n---")
+        raise ValueError(f"无法从视频 {video_path} 中解析出尺寸。")
+    except json.JSONDecodeError:
+        # 如果 ffprobe 输出的不是有效的 json
+        print(f"ffprobe 输出了非预期的内容，无法解析为JSON。输出内容: {result.stdout}")
+        raise ValueError(f"无法解析来自 ffprobe 的视频尺寸信息。")
+
+def _format_time_for_ffmpeg(seconds: float) -> str:
+    # 辅助函数：将秒数格式化回 FFmpeg 需要的格式
+    return f"{seconds:.3f}"
+
+# [新增] 辅助函数：处理并分割过长的字幕
+def _process_and_split_subtitles(
+        subtitles_info,
+        font: ImageFont.FreeTypeFont,
+        max_width: int
+):
+    """
+    预处理字幕列表，将过长的字幕分割成多段。
+    """
+    processed_subs = []
+    split_chars = ['，', '。', '？', '！', '；', ',', '.', '?', '!', ';']
+
+    for sub in subtitles_info:
+        # 使用一个队列来处理可能需要多次分割的片段
+        segments_to_process = [(sub['startTime'], sub['endTime'], sub['optimizedText'])]
+
+        while segments_to_process:
+            start_time, end_time, text = segments_to_process.pop(0)
+
+            # 使用Pillow的 getlength 方法计算渲染宽度
+            # Pillow >= 10.0.0 使用 getbbox()[2], 旧版本使用 getsize()[0]
+            try:
+                text_width = font.getlength(text)
+            except AttributeError:  # 兼容旧版Pillow
+                text_width = font.getsize(text)[0]
+
+            if text_width <= max_width:
+                # 字幕长度合格，直接添加
+                processed_subs.append({
+                    'startTime': start_time,
+                    'endTime': end_time,
+                    'optimizedText': text
+                })
+                continue
+
+            # --- 字幕过长，需要分割 ---
+            original_duration = _parse_subtitle_time(end_time) - _parse_subtitle_time(start_time)
+            if original_duration <= 0:  # 避免除以零
+                continue
+
+            # 1. 寻找最佳分割点（尽量均匀）
+            best_split_index = -1
+            min_diff = float('inf')
+
+            # 优先按标点分割
+            for char in split_chars:
+                last_pos = 0
+                while True:
+                    pos = text.find(char, last_pos)
+                    if pos == -1:
+                        break
+
+                    # 我们希望分割点靠近中间
+                    diff = abs(pos - len(text) // 2)
+                    if diff < min_diff:
+                        min_diff = diff
+                        best_split_index = pos + 1  # 分割点包含标点符号
+                    last_pos = pos + 1
+
+            # 2. 如果没有标点，直接从中间分割
+            if best_split_index == -1:
+                best_split_index = len(text) // 2
+
+            part1 = text[:best_split_index].strip()
+            part2 = text[best_split_index:].strip()
+
+            if not part1 or not part2:  # 避免产生空片段
+                # 如果分割失败（例如标点在句首），则退回到强制均分
+                best_split_index = len(text) // 2
+                part1 = text[:best_split_index].strip()
+                part2 = text[best_split_index:].strip()
+
+            # 3. 按字符长度比例，重新计算时间
+            part1_ratio = len(part1) / len(text)
+            split_time = _parse_subtitle_time(start_time) + original_duration * part1_ratio
+
+            # 将第一部分加入最终列表
+            processed_subs.append({
+                'startTime': start_time,
+                'endTime': _format_time_for_ffmpeg(split_time),
+                'optimizedText': part1
+            })
+
+            # 将第二部分放回队列，因为它可能仍然过长，需要再次检查和分割
+            segments_to_process.append((_format_time_for_ffmpeg(split_time), end_time, part2))
+
+    return processed_subs
+
+
 def add_subtitles_to_video(
         video_path: str,
         subtitles_info: list,
@@ -295,77 +444,94 @@ def add_subtitles_to_video(
         bottom_margin: int = 50
 ) -> None:
     """
-    将字幕信息“烧录”到视频中。
+    将字幕信息“烧录”到视频中，并自动分割过长的字幕行。
 
     :param video_path: 输入视频的路径。
-    :param subtitles_info: 字幕信息列表，每个元素是一个包含 'startTime', 'endTime', 'text' 的字典。
-    :param output_path: 输出视频的路径。
-    :param font_path: 字体文件的路径（.ttf, .otf, .ttc 等）。对于中文字幕，必须提供支持中文的字体。
-    :param font_size: 字幕的字号。
-    :param font_color: 字幕颜色（例如 'white', 'black', '#FF0000'）。
-    :param box_color: 字幕背景框的颜色和透明度（例如 'black@0.5' 表示半透明黑色）。
-    :param bottom_margin: 字幕距离视频底部的像素边距。
-    :raises ValueError: 如果字幕信息或字体路径无效。
-    :raises subprocess.CalledProcessError: 如果 ffmpeg 命令执行失败。
-    :raises FileNotFoundError: 如果 ffmpeg 未安装或字体文件不存在。
+    :param subtitles_info: 原始字幕信息列表。
+    ... (其他参数不变) ...
+    :raises ...
     """
     if not os.path.exists(font_path):
         raise FileNotFoundError(f"字体文件未找到: {font_path}")
 
-    # ------------------- [ 核心修改点 ] -------------------
+    # ------------------- [ 核心修改开始 ] -------------------
+
+    # 1. 获取视频宽度以计算最大字幕宽度
+    try:
+        video_width, _ = get_video_dimensions(video_path)
+        max_subtitle_width = video_width * 0.9
+        print(f"视频宽度: {video_width}px, 字幕最大允许宽度: {max_subtitle_width:.0f}px")
+    except (ValueError, FileNotFoundError) as e:
+        print(f"警告: 无法获取视频尺寸，将不执行字幕分割。错误: {e}")
+        # 如果无法获取宽度，则退回原始行为，不分割
+        processed_subtitles = subtitles_info
+    else:
+        # 2. 加载字体用于计算文本宽度
+        try:
+            font = ImageFont.truetype(font_path, font_size)
+        except IOError:
+            raise FileNotFoundError(f"无法加载字体文件，请检查路径和文件格式: {font_path}")
+
+        # 3. 预处理字幕，分割过长行
+        print("正在预处理字幕，检查并分割过长行...")
+        processed_subtitles = _process_and_split_subtitles(
+            subtitles_info,
+            font,
+            max_subtitle_width
+        )
+        print(f"字幕预处理完成。原始字幕数: {len(subtitles_info)}, 处理后字幕数: {len(processed_subtitles)}")
+
+    # ------------------- [ 核心修改结束 ] -------------------
+
     # 为ffmpeg的滤镜语法格式化字体路径
-    # 1. 将所有反斜杠 \ 替换为正斜杠 / (更通用的路径分隔符)
     formatted_font_path = font_path.replace('\\', '/')
-    # 2. 对Windows路径中的盘符冒号 : 进行转义，防止ffmpeg滤镜解析错误
     if os.name == 'nt':
-        # 在Python中，'\\:' 会在字符串中生成 '\:'，这正是ffmpeg需要的
         formatted_font_path = formatted_font_path.replace(':', '\\:')
-    # ----------------------------------------------------
 
     drawtext_filters = []
-    for sub in subtitles_info:
+    # 使用处理后的字幕列表
+    for sub in processed_subtitles:
         try:
+            # 注意：时间可能已经是浮点数或格式化后的字符串，_parse_subtitle_time 需要能处理
             start_time = _parse_subtitle_time(sub['startTime'])
             end_time = _parse_subtitle_time(sub['endTime'])
             text = _escape_ffmpeg_text(sub['optimizedText'])
         except (KeyError, ValueError) as e:
             raise ValueError(f"字幕条目格式错误: {sub}. 错误: {e}")
 
-        # 构建单个字幕的 drawtext 滤镜
         filter_part = (
             f"drawtext="
             f"fontfile='{formatted_font_path}':"
             f"text='{text}':"
             f"fontsize={font_size}:"
             f"fontcolor={font_color}:"
-            f"x=(w-text_w)/2:"  # 水平居中
-            f"y=h-text_h-{bottom_margin}:"  # 修正 y 坐标以使用 text_h (th 是 text_h 的别名)
-            f"box=1:boxcolor={box_color}:boxborderw=15:"  # 启用背景框，并设置边距
+            f"x=(w-text_w)/2:"
+            f"y=h-text_h-{bottom_margin}:"
+            f"box=1:boxcolor={box_color}:boxborderw=15:"
             f"enable='between(t,{start_time},{end_time})'"
         )
         drawtext_filters.append(filter_part)
 
-    # 将所有 drawtext 滤镜用逗号连接成一个大的视频滤镜（-vf）参数
+    if not drawtext_filters:
+        print("没有可烧录的字幕，将直接复制视频。")
+        # 如果没有字幕，可以直接复制视频或根据需求报错
+        import shutil
+        shutil.copy(video_path, output_path)
+        return
+
     final_filter_string = ",".join(drawtext_filters)
 
     cmd = [
-        "ffmpeg",
-        "-y",  # 覆盖输出文件
-        "-loglevel", "error",  # 只在出错时显示日志
+        "ffmpeg", "-y", "-loglevel", "error",
         "-i", video_path,
         "-vf", final_filter_string,
-        "-c:v", "libx264",  # 需要重新编码视频以烧录字幕
-        "-pix_fmt", "yuv420p",  # 保证兼容性
-        "-c:a", "copy",  # 复制音频流，不重新编码，速度更快
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-c:a", "copy",
         output_path
     ]
 
     try:
-        # 打印一个更简洁的命令，避免终端过长
         print(f"正在为视频添加字幕...")
-        # print(f"执行命令: {' '.join(cmd)}") # 如果需要调试，可以取消这行注释
-
-        # 使用 capture_output=True 来捕获 stderr，便于调试
         result = subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
         print(f"成功！已将带字幕的视频保存至: {output_path}")
     except FileNotFoundError:
