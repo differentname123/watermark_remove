@@ -24,7 +24,7 @@ from common_utils.split_scenes import find_and_split_scenes
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
 from common_utils.tts.paddle_speech_demo import synthesize_and_get_duration
 from common_utils.video_utils import cover_video_area_gently, add_subtitles_to_video, cover_video_area_simple, \
-    re_edit_video_ffmpeg, extract_audio_from_video, cut_audio_segment
+    re_edit_video_ffmpeg, extract_audio_from_video, cut_audio_segment, cover_video_area_blur
 from paddlespeech.cli.tts.infer import TTSExecutor
 
 import json
@@ -451,13 +451,23 @@ def cover_subtitle(video_path, output_path, top_left, bottom_right):
     覆盖视频中的字幕
     """
     start_time = time.time()
+    try:
 
-    cover_video_area_simple(
-        video_path=video_path,
-        output_path=output_path,
-        top_left=top_left,
-        bottom_right=bottom_right
-    )
+        cover_video_area_blur(
+            video_path=video_path,
+            output_path=output_path,
+            top_left=top_left,
+            bottom_right=bottom_right
+        )
+    except Exception as e:
+        print(f"覆盖字幕区域失败: {e} 尝试使用备用方法...")
+        cover_video_area_simple(
+            video_path=video_path,
+            output_path=output_path,
+            top_left=top_left,
+            bottom_right=bottom_right
+        )
+        return
     print(f"覆盖字幕区域完成，输出文件: {output_path} 耗时: {time.time() - start_time:.2f} 秒")
 
 def gen_new_audio(optimized_subtitles,voice_name="zh-CN-YunjianNeural"):
@@ -842,11 +852,8 @@ def remake_video(video_path):
 
     # 覆盖字幕区域
     covered_video_path = video_path.replace('.mp4', '_covered.mp4')
-    if os.path.exists(covered_video_path):
-        print(f"检测到 {covered_video_path} 已存在，直接使用...")
-    else:
-        print(f"正在覆盖字幕区域，输出文件: {covered_video_path}...")
-        cover_subtitle(video_path, covered_video_path, top_left, bottom_right)
+    print(f"正在覆盖字幕区域，输出文件: {covered_video_path}...")
+    cover_subtitle(video_path, covered_video_path, top_left, bottom_right)
 
 
     # 增加新的文案和字幕
@@ -885,4 +892,4 @@ def remake_video(video_path):
 
 
 if __name__ == '__main__':
-    remake_video('test2.mp4')
+    remake_video('test1.mp4')

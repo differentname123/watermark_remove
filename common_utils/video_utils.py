@@ -501,6 +501,71 @@ def cover_video_area_simple(
         raise RuntimeError(f"FFmpeg failed (code {proc.returncode}):\n{proc.stderr}")
     print(f"[SUCCESS] Output saved to {output_path}")
 
+def cover_video_area_blur(
+    video_path: str,
+    output_path: str,
+    top_left: tuple[int, int],
+    bottom_right: tuple[int, int],
+    blur_strength: int = 20
+):
+    """
+    在指定区域应用模糊遮挡 - 最终修正版。
+    修复了上一版本中因笔误导致的 "Unknown pixel format" 错误。
+    """
+    x1, y1 = top_left
+    x2, y2 = bottom_right
+    w, h = x2 - x1, y2 - y1
+
+    temp_patch_file = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_f:
+            temp_patch_file = temp_f.name
+
+        print(f"[INFO] Pass 1: Creating blurred patch at {temp_patch_file}")
+
+        # --- 第一阶段: 创建模糊补丁视频 (正确且不变) ---
+        vf_pass1 = f"crop={w}:{h}:{x1}:{y1},boxblur={blur_strength}"
+        cmd_pass1 = [
+            "ffmpeg", "-y", "-loglevel", "error", "-i", video_path,
+            "-vf", vf_pass1, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an",
+            temp_patch_file
+        ]
+
+        print(f"[INFO] Running Pass 1: {' '.join(shlex.quote(c) for c in cmd_pass1)}")
+        proc_pass1 = subprocess.run(cmd_pass1, capture_output=True, text=True, check=False)
+        if proc_pass1.returncode != 0:
+            raise RuntimeError(f"FFmpeg Pass 1 failed (code {proc_pass1.returncode}):\n{proc_pass1.stderr}")
+
+        print(f"[INFO] Pass 2: Overlaying patch onto original video.")
+
+        # --- 第二阶段: 叠加补丁 (修正笔误) ---
+        # 1. overlay 滤镜中的 :format=yuv420 保持不变，这是绕过核心问题的关键
+        # 2. 输出参数中的 -pix_fmt 改回正确的 yuv420p
+        vf_pass2 = f"[0:v][1:v]overlay={x1}:{y1}:format=yuv420"
+        cmd_pass2 = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", video_path,
+            "-i", temp_patch_file,
+            "-filter_complex", vf_pass2,
+            "-c:a", "copy",
+            "-c:v", "libx264",
+            # [核心修正] 将错误的 "yuv4s20p" 改回正确的 "yuv420p"
+            "-pix_fmt", "yuv420p",
+            output_path
+        ]
+
+        print(f"[INFO] Running Pass 2: {' '.join(shlex.quote(c) for c in cmd_pass2)}")
+        proc_pass2 = subprocess.run(cmd_pass2, capture_output=True, text=True, check=False)
+        if proc_pass2.returncode != 0:
+            raise RuntimeError(f"FFmpeg Pass 2 failed (code {proc_pass2.returncode}):\n{proc_pass2.stderr}")
+
+        print(f"[SUCCESS] Output saved to {output_path}")
+
+    finally:
+        if temp_patch_file and os.path.exists(temp_patch_file):
+            print(f"[INFO] Cleaning up temporary file: {temp_patch_file}")
+            os.remove(temp_patch_file)
+
 def add_subtitles_to_video(
         video_path: str,
         subtitles_info: list,
