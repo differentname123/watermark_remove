@@ -155,7 +155,7 @@ def add_image_to_video_end(
                     return
                 else:
                     print(
-                        f"[警告] 第 {attempt} 次生成的视频大小 ({output_size}) 小于输入视频大小 ({input_size})，重试中...")
+                        f"[警告] 第 {attempt} 次生成的视频大小 ({output_size}) 小于输入视频大小 ({input_size * 0.8})，重试中...")
             else:
                 print(f"[警告] 第 {attempt} 次没有生成输出文件，重试中...")
 

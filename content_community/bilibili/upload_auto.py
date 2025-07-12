@@ -19,6 +19,7 @@ import time
 
 from common_utils.common_utils import get_config
 from common_utils.video_utils import add_image_to_video_end
+from content_community.app.remake_video import remake_video_robust
 
 config_map = {}
 
@@ -235,18 +236,39 @@ def auto_upload():
             print(f"⏭️ 跳过 {key} (ID: {video_id})：视频文件缺失 -> {video_path}")
             continue
 
+        current_video_path = video_path  # 默认新视频路径为原视频路径
+        generation_options = value.get('generation_options', {})
+        if generation_options.get('remake_video', False):
+            # 如果需要重制视频，则调用重制函数
+            print(f"🔄 重制视频 {video_path}...")
+            try:
+                final_video_path = remake_video_robust(video_path, bgm_library_path='../app/bgm_audio')
+                if final_video_path:
+                    print(f"✅ 重制视频成功，保存为 {final_video_path}")
+                    video_path = final_video_path
+                    current_video_path = final_video_path
+                else:
+                    value['status'] = 'error'
+                    print(f"❌ 重制视频失败")
+                    error_count += 1
+                    continue
+                # 重制后的视频路径仍然是 video_path
+            except Exception as e:
+                value['status'] = 'error'
+                print(f"❌ 重制视频失败：{e}")
+                error_count += 1
+                continue
+
         # ---------- 预处理：在尾部插入引导图片 ----------
-        new_video_path = video_path.replace('.mp4', '_new.mp4')
+        new_video_path = current_video_path.replace('.mp4', '_new.mp4')
         try:
             image_duration = int(duration / 100)
             image_duration = max(1, image_duration)
-            print(f"🔄 尾部插图处理：视频时长 {duration} 秒，插图持续 {image_duration} 秒。")
-            add_image_to_video_end(video_path, 'final.png', new_video_path, image_duration)
+            print(f"🔄 尾部插图处理：视频时长 {duration} 秒，插图持续 {image_duration} 秒。 文件路径：{current_video_path} -> {new_video_path}")
+            add_image_to_video_end(current_video_path, 'final.png', new_video_path, image_duration)
             video_path = new_video_path
         except Exception as e:
             print(f"⚠️  尾部插图失败，继续使用原视频：{e}")
-
-
 
         # ---------- 准备投稿参数 ----------
         cover_path = (

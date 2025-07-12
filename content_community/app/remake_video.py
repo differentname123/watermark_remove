@@ -362,7 +362,7 @@ def get_owner_speech(video_path):
         -   在完成上述步骤后，针对每一句识别出的原始旁白 (`text` 字段)，你需要生成一句新的文本。
         -   **润色要求**：
             -   **保持原意**: 新句子的核心含义必须与原句完全一致。
-            -   **长度严格一致**: **此为关键要求。** 新句子的长度（字数）**必须尽最大可能**与原句保持一致,或者少于原句子，最不希望大于原句子。这是为了确保优化后的文案能精准匹配原视频的时间轴和口型，因此请严格遵守此项规则。
+            -   **长度严格一致**: **此为关键要求。** 新句子的长度（字数）**必须尽最大可能**与原句保持一致。这是为了确保优化后的文案能精准匹配原视频的时间轴和口型，因此请严格遵守此项规则。
             -   **整体通顺**: 所有润色后的新句子按顺序串联起来，也应能形成一篇通顺、连贯的文稿。
     **6.  智能配乐与配音推荐 (新增目标):**
         -   **在完成所有旁白处理后，综合分析润色后的文稿（`optimizedText` 的集合）的整体主题、情感和风格。**
@@ -385,6 +385,7 @@ def get_owner_speech(video_path):
             -   `voice`: (Object) 人声推荐，包含 `voice_name`, `voice_id_cn`, `style` (如果适用), 和 `reason` 四个字段。
     
     注意时间戳一定要是精确到毫秒的格式，且必须严格遵守 `HH:MM:SS.mmm` 的格式。
+    我的旁白是不可能重叠的，意思是每一句旁白的 `startTime` 和 `endTime` 都是唯一且不重叠的。
     
     # JSON 格式示例
     
@@ -436,9 +437,11 @@ def get_owner_speech(video_path):
         optimized_subtitles = optimize_subtitle_timing(result['transcription'])
         result['transcription'] = optimized_subtitles
 
-        if any(subtitle.get('duration', 0) < 0 for subtitle in optimized_subtitles):
-            print(f"检测到无效的负数时长{optimized_subtitles}，将在2秒后重试...")
-            continue  # 如果存在负数，则跳过本次循环的剩余部分，重新开始
+        # 检查是否存在不正常的字幕时长（小于0或大于10秒）
+        if any(not (0 <= subtitle.get('duration', 0) <= 10) for subtitle in optimized_subtitles):
+            print(f"检测到无效的字幕时长（小于0或大于10秒）：{optimized_subtitles}，将在2秒后重试...")
+            continue  # 如果存在异常值，则跳过本次循环的剩余部分，重新开始
+
         else:
             break  # 成功，跳出 while 循环
 
