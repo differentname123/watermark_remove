@@ -184,6 +184,7 @@ def auto_upload():
         print(f"❌ 无可用任务：{METADATA_FILE} 为空或不存在。")
         return
 
+
     new_uploads_made = False
     error_count = 0
     # 2. 遍历权威元数据
@@ -195,6 +196,9 @@ def auto_upload():
             error_count += 1
             continue
 
+        if key in upload_log and upload_log[key].get('status') == 'error':
+            print(f"⏭️ 跳过 {key}：之前重制失败，已标记")
+            continue
         # print("-" * 60)
 
         # 2.1 若日志里已记录成功投稿，则跳过
@@ -248,17 +252,20 @@ def auto_upload():
                     video_path = final_video_path
                     current_video_path = final_video_path
                 else:
-                    value['status'] = 'error'
+                    upload_log[key] = upload_log.get(key, {})
+                    upload_log[key]['status'] = 'error'
+                    save_json(UPLOAD_LOG_FILE, upload_log)
                     print(f"❌ 重制视频失败")
                     error_count += 1
                     continue
                 # 重制后的视频路径仍然是 video_path
             except Exception as e:
-                value['status'] = 'error'
+                upload_log[key] = upload_log.get(key, {})
+                upload_log[key]['status'] = 'error'
+                save_json(UPLOAD_LOG_FILE, upload_log)
                 print(f"❌ 重制视频失败：{e}")
                 error_count += 1
                 continue
-        save_json(UPLOAD_LOG_FILE, upload_log)
         # ---------- 预处理：在尾部插入引导图片 ----------
         new_video_path = current_video_path.replace('.mp4', '_new.mp4')
         try:
