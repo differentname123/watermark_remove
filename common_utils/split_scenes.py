@@ -9,7 +9,7 @@ from scenedetect.stats_manager import StatsManager
 from scenedetect.detectors import ContentDetector
 
 
-def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix='', threshold=70, min_scene_len=25):
+def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix='', threshold=50, min_scene_len=25):
     """
     检测视频中的场景，分割视频，存储精确的时间戳，并打印场景信息字典。
 
@@ -115,7 +115,7 @@ def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix='',
 # --- 主程序入口 ---
 if __name__ == '__main__':
     # 把这里换成你的视频文件路径
-    my_video_path = '../content_community/app/test7.mp4'
+    my_video_path = '../content_community/app/test1_covered_with_subtitles_redub.mp4'
     # 指定输出目录名
     output_directory = 'videos'
 

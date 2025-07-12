@@ -100,7 +100,7 @@ if __name__ == "__main__":
     duration_no_trim = generate_audio_and_get_duration_sync(
         text=text_with_silence,
         output_filename=filename_no_trim,
-        voice_name="zh-CN-YunjianNeural",
+        voice_name= "zh-CN-YunxiNeural",
         trim_silence=True
     )
     if duration_no_trim is not None:
