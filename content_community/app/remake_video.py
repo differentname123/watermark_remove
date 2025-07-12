@@ -836,7 +836,7 @@ def remake_video(video_path):
         final_box = all_info['final_subtitle_box']
         print(f"检测到 {final_box} 已存在的字幕框，直接使用...")
     else:
-        final_box = find_overall_subtitle_box(video_path)
+        final_box = find_overall_subtitle_box_target_number(video_path)
         all_info['final_subtitle_box'] = final_box
     top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(video_path, final_box)
 
@@ -885,4 +885,4 @@ def remake_video(video_path):
 
 
 if __name__ == '__main__':
-    remake_video('test1.mp4')
+    remake_video('test2.mp4')
