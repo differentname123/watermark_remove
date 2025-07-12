@@ -1,19 +1,24 @@
 import subprocess
 import os
+from pathlib import Path
+
 
 def separate_with_cli(input_path: str, output_dir: str, two_stems: bool = True):
     """
     使用 Demucs 分离音轨。
     """
     os.makedirs(output_dir, exist_ok=True)
+
+    # 用 Path 处理路径可防止跨平台路径问题
+    input_path = str(Path(input_path))
+    output_dir = str(Path(output_dir))
+
     cmd = ["demucs"]
-    # 使用最优微调模型 htdemucs_ft
-    # cmd += ["-n", "htdemucs_ft"]
     if two_stems:
         cmd.append("--two-stems=vocals")
     cmd += [input_path, "-o", output_dir]
 
-    print(f"Running command: {' '.join(cmd)}")
+    print("Running command:", ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in cmd))  # 为显示目的添加引号
     subprocess.run(cmd, check=True)
     print("分离完成，结果在:", output_dir)
 

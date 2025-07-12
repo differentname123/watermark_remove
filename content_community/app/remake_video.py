@@ -780,12 +780,14 @@ def add_origin_audio(video_path, owner_speech_with_audio_list, voice_output_dir)
     """
     补充原来的声音，因为有些时候视频中引用了其他人的声音，现在需要保留下来
     """
+    base_name = os.path.basename(video_path)
     new_owner_speech_with_audio_list = fill_time_gaps(owner_speech_with_audio_list)
     if len(new_owner_speech_with_audio_list) > len(owner_speech_with_audio_list):
-        origin_audio_path = video_path.replace('.mp4', '_origin_audio.wav')
+        origin_audio_path = base_name.replace('.mp4', '_origin_audio.wav')
         # 说明新增了片段，需要进行处理
         extract_audio_from_video(video_path, f'{voice_output_dir}/{origin_audio_path}')
-        separate_with_cli(origin_audio_path, output_dir=voice_output_dir, two_stems=True)
+        print(f"已提取原始音频到: {voice_output_dir}/{origin_audio_path}")
+        separate_with_cli(f'{voice_output_dir}/{origin_audio_path}', output_dir=voice_output_dir, two_stems=True)
         vocals_path = find_file_by_name(voice_output_dir, 'vocals.wav')
         if not vocals_path:
             vocals_path = origin_audio_path
@@ -970,6 +972,8 @@ def remake_video_robust(
             if not final_box:
                 raise ValueError("寻找字幕框失败")
             all_info['final_subtitle_box'] = final_box
+            save_json(paths['info_json'], all_info)
+
 
         top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(paths['original'], all_info['final_subtitle_box'])
 
@@ -1030,12 +1034,11 @@ def remake_video_robust(
         return paths['final_video']
 
     except (ValueError, FileNotFoundError, RuntimeError) as e:
-        # 捕获可预见的业务逻辑错误
+        traceback.print_exc()
         print(f"处理流程中断: {e}")
         return None
     except Exception as e:
-        # 捕获所有其他意外错误
-        print(f"发生未知错误: {e}", exc_info=True)  # exc_info=True会记录堆栈跟踪
+        traceback.print_exc()
         return None
 
 if __name__ == '__main__':
