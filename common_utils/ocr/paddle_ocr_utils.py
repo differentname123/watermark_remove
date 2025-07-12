@@ -50,23 +50,25 @@ def predict_text(ocr_model: PaddleOCR, image: np.ndarray) -> List[Dict[str, Any]
     return result
 
 
-# --- 4. 字幕定位模块 (合并后的新函数) ---
-def find_subtitle(ocr_result: List[Dict[str, Any]],
-                  image_height: int,
-                  image_width: int,
-                  bottom_ratio: float = 0.7,
-                  rect_ang_thresh: float = 10.0,      # 最大旋转角度阈值（°）
-                  rect_ratio_thresh: float = 0.8,    # 最小矩形度阈值
-                  aspect_ratio_thresh: float = 2.0    # 最小宽高比阈值（可选）
-                  ) -> Optional[np.ndarray]:
+def find_subtitle(
+    ocr_result: List[Dict[str, Any]],
+    image_height: int,
+    image_width: int,
+    bottom_ratio: float = 0.7,
+    rect_ang_thresh: float = 10.0,      # 最大旋转角度阈值（°）
+    rect_ratio_thresh: float = 0.8,    # 最小矩形度阈值
+    aspect_ratio_thresh: float = 2.0,   # 最小宽高比阈值（可选）
+    width_ratio_thresh: float = 0.1     # 最小宽度占比（相对于 image_width）
+) -> Optional[np.ndarray]:
     """
-    从OCR结果中定位字幕框，增加“平行矩形”筛选：
+    从OCR结果中定位字幕框，并剔除横向宽度小于指定比例的框：
       1) 只保留位于画面底部的多边形
       2) 只保留四点多边形
       3) 最小外接矩形旋转角度小于 rect_ang_thresh
       4) 矩形度 (多边形面积 / minAreaRect面积) > rect_ratio_thresh
       5) 可选：宽高比 > aspect_ratio_thresh
-      6) 在剩余候选框里，用 Y 位置和 X 居中打分，选出最高者
+      6) 剔除宽度 < image_width * width_ratio_thresh 的框
+      7) 在剩余候选框里，用 Y 位置和 X 居中打分，选出最高者
 
     返回最终框的 4×2 numpy 数组，或 None。
     """
@@ -76,18 +78,45 @@ def find_subtitle(ocr_result: List[Dict[str, Any]],
         return None
     all_boxes = ocr_result[0]['rec_polys']
     bottom_y = image_height * bottom_ratio
-    cand = [box for box in all_boxes if np.min(box[:,1]) > bottom_y]
+    cand = [box for box in all_boxes if np.min(box[:, 1]) > bottom_y]
     if not cand:
         return None
     if len(cand) == 1:
         return cand[0]
 
-    # 2. 形状筛选
+    # 2. 形状 & 大小 筛选
     filtered = []
+    min_width = image_width * width_ratio_thresh
     for box in cand:
-        # 2.1 必须是四边形
+        # 必须是四边形
         if box.shape[0] != 4:
             continue
+
+        # 计算包围盒宽度
+        width = np.max(box[:, 0]) - np.min(box[:, 0])
+        if width < min_width:
+            # 宽度太小，剔除
+            continue
+
+        # 计算最小外接矩形
+        rect = cv2.minAreaRect(box.astype(np.float32))
+        angle = abs(rect[2])
+        if angle > rect_ang_thresh:
+            continue
+
+        # 矩形度（多边形面积 / minAreaRect 面积）
+        area_poly = cv2.contourArea(box.astype(np.float32))
+        box_w, box_h = rect[1]
+        area_rect = box_w * box_h
+        if area_rect <= 0 or (area_poly / area_rect) < rect_ratio_thresh:
+            continue
+
+        # 可选：宽高比过滤
+        if aspect_ratio_thresh is not None:
+            ar = max(box_w, box_h) / (min(box_w, box_h) + 1e-6)
+            if ar < aspect_ratio_thresh:
+                continue
+
         filtered.append(box)
 
     if not filtered:
@@ -96,20 +125,20 @@ def find_subtitle(ocr_result: List[Dict[str, Any]],
         return filtered[0]
 
     # 3. 打分选最佳
-    print(f"剩余 {len(filtered)} 个“矩形”候选框，开始位置+居中打分...")
     Y_WEIGHT = 1.0
     X_WEIGHT = 10
     CENTER_X = image_width / 2
 
     def score(box: np.ndarray) -> float:
-        cy = np.mean(box[:,1])
+        cy = np.mean(box[:, 1])
         y_score = (cy / image_height) * Y_WEIGHT
-        cx = np.mean(box[:,0])
+        cx = np.mean(box[:, 0])
         x_pen = abs(cx - CENTER_X) / image_width * X_WEIGHT
         return y_score - x_pen
 
     best = max(filtered, key=score)
     return best
+
 
 
 # --- 5. 可视化模块 (无变化) ---
