@@ -85,7 +85,6 @@ def get_owner_speech(video_path):
     ]
     """
     base_name = os.path.basename(video_path)
-    output_path = base_name.replace('.mp4', '_owner_speech.json')
     count = 0
     while True:
         count += 1
@@ -100,7 +99,7 @@ def get_owner_speech(video_path):
         optimized_subtitles = optimize_subtitle_timing(result)
 
         if any(subtitle.get('duration', 0) < 0 for subtitle in optimized_subtitles):
-            print("检测到无效的负数时长，将在2秒后重试...")
+            print(f"检测到无效的负数时长{optimized_subtitles}，将在2秒后重试...")
             continue  # 如果存在负数，则跳过本次循环的剩余部分，重新开始
         else:
             break  # 成功，跳出 while 循环
@@ -281,70 +280,93 @@ def gen_cut_suggestion(video_path):
             print("未能成功获取视频场景信息。")
             return
         prompt = """# 角色
-                    你是一位拥有十年经验的资深视频剪辑师和顶级社交媒体内容策略专家。你精通各种平台（如抖音、Bilibili、YouTube Shorts）的流量算法和用户心理，知道如何通过剪辑创造“黄金三秒”、提升完播率和互动率。
-                    # 目标
-                    你的核心目标是分析我提供的视频场景信息，并输出一个最优化的剪辑方案，旨在最大化视频的**观众吸引力、叙事流畅性、信息价值和传播潜力**。所有决策都必须以“让最终视频效果更好”为唯一标准。如果原始顺序已是最佳，则保持原样。
+                    你是一位拥有十年以上经验的**资深视频剪辑总监**和**首席社交媒体内容策略师**。你不仅精通抖音、Bilibili、YouTube Shorts的算法和用户心理，更重要的是，你是一位**务实的创作者**，深刻理解每一次剪辑都意味着时间成本。你的决策冷静、精准，始终追求“投入产出比”最高的神级剪辑。
+                    
+                    # 核心原则
+                    在开始任何分析之前，请将以下原则作为你思考的基石：
+                    
+                    1.  **叙事逻辑优先 (Narrative First)**：视频的流畅性和逻辑连贯性是基础。任何调整都不能破坏故事的内在逻辑或观众的理解流畅度。
+                    2.  **保留是默认选项 (Keep is the Default)**：尊重原始素材的创作意图。不要为了调整而调整。如果一个场景没有严重问题，就应该保留。
+                    3.  **高门槛调整原则 (High Bar for Changes)**：
+                        *   **删除 (Delete)**：必须有充分理由，例如内容完全冗余、质量严重低下或明显偏离主题。
+                        *   **重排 (Reorder)**：这是最高成本的操作，必须慎之又慎。**只有当重排能带来压倒性的优势时（例如，创造出无法替代的“黄金三秒”钩子，或解决了致命的叙事缺陷），才予以考虑。** 你的理由必须极具说服力。
+                    4.  **效果是唯一标准 (Impact is Everything)**：所有决策的唯一目标是让最终成片在**观众吸引力、叙事流畅性、信息价值和传播潜力**上获得**显著提升**。微小的、可有可无的优化不是你的追求。
+                    
                     # 任务指令
-                    1.  **全面分析**：基于提供的视频，深入理解整个视频的核心主题、叙事结构和关键信息点。
-                    2.  **逐一评估**：结合“原始场景分割”，独立评估每个场景的作用和质量。评估维度包括：
-                        *   **信息密度**：该场景是否传递了关键信息？
-                        *   **视觉冲击力**：画面是否吸引人？
-                        *   **情绪价值**：该场景能否引发观众的情绪（好奇、共鸣、兴奋等）？
-                        *   **叙事功能**：它在故事中扮演什么角色（开端、发展、高潮、结尾、铺垫、转折）？
-                        *   **冗余性**：该场景是否多余、拖沓或可被替代？
-                    3.  **策略决策**：基于以上评估，构建最终的剪辑方案。你可以执行以下操作：
-                        *   **保留 (Keep)**：当场景质量高且位置合适时。
-                        *   **重排 (Reorder)**：调整场景顺序以优化叙事节奏或将最精彩的部分前置（例如，创建钩子）。
-                        *   **删除 (Delete)**：移除内容冗余、质量低下或对主线故事无益的场景。
-                    4.  **生成最终方案**：将你的决策结果以纯JSON格式输出。
+                    1.  **整体理解与诊断 (Holistic Understanding & Diagnosis)**：
+                        *   首先，快速看完所有场景描述，总结出视频的**核心价值主张**（即“观众为什么要看这个视频？”）。
+                        *   识别出整个视频中最具潜力的**“黄金时刻”或“高光片段”**。这是你后续决策的关键锚点。
+                    
+                    2.  **逐一评估 (Scene-by-Scene Evaluation)**：
+                        *   结合你对整体的理解，独立评估每个原始场景。评估维度包括：
+                            *   **信息密度**：是否传递了关键信息？
+                            *   **视觉冲击力**：画面是否吸引人？
+                            *   **情绪价值**：能否引发观众的情绪（好奇、共鸣、兴奋、爽感等）？
+                            *   **叙事功能**：在故事中扮演什么角色（开端、发展、高潮、结尾、铺垫、转折）？
+                            *   **冗余性**：是否拖沓、重复或可被更好的场景替代？
+                    
+                    3.  **制定剪辑策略 (Formulate the Editing Strategy)**：
+                        *   严格遵循上述**【核心原则】**，结合你的评估，构建最终剪辑方案。
+                        *   对于每一个决策（保留、重排、删除），在`reasoning`中清晰阐述你的思考过程，特别是要体现你的**审慎和对效果的追求**。例如，解释为什么保留是当前最佳选择，或者阐述一个重排建议为何能带来“压倒性优势”。
+                    
+                    4.  **生成最终方案 (Generate Final Plan)**：
+                        *   将你的决策结果以纯JSON格式输出。
                     
                     # 输出要求
                     *   **严格的JSON格式**：你的输出必须是**一个完整且格式正确的JSON对象**，不能包含任何JSON格式之外的标记、注释、代码块标识（如 ```json ... ```）或任何解释性文本。
                     *   **内容结构**：JSON对象必须包含以下三个顶级键：`overall_strategy`, `final_cut_sequence`, `deleted_scenes`。
                     
                     ---
-                    ### JSON输出格式定义与示例
+                    ### **JSON输出格式定义与示例**
                     
                     ```json
                     {
-                      "overall_strategy": "将成品展示（场景4）提前至开头作为钩子，吸引用户停留。删除了冗长的备料介绍（场景2），并整合了核心烹饪步骤，使节奏更紧凑，重点突出。",
+                      "overall_strategy": "（这里是你基于【核心原则】和【整体诊断】得出的顶层策略。例如：原始顺序的叙事逻辑清晰，核心价值突出，仅需删除一个冗余场景来加快节奏，无需进行高成本的重排。）",
                       "final_cut_sequence": [
                         {
-                          "scene_id": "场景4",
-                          "original_start_time": "00:02:19.827",
-                          "original_end_time": "00:04:17.194",
-                          "new_sequence_index": 1,
-                          "reasoning": "作为视频钩子，快速展示最终成果，引发观众好奇心。"
-                        },
-                        {
                           "scene_id": "场景1",
-                          "original_start_time": "00:00:00.000",
-                          "original_end_time": "00:00:02.188",
-                          "new_sequence_index": 2,
-                          "reasoning": "简短的开场白，承接钩子，引入主题。"
+                          "scene_desc": "（场景的简短描述）",
+                          "reasoning": "（你的决策理由。例如：作为视频的自然开端，有效建立情境，逻辑清晰，是最佳的起始点，无需调整。）"
                         },
                         {
                           "scene_id": "场景3",
-                          "original_start_time": "00:00:53.328",
-                          "original_end_time": "00:02:19.827",
-                          "new_sequence_index": 3,
-                          "reasoning": "核心内容，展示了关键的制作过程，保留以确保信息完整性。"
+                          "scene_desc": "（场景的简短描述）",
+                          "reasoning": "（例如：这是视频的‘高光时刻’，情绪价值最高，紧随场景1能快速抓住用户，保留其在故事发展中的位置可确保叙事连贯性。）"
                         }
                       ],
                       "deleted_scenes": [
                         {
                           "scene_id": "场景2",
-                          "original_start_time": "00:00:02.188",
-                          "original_end_time": "00:00:53.328",
-                          "reasoning": "此场景为详细的备料过程，节奏过于缓慢且信息密度低，删除可以使视频更紧凑，直接进入核心制作环节。"
+                          "scene_desc": "（场景的简短描述）",
+                          "reasoning": "（你的决策理由。例如：此场景与场景3内容高度重叠，且信息密度较低，属于明显冗余。删除后能让叙事流直接从情境建立进入高光时刻，节奏更紧凑。）"
                         }
                       ]
                     }
+                    ```
+                    
                     **原始场景分割信息如下**:
+
         """
         prompt = f"{prompt}\n{scene_info_dict}"
         raw = get_llm_content_gemini_flash_video(prompt=prompt, video_path=video_path)
         result = string_to_object(raw)
+        # 增加原始的时间段到result
+        final_cut_sequence = result.get('final_cut_sequence', [])
+        deleted_scenes = result.get('deleted_scenes', [])
+        for scene in final_cut_sequence:
+            scene_id = scene.get('scene_id')
+            if scene_id:
+                # 在场景信息中添加原始时间段
+                time_list = scene_info_dict.get(scene_id, [])
+                scene['original_start_time'] = time_list[0]
+                scene['original_end_time'] = time_list[1]
+        for scene in deleted_scenes:
+            scene_id = scene.get('scene_id')
+            if scene_id:
+                # 在删除的场景信息中添加原始时间段
+                time_list = scene_info_dict.get(scene_id, [])
+                scene['original_start_time'] = time_list[0]
+                scene['original_end_time'] = time_list[1]
         return result
     except Exception as e:
         traceback.print_exc()
@@ -360,6 +382,7 @@ def auto_cut(video_path, all_info, output_path):
     else:
         cut_suggestion_info = gen_cut_suggestion(video_path)
         all_info['cut_suggestion_info'] = cut_suggestion_info
+        print(f"{cut_suggestion_info}")
 
     if not cut_suggestion_info:
         pass
@@ -440,13 +463,10 @@ def remake_video(video_path):
 
     # 增加新的文案和字幕
     add_subtitle_output_path = covered_video_path.replace('.mp4', '_with_subtitles.mp4')
-    if os.path.exists(add_subtitle_output_path):
-        print(f"检测到 {add_subtitle_output_path} 已存在，直接使用...")
-    else:
-        font_size = bottom_right[1] - top_left[1]
-        font_size = int(font_size * 0.8)
-        bottom_margin = vid_h - bottom_right[1] + int(int(bottom_right[1] - top_left[1]) * 0.1)
-        add_subtitle(covered_video_path, owner_speech_list, add_subtitle_output_path, bottom_margin=bottom_margin, font_size=font_size, fixed_rect=[top_left, bottom_right])
+    font_size = bottom_right[1] - top_left[1]
+    font_size = int(font_size * 0.8)
+    bottom_margin = vid_h - bottom_right[1] + int(int(bottom_right[1] - top_left[1]) * 0.1)
+    add_subtitle(covered_video_path, owner_speech_list, add_subtitle_output_path, bottom_margin=bottom_margin, font_size=font_size, fixed_rect=[top_left, bottom_right])
 
     # add_subtitle_output_path = 'test_covered_with_subtitles.mp4'
     # 生成新的音频并且配上新的声音
@@ -464,15 +484,11 @@ def remake_video(video_path):
     # new_owner_speech_with_audio_list = [speech for speech in new_owner_speech_with_audio_list if speech['text'] =="[无声]"]
     redub_video_with_ffmpeg(add_subtitle_output_path, new_owner_speech_with_audio_list, output_path=redub_output_file_path)
 
-    # redub_output_file_path = 'test_covered_with_subtitles_redub.mp4'
     # 自动切割视频，删除场景或者交换场景顺序
     auto_cut_output_path = redub_output_file_path.replace('.mp4', '_auto_cut.mp4')
-    if os.path.exists(auto_cut_output_path):
-        print(f"检测到 {auto_cut_output_path} 已存在，直接使用...")
-    else:
-        print(f"正在自动切割视频，输出文件: {auto_cut_output_path}...")
-        auto_cut(redub_output_file_path, all_info, auto_cut_output_path)
-        save_json(all_info_json_path, all_info)
+    print(f"正在自动切割视频，输出文件: {auto_cut_output_path}...")
+    auto_cut(redub_output_file_path, all_info, auto_cut_output_path)
+    save_json(all_info_json_path, all_info)
 
 
     bgm_file = "background_music.mp3"
@@ -482,4 +498,4 @@ def remake_video(video_path):
 
 
 if __name__ == '__main__':
-    remake_video('test.mp4')
+    remake_video('test7.mp4')

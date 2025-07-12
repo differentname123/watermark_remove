@@ -1173,12 +1173,37 @@ if __name__ == '__main__':
         print("2. 你的系统中安装了 ffmpeg 并已添加到环境变量(PATH)。")
         print("3. 如果自动字体检测失败，请在代码中手动指定一个有效的中文字体路径。")
 
+
+def get_duration_seconds(start_str, end_str):
+    """
+    计算两个FFmpeg时间格式字符串之间的秒数差。
+    例如: "00:01:15.250" 和 "00:00:10.100"
+    """
+
+    def time_to_seconds(t_str):
+        """将FFmpeg时间格式字符串转换为总秒数"""
+        try:
+            # 尝试按 HH:MM:SS.ms 格式解析
+            h, m, s_ms = t_str.split(':')
+            s, ms = (s_ms.split('.') + ['0'])[:2]  # 处理没有毫秒的情况
+            return int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000.0
+        except ValueError:
+            # 如果上面的解析失败，可能是一个简单的秒数
+            return float(t_str)
+
+    start_seconds = time_to_seconds(start_str)
+    end_seconds = time_to_seconds(end_str)
+
+    return end_seconds - start_seconds
+
+
 def re_edit_video_ffmpeg(video_path, time_segments, output_path="output_video_ffmpeg.mp4"):
     """
-    使用 FFmpeg 根据给定的时间段列表重新剪辑视频。(已修正开头画面冻结问题)
+    使用 FFmpeg 根据给定的时间段列表重新剪辑视频。
 
-    此版本通过对第一个剪辑片段进行强制重新编码来确保其以关键帧开头，
-    后续片段则继续使用快速的流复制方法。
+    此版本已修正以下问题：
+    1. 非时序拼接导致的时间戳混乱问题 (通过全部重新编码解决)。
+    2. 剪辑不精确导致最终视频过长和内容重复的问题 (通过使用 -t 时长参数解决)。
     """
     if not time_segments:
         print("[ERROR] 时间段列表为空，操作中止。")
@@ -1188,6 +1213,7 @@ def re_edit_video_ffmpeg(video_path, time_segments, output_path="output_video_ff
         print(f"[ERROR] 视频文件未找到: {video_path}")
         return
 
+    # 使用临时目录来存放剪辑的片段，程序结束后会自动清理
     with tempfile.TemporaryDirectory() as temp_dir:
         clip_files = []
 
@@ -1195,38 +1221,37 @@ def re_edit_video_ffmpeg(video_path, time_segments, output_path="output_video_ff
         for i, segment in enumerate(time_segments):
             start_time = segment['original_start_time']
             end_time = segment['original_end_time']
+
+            # 核心修正 1: 计算片段的精确时长
+            duration = get_duration_seconds(start_time, end_time)
+            if duration <= 0:
+                print(f"[WARNING] 片段 {i + 1} 的时长为零或负数，将跳过。开始: {start_time}, 结束: {end_time}")
+                continue
+
             temp_clip_path = os.path.join(temp_dir, f"clip_{i}.mp4")
 
-            # 核心修正：对第一个片段 (i == 0) 特殊处理
-            if i == 0:
-                # 对于第一个片段，我们必须进行重新编码以确保它以关键帧开头
-                print(f"[INFO] 正在创建第一个片段 (方法: 重新编码): 从 {start_time} 到 {end_time}")
-                cmd_clip = [
-                    "ffmpeg", "-y", "-loglevel", "error",
-                    "-ss", start_time,
-                    "-i", video_path,
-                    "-to", end_time,
-                    "-c:v", "libx264", "-c:a", "aac",  # 强制重新编码视频和音频
-                    temp_clip_path
-                ]
-            else:
-                # 对于后续片段，我们可以继续使用快速的流复制
-                print(f"[INFO] 正在创建片段 {i + 1}/{len(time_segments)} (方法: copy): 从 {start_time} 到 {end_time}")
-                cmd_clip = [
-                    "ffmpeg", "-y", "-loglevel", "error",
-                    "-ss", start_time,
-                    "-i", video_path,
-                    "-to", end_time,
-                    "-c", "copy",
-                    "-avoid_negative_ts", "1",
-                    temp_clip_path
-                ]
+            print(
+                f"[INFO] 正在创建片段 {i + 1}/{len(time_segments)} (方法: 重新编码): 从 {start_time} 开始，时长 {duration:.3f} 秒")
+
+            # 核心修正 2: 使用 -t (时长) 替代 -to (结束时间)，并对所有片段重新编码
+            cmd_clip = [
+                "ffmpeg", "-y", "-loglevel", "error",
+                "-ss", start_time,  # 快速定位到开始时间
+                "-i", video_path,
+                "-t", str(duration),  # 精确指定剪辑时长
+                "-c:v", "libx264",  # 重新编码视频以重置时间戳
+                "-c:a", "aac",  # 重新编码音频
+                "-preset", "fast",  # 使用较快的编码预设，平衡速度和质量
+                "-crf", "22",  # 合理的质量参数 (18-28, 数字越小质量越高)
+                temp_clip_path
+            ]
 
             try:
-                subprocess.run(cmd_clip, check=True, capture_output=True, text=True, encoding='utf-8')
+                # 运行命令，并捕获输出用于调试
+                result = subprocess.run(cmd_clip, check=True, capture_output=True, text=True, encoding='utf-8')
                 clip_files.append(temp_clip_path)
             except subprocess.CalledProcessError as e:
-                # 如果出现任何错误，打印详细信息并跳过
+                # 如果FFmpeg执行失败，打印详细的错误信息
                 print(f"    [ERROR] 创建片段 {i + 1} 失败 (返回码 {e.returncode})。")
                 print(f"    [DEBUG] 失败的命令: {' '.join(e.cmd)}")
                 if e.stderr:
@@ -1234,18 +1259,23 @@ def re_edit_video_ffmpeg(video_path, time_segments, output_path="output_video_ff
                 print(f"[WARNING] 将跳过此时间段继续。")
                 continue
 
-        # --- 后续拼接逻辑 (无需改动) ---
+        # --- 后续拼接逻辑 ---
         if not clip_files:
             print("\n[ERROR] 未能成功创建任何剪辑片段，拼接操作中止。")
             return
 
         print(f"\n[INFO] 成功创建 {len(clip_files)} 个片段，现在开始拼接...")
+
+        # 创建一个文本文件，列出所有要拼接的片段
         concat_list_path = os.path.join(temp_dir, "concat_list.txt")
         with open(concat_list_path, 'w', encoding='utf-8') as f:
             for clip_path in clip_files:
+                # 使用绝对路径并处理反斜杠，确保在所有系统上都安全
                 safe_clip_path = os.path.abspath(clip_path).replace('\\', '/')
                 f.write(f"file '{safe_clip_path}'\n")
 
+        # 使用 concat demuxer 进行快速拼接
+        # 因为所有片段都已重新编码为相同格式，所以使用-c copy拼接会非常快且可靠
         cmd_concat = [
             "ffmpeg", "-y", "-loglevel", "error",
             "-f", "concat", "-safe", "0",
@@ -1257,13 +1287,21 @@ def re_edit_video_ffmpeg(video_path, time_segments, output_path="output_video_ff
         try:
             subprocess.run(cmd_concat, check=True, capture_output=True, text=True, encoding='utf-8')
             print(f"[SUCCESS] 视频已成功合并并保存至: {output_path}")
-        except subprocess.CalledProcessError:
-            print("[WARNING] 使用流复制进行拼接失败，将尝试重新编码拼接。")
+        except subprocess.CalledProcessError as e:
+            # 如果流复制拼接失败（理论上不应该发生，但作为备用方案），尝试重新编码拼接
+            print(f"[WARNING] 使用流复制进行拼接失败，将尝试重新编码拼接。")
+            print(f"    [DEBUG] 失败的命令: {' '.join(e.cmd)}")
+            if e.stderr:
+                print(f"    [DEBUG] FFmpeg Stderr:\n---(start) ---\n{e.stderr.strip()}\n--- (end) ---")
+
             cmd_concat_recode = [
                 "ffmpeg", "-y", "-loglevel", "error",
                 "-f", "concat", "-safe", "0",
                 "-i", concat_list_path,
-                "-c:v", "libx264", "-c:a", "aac",
+                "-c:v", "libx264",
+                "-c:a", "aac",
+                "-preset", "fast",
+                "-crf", "22",
                 output_path
             ]
             try:
@@ -1273,4 +1311,3 @@ def re_edit_video_ffmpeg(video_path, time_segments, output_path="output_video_ff
                 print(f"[FATAL] 重新编码拼接也失败了。")
                 if e3.stderr:
                     print(f"    [DEBUG] FFmpeg Stderr:\n---(start) ---\n{e3.stderr.strip()}\n--- (end) ---")
-

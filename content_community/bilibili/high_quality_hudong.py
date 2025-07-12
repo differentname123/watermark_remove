@@ -125,22 +125,35 @@ def most_similar_text(text_list: List[str], target_text: str) -> Optional[str]:
 
 def replace_bracketed(text: str, text_list: List[str]) -> str:
     """
-    找到 text 中所有被 [ 和 ] 包围的子串，提取其中内容 item，
-    用 most_similar_text(text_list, item) 的返回值去替换整个 [item]。
+    找到 text 中所有被 [ 和 ] 包围的子串。
+    对于前5个子串，提取其中内容 item，用 most_similar_text(text_list, item) 的返回值去替换整个 [item]。
+    对于第6个及以后的 [ 和 ] 子串，直接删除。
 
     :param text: 包含若干 […] 片段的原始字符串
     :param text_list: 用于匹配的候选字符串列表
-    :return: 所有带括号片段都被对应最佳匹配替换后的新字符串
+    :return: 处理后的新字符串
     """
+
+    # 在外部函数作用域定义一个计数器
+    match_count = 0
 
     # 回调函数：为每一个匹配项计算替换结果
     def _replacer(match: re.Match) -> str:
-        inner = match.group(1)
-        best = most_similar_text(text_list, inner)
-        # 如果没找到任何匹配，保留原括号内容
-        return best if best is not None else match.group(0)
+        nonlocal match_count
+        match_count += 1
+
+        # 如果是前5个匹配项，执行替换逻辑
+        if match_count <= 5:
+            inner = match.group(1)
+            best = most_similar_text(text_list, inner)
+            # 如果没找到任何匹配，保留原括号内容
+            return best if best is not None else match.group(0)
+        # 如果是第6个及以后的匹配项，返回空字符串，即删除该匹配
+        else:
+            return ""
 
     # 使用正则替换所有 [内容]
+    # re.sub 会对每一个匹配项调用一次 _replacer 函数
     return re.sub(r'\[([^\]]+)\]', _replacer, text)
 
 # --- 4. API请求核心函数 ---
