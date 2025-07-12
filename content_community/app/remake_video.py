@@ -614,7 +614,7 @@ def gen_cut_suggestion(video_path):
     try:
         scene_info_dict = find_and_split_scenes(video_path)
         if not scene_info_dict:
-            print("未能成功获取视频场景信息。")
+            print("未能成功获取视频场景信息。", scene_info_dict)
             return
         prompt = """# 角色
                     你是一位拥有十年以上经验的**资深视频剪辑总监**和**首席社交媒体内容策略师**。你不仅精通抖音、Bilibili、YouTube Shorts的算法和用户心理，更重要的是，你是一位**务实的创作者**，深刻理解每一次剪辑都意味着时间成本。你的决策冷静、精准，始终追求“投入产出比”最高的神级剪辑。

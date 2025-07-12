@@ -66,7 +66,6 @@ def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix='',
         return scene_info_dict
     finally:
         video_manager.release()
-        return {}
 
 
 # --- 主程序入口 ---
