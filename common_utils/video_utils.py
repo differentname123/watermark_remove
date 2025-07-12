@@ -150,7 +150,7 @@ def add_image_to_video_end(
             # 检查输出文件大小
             if os.path.exists(output_path):
                 output_size = os.path.getsize(output_path)
-                if output_size >= input_size:
+                if output_size >= input_size * 0.8:
                     # 成功且大小正常，退出循环
                     return
                 else:
