@@ -9,63 +9,76 @@ from scenedetect.stats_manager import StatsManager
 from scenedetect.detectors import ContentDetector
 
 
-def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix='', threshold=50, min_scene_len=25):
+def find_and_split_scenes(
+        video_path,
+        output_dir='videos',
+        stats_file_prefix='',
+        threshold=50,
+        min_scene_len=25,
+        max_scenes=20,
+        step=10,
+        max_threshold=100
+):
     """
-    检测视频中的场景，分割视频，存储精确的时间戳，并打印场景信息字典。
+    检测视频中的场景，并自动调整阈值直到场景数量不超过 max_scenes 或达到最大阈值。
 
     参数:
-    video_path (str): 输入视频文件的路径。
+    video_path (str): 输入视频文件路径。
     output_dir (str): 分割后视频的输出目录。
-    stats_file_prefix (str): 统计数据（时间戳）CSV文件的前缀。如果为空，则使用视频文件名。
+    stats_file_prefix (str): 统计数据（时间戳）CSV文件前缀。
+    threshold (int): 初始检测阈值。
+    min_scene_len (int): 最小场景时长（帧）。
+    max_scenes (int): 最大允许的场景数量。
+    step (int): 每次调整阈值的步长。
+    max_threshold (int): 最大阈值上限。
+    返回:
+    dict: 场景信息字典，键为 "场景1", 值为 (start_timecode, end_timecode)。
     """
-    # 创建一个 VideoManager 来管理视频文件
-    video_manager = VideoManager([video_path])
+    current_threshold = threshold
+    scene_info_dict = {}
 
-    # 创建一个 StatsManager 来保存每个场景的详细统计信息
-    stats_manager = StatsManager()
+    while current_threshold <= max_threshold:
+        # 初始化管理器
+        video_manager = VideoManager([video_path])
+        stats_manager = StatsManager()
+        scene_manager = SceneManager(stats_manager=stats_manager)
+        scene_manager.add_detector(
+            ContentDetector(threshold=current_threshold, min_scene_len=min_scene_len)
+        )
 
-    # 创建一个 SceneManager
-    scene_manager = SceneManager(stats_manager=stats_manager)
+        try:
+            base_timecode = video_manager.get_base_timecode()
+            video_manager.set_downscale_factor()
+            video_manager.start()
 
-    # 添加内容检测器
-    scene_manager.add_detector(ContentDetector(threshold=threshold, min_scene_len=min_scene_len))
+            print(f'使用阈值 {current_threshold} 分析视频 {video_path}...')
+            scene_manager.detect_scenes(frame_source=video_manager)
+            scene_list = scene_manager.get_scene_list(base_timecode)
+            num_scenes = len(scene_list)
+            print(f'检测到 {num_scenes} 个场景。')
 
-    try:
-        # 设置 VideoManager 的属性
-        base_timecode = video_manager.get_base_timecode()
-        video_manager.set_downscale_factor()
-        video_manager.start()
+            # 如果场景数量满足条件，则跳出循环
+            if num_scenes <= max_scenes:
+                # 生成结果字典
+                for i, scene in enumerate(scene_list):
+                    start_time, end_time = scene
+                    scene_key = f"场景{i + 1}"
+                    scene_info_dict[scene_key] = (
+                        start_time.get_timecode(), end_time.get_timecode()
+                    )
+                break
+            else:
+                # 增加阈值并重试
+                print(f'场景数 {num_scenes} 大于限制 {max_scenes}, 将阈值调整为 {current_threshold + step} 并重试...')
+                current_threshold += step
+        finally:
+            video_manager.release()
+    else:
+        print(f'已达到最大阈值 {max_threshold}, 仍检测到 {num_scenes} 个场景。')
+        # 即便超过阈值，仍返回最后一次的结果字典
 
-        # 在 SceneManager 中执行场景检测
-        print(f'正在分析视频 {video_path}...')
-        scene_manager.detect_scenes(frame_source=video_manager)
-
-        # 获取检测到的场景列表 (包含开始和结束的时间码对象)
-        scene_list = scene_manager.get_scene_list(base_timecode)
-
-        print(f'成功检测到 {len(scene_list)} 个场景/片段。')
-
-        # --------------------------------------------------------------------
-        # <-- 2. 新增部分：创建并打印你需要的场景信息字典
-        # --------------------------------------------------------------------
-        if scene_list:
-            scene_info_dict = {}
-            print("\n" + "=" * 20)
-            print("场景详细信息字典:")
-            for i, scene in enumerate(scene_list):
-                start_time, end_time = scene
-                # 构建字典的键，例如 "场景1"
-                scene_key = f"场景{i + 1}"
-                # 构建值，即一个包含开始和结束精确时间码字符串的元组
-                # .get_timecode() 方法返回 "HH:MM:SS.ms" 格式的字符串
-                scene_info_dict[scene_key] = (start_time.get_timecode(), end_time.get_timecode())
-
-            # 使用 pprint 美观地打印字典
-            pprint.pprint(scene_info_dict)
-            print("=" * 20 + "\n")
-        return scene_info_dict
-    finally:
-        video_manager.release()
+    pprint.pprint(scene_info_dict)
+    return scene_info_dict
 
 
 # --- 主程序入口 ---

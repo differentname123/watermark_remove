@@ -242,7 +242,7 @@ def auto_upload():
             # 如果需要重制视频，则调用重制函数
             print(f"🔄 重制视频 {video_path}...")
             try:
-                final_video_path = remake_video_robust(video_path, bgm_library_path='../app/bgm_audio')
+                final_video_path = remake_video_robust(video_path, bgm_library_path='../app/bgm_audio', force_regenerate=True)
                 if final_video_path:
                     print(f"✅ 重制视频成功，保存为 {final_video_path}")
                     video_path = final_video_path
@@ -258,7 +258,7 @@ def auto_upload():
                 print(f"❌ 重制视频失败：{e}")
                 error_count += 1
                 continue
-
+        save_json(UPLOAD_LOG_FILE, upload_log)
         # ---------- 预处理：在尾部插入引导图片 ----------
         new_video_path = current_video_path.replace('.mp4', '_new.mp4')
         try:

@@ -15,6 +15,19 @@ except ImportError:
     print("   请运行 `pip install librosa soundfile`。")
 
 
+import os
+import asyncio
+
+import edge_tts
+import soundfile as sf
+
+# 如果可选安装了 librosa
+try:
+    import librosa
+    LIBROSA_AVAILABLE = True
+except ImportError:
+    LIBROSA_AVAILABLE = False
+
 def generate_audio_and_get_duration_sync(
         text: str,
         output_filename: str,
@@ -31,7 +44,6 @@ def generate_audio_and_get_duration_sync(
         voice_name (str, optional): 使用的语音名称。默认为 "zh-CN-XiaoxiaoNeural"。
         trim_silence (bool, optional): 如果为 True，则使用 librosa 切除音频的首尾静音部分。
                                       默认为 False。
-
     Returns:
         float | None: 成功则返回音频时长（秒），否则返回 None。
     """
@@ -40,32 +52,37 @@ def generate_audio_and_get_duration_sync(
         print("--- 任务失败 ---\n")
         return 0.0
 
-    # edge-tts 本身可以指定输出格式，但我们保持它默认输出 mp3，
-    # 然后由 librosa/soundfile 决定最终保存的格式，这样更灵活。
     temp_mp3_filename = os.path.splitext(output_filename)[0] + ".temp.mp3"
 
     async def _generate_task():
         communicate = edge_tts.Communicate(text, voice_name)
-        # 先保存到一个临时的 mp3 文件
         await communicate.save(temp_mp3_filename)
 
     try:
+        # 1. 生成原始 mp3
         asyncio.run(_generate_task())
 
+        # 2. 读入音频
         y, sr = librosa.load(temp_mp3_filename, sr=None)
 
         if trim_silence:
+            # 3. 切除首尾静音
             y_trimmed, index = librosa.effects.trim(y, top_db=25)
-
             original_duration = librosa.get_duration(y=y, sr=sr)
             trimmed_duration = librosa.get_duration(y=y_trimmed, sr=sr)
 
             if original_duration - trimmed_duration > 0.1:
                 print(f"  - 成功: 静音已切除。原时长 {original_duration:.2f}s -> 新时长 {trimmed_duration:.2f}s")
-                # 更新音频数据为切除后的
                 y = y_trimmed
+
+                # 4. 在结尾增加 0.1s 的静音缓冲
+                pad_length = int(sr * 0.1)  # 0.1 秒对应的样本数
+                y = np.concatenate([y, np.zeros(pad_length)])
+                print(f"  - 信息: 在末尾追加 0.1s 缓冲静音。")
             else:
-                print("  - 信息: 未检测到明显的首尾静音。")
+                print("  - 信息: 未检测到明显的首尾静音，无需切除。")
+
+        # 5. 写出最终文件
         sf.write(output_filename, y, sr)
 
         final_duration = librosa.get_duration(y=y, sr=sr)
@@ -73,16 +90,16 @@ def generate_audio_and_get_duration_sync(
 
     except Exception as e:
         print(f"❌ 在处理过程中发生错误: {e}")
-        # 增加对错误的详细回溯
         import traceback
         traceback.print_exc()
         print("--- 任务失败 ---\n")
         return 0.0
 
     finally:
-        # 确保删除临时文件
+        # 清理临时文件
         if os.path.exists(temp_mp3_filename):
             os.remove(temp_mp3_filename)
+
 
 
 # ================================================================

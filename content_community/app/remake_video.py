@@ -385,7 +385,7 @@ def get_owner_speech(video_path):
             -   `voice`: (Object) 人声推荐，包含 `voice_name`, `voice_id_cn`, `style` (如果适用), 和 `reason` 四个字段。
     
     注意时间戳一定要是精确到毫秒的格式，且必须严格遵守 `HH:MM:SS.mmm` 的格式。
-    我的旁白是不可能重叠的，意思是每一句旁白的 `startTime` 和 `endTime` 都是唯一且不重叠的。
+    我的旁白是不可能重叠的，意思是每一句旁白的 `startTime` 和 `endTime` 都是唯一且不重叠的。意思就是我任意两句旁白对应的时间段不会有重合。
     
     # JSON 格式示例
     
