@@ -64,52 +64,9 @@ def find_and_split_scenes(video_path, output_dir='videos', stats_file_prefix='',
             pprint.pprint(scene_info_dict)
             print("=" * 20 + "\n")
         return scene_info_dict
-        # --------------------------------------------------------------------
-        # <-- 新增部分结束
-        # --------------------------------------------------------------------
-
-        # 保存精确时间戳到 CSV 文件
-        if scene_list:
-            if not stats_file_prefix:
-                stats_file_prefix = os.path.splitext(os.path.basename(video_path))[0]
-
-            stats_csv_path = os.path.join(output_dir, f'{stats_file_prefix}_timestamps.csv')
-            print(f'正在将精确时间戳保存到 {stats_csv_path}...')
-            os.makedirs(output_dir, exist_ok=True)
-
-            with open(stats_csv_path, 'w', newline='') as csv_file:
-                csv_writer = csv.writer(csv_file)
-                csv_writer.writerow([
-                    'Scene Number',
-                    'Start Time (seconds)', 'End Time (seconds)', 'Duration (seconds)',
-                    'Start Frame', 'End Frame', 'Duration (frames)',
-                    'Start Timecode', 'End Timecode'
-                ])
-                for i, scene in enumerate(scene_list):
-                    start_time, end_time = scene
-                    csv_writer.writerow([
-                        i + 1,
-                        start_time.get_seconds(), end_time.get_seconds(), (end_time - start_time).get_seconds(),
-                        start_time.get_frames(), end_time.get_frames(),
-                        (end_time.get_frames() - start_time.get_frames()),
-                        start_time.get_timecode(), end_time.get_timecode()
-                    ])
-            print('时间戳保存完毕！')
-
-        # 如果检测到了场景，就进行分割
-        if scene_list:
-            os.makedirs(output_dir, exist_ok=True)
-            print(f'开始分割视频，输出到 ./{output_dir} 目录...')
-            scenedetect.split_video_ffmpeg(
-                video_path,
-                scene_list,
-                output_dir=output_dir,
-                show_progress=True
-            )
-            print('分割完成！')
-
     finally:
         video_manager.release()
+        return {}
 
 
 # --- 主程序入口 ---

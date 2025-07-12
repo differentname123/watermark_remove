@@ -470,7 +470,7 @@ def cover_subtitle(video_path, output_path, top_left, bottom_right):
         return
     print(f"覆盖字幕区域完成，输出文件: {output_path} 耗时: {time.time() - start_time:.2f} 秒")
 
-def gen_new_audio(optimized_subtitles,voice_name="zh-CN-YunjianNeural"):
+def gen_new_audio(optimized_subtitles,voice_name="zh-CN-YunjianNeural",output_dir='output_audio'):
     """
     生成语音文件，并更新字幕信息。
 
@@ -483,12 +483,8 @@ def gen_new_audio(optimized_subtitles,voice_name="zh-CN-YunjianNeural"):
     Returns:
         list: 更新了 'outputPath' 和 'trimmedDuration' 键的字幕列表。
     """
-    output_dir = 'output_audio'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-
-    # 初始化备用语音合成引擎 (方式一)，只在需要时使用
-    print("正在初始化备用语音合成引擎 (方式一)...")
     tts_engine_backup = TTSExecutor()
 
     for subtitle in optimized_subtitles:
@@ -615,14 +611,7 @@ def gen_cut_suggestion(video_path):
     """
     生成剪辑的建议，交换场景顺序或者删除场景。
     """
-    base_name = os.path.basename(video_path)
-    output_path = base_name.replace('.mp4', '_cut_suggestion.json')
     try:
-        if os.path.exists(output_path):
-            print(f"检测到 {output_path} 已存在，直接读取...")
-            with open(output_path, 'r', encoding='utf-8') as f:
-                result = json.load(f)
-            return result
         scene_info_dict = find_and_split_scenes(video_path)
         if not scene_info_dict:
             print("未能成功获取视频场景信息。")
@@ -787,7 +776,7 @@ def auto_cut(video_path, all_info, output_path):
 
 
 
-def add_origin_audio(video_path, owner_speech_with_audio_list):
+def add_origin_audio(video_path, owner_speech_with_audio_list, voice_output_dir):
     """
     补充原来的声音，因为有些时候视频中引用了其他人的声音，现在需要保留下来
     """
@@ -795,9 +784,9 @@ def add_origin_audio(video_path, owner_speech_with_audio_list):
     if len(new_owner_speech_with_audio_list) > len(owner_speech_with_audio_list):
         origin_audio_path = video_path.replace('.mp4', '_origin_audio.wav')
         # 说明新增了片段，需要进行处理
-        extract_audio_from_video(video_path, origin_audio_path)
-        separate_with_cli(origin_audio_path, output_dir='origin_audio', two_stems=True)
-        vocals_path = find_file_by_name('origin_audio', 'vocals.wav')
+        extract_audio_from_video(video_path, f'{voice_output_dir}/{origin_audio_path}')
+        separate_with_cli(origin_audio_path, output_dir=voice_output_dir, two_stems=True)
+        vocals_path = find_file_by_name(voice_output_dir, 'vocals.wav')
         if not vocals_path:
             vocals_path = origin_audio_path
             print("未找到分离的原始音频，使用原始音频作为补充。")
@@ -806,7 +795,7 @@ def add_origin_audio(video_path, owner_speech_with_audio_list):
             text = speech['text']
             if "[无声]" == text:
                 speech_id = speech['id']
-                audio_path = f'origin_audio/{speech_id}_origin.wav'
+                audio_path = f'{voice_output_dir}/{speech_id}_origin.wav'
                 startTime = speech['startTime']
                 endTime = speech['endTime']
                 start_time_s = time_to_ms(startTime) / 1000
@@ -891,5 +880,163 @@ def remake_video(video_path):
     add_bgm_to_video(auto_cut_output_path, bgm_file, output_file)
 
 
+def remake_video_robust(
+        video_path: str,
+        output_root='./',
+        bgm_library_path: str = 'bgm_audio',
+        force_regenerate: bool = False
+) -> str | None:
+    """
+    重制视频的健壮版本。
+
+    Args:
+        video_path (str): 原始视频的绝对或相对路径.
+        output_root (str): 所有输出文件（包括中间文件和最终结果）存放的根目录.
+        bgm_library_path (str): BGM 音频库的路径.
+        force_regenerate (bool): 如果为 True, 将忽略缓存, 重新生成所有数据.
+
+    Returns:
+        str | None: 成功则返回最终视频的路径, 失败则返回 None.
+    """
+    # --- 1. 初始化和路径设置 (核心改进) ---
+    try:
+        # 验证输入路径
+        if not os.path.isfile(video_path):
+            print(f"输入视频文件不存在: {video_path}")
+            return None
+
+        # 创建独立的输出目录，避免污染根目录
+        base_name = os.path.basename(video_path)
+        video_name_without_ext = os.path.splitext(base_name)[0]
+        # 所有输出都将在这个目录里
+        processing_dir = os.path.join(output_root, f"{video_name_without_ext}_remake_files")
+        os.makedirs(processing_dir, exist_ok=True)
+        print(f"所有文件将输出到: {processing_dir}")
+
+        # 使用字典统一管理所有路径，清晰且不易出错
+        paths = {
+            'original': video_path,
+            'info_json': os.path.join(processing_dir, 'all_info.json'),
+            'covered': os.path.join(processing_dir, f"{video_name_without_ext}_covered.mp4"),
+            'with_subtitles': os.path.join(processing_dir, f"{video_name_without_ext}_with_subtitles.mp4"),
+            'redubbed': os.path.join(processing_dir, f"{video_name_without_ext}_redub.mp4"),
+            'auto_cut': os.path.join(processing_dir, f"{video_name_without_ext}_auto_cut.mp4"),
+            'final_video': os.path.join(processing_dir, f"{video_name_without_ext}_final.mp4"),
+        }
+
+        # --- 2. 加载或创建核心信息文件 ---
+        if os.path.exists(paths['info_json']) and not force_regenerate:
+            print(f"从 {paths['info_json']} 加载缓存信息...")
+            all_info = read_json(paths['info_json'])
+        else:
+            all_info = {}
+
+    except Exception as e:
+        print(f"初始化失败: {e}", exc_info=True)
+        return None
+
+    # --- 3. 核心处理流程 (每一步都有错误处理和数据校验) ---
+    try:
+        # 步骤 3.1: 获取主人公语音片段
+        if 'suggestion_speech' not in all_info or force_regenerate:
+            print("缓存未命中或强制刷新，正在提取主人公语音...")
+            suggestion_speech = get_owner_speech(paths['original'])
+            if not suggestion_speech or 'transcription' not in suggestion_speech:
+                raise ValueError("提取主人公语音失败或返回格式不正确")
+            all_info['suggestion_speech'] = suggestion_speech
+            save_json(paths['info_json'], all_info)
+
+        suggestion_speech = all_info['suggestion_speech']
+        owner_speech_list = suggestion_speech.get('transcription', [])
+        # 安全地获取嵌套数据
+        recommendations = suggestion_speech.get('recommendations', {})
+        voice_name = recommendations.get('voice', {}).get('voice_name')
+        bgm_id = recommendations.get('bgm', {}).get('id')
+
+        if not all([owner_speech_list, voice_name, bgm_id]):
+            raise ValueError("从 suggestion_speech 中获取 'transcription', 'voice_name' 或 'bgm_id' 失败")
+
+        # 构建BGM的绝对路径，更可靠
+        bgm_filename = bgm_id.replace(".mp4", ".wav")
+        bgm_path = os.path.join(bgm_library_path, bgm_filename)
+        if not os.path.isfile(bgm_path):
+            raise FileNotFoundError(f"BGM文件不存在: {bgm_path}")
+        print(f"使用 BGM: {bgm_path}")
+
+        # 步骤 3.2: 获取字幕框
+        if 'final_subtitle_box' not in all_info or force_regenerate:
+            print("正在计算字幕框...")
+            final_box = find_overall_subtitle_box_target_number(paths['original'])
+            if not final_box:
+                raise ValueError("寻找字幕框失败")
+            all_info['final_subtitle_box'] = final_box
+
+        top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(paths['original'], all_info['final_subtitle_box'])
+
+        # 步骤 3.3: 覆盖字幕区域
+        print(f"正在覆盖字幕区域...")
+        cover_subtitle(paths['original'], paths['covered'], top_left, bottom_right)
+        if not os.path.exists(paths['covered']):
+            raise RuntimeError("覆盖字幕后，输出文件未生成")
+
+        # 步骤 3.4: 增加新的文案和字幕
+        font_size = int((bottom_right[1] - top_left[1]) * 0.8)
+        bottom_margin = vid_h - bottom_right[1] + int((bottom_right[1] - top_left[1]) * 0.1)
+        print("正在添加新字幕...")
+        add_subtitle(
+            paths['covered'],
+            owner_speech_list,
+            paths['with_subtitles'],
+            bottom_margin=bottom_margin,
+            font_size=font_size,
+            fixed_rect=[top_left, bottom_right]
+        )
+        if not os.path.exists(paths['with_subtitles']):
+            raise RuntimeError("添加新字幕后，输出文件未生成")
+
+        # 步骤 3.5: 生成新音频并配音
+        if 'new_owner_speech_with_audio_list' not in all_info or force_regenerate:
+            print("正在生成新音频...")
+            voice_output_dir = f'{processing_dir}/{voice_name}'
+
+            owner_speech_with_audio_list = gen_new_audio(owner_speech_list, voice_name, voice_output_dir)
+            new_owner_speech_with_audio_list = add_origin_audio(paths['original'], owner_speech_with_audio_list, voice_output_dir)
+            if not new_owner_speech_with_audio_list:
+                raise ValueError("生成新音频或混合原音频失败")
+            all_info['new_owner_speech_with_audio_list'] = new_owner_speech_with_audio_list
+            save_json(paths['info_json'], all_info)
+
+        new_owner_speech_with_audio_list = all_info['new_owner_speech_with_audio_list']
+        print("正在为视频重配音...")
+        redub_video_with_ffmpeg(paths['with_subtitles'], new_owner_speech_with_audio_list,
+                                output_path=paths['redubbed'])
+        if not os.path.exists(paths['redubbed']):
+            raise RuntimeError("重配音后，输出文件未生成")
+
+        # 步骤 3.6: 自动剪辑
+        print("正在自动剪辑...")
+        auto_cut(paths['redubbed'], all_info, paths['auto_cut'])
+        save_json(paths['info_json'], all_info)  # 保存可能在auto_cut中更新的信息
+        if not os.path.exists(paths['auto_cut']):
+            raise RuntimeError("自动剪辑后，输出文件未生成")
+
+        # 步骤 3.7: 添加背景音乐
+        print("正在添加背景音乐...")
+        add_bgm_to_video(paths['auto_cut'], bgm_path, paths['final_video'])
+        if not os.path.exists(paths['final_video']):
+            raise RuntimeError("添加BGM后，最终文件未生成")
+
+        print(f"视频重制成功！最终文件位于: {paths['final_video']}")
+        return paths['final_video']
+
+    except (ValueError, FileNotFoundError, RuntimeError) as e:
+        # 捕获可预见的业务逻辑错误
+        print(f"处理流程中断: {e}")
+        return None
+    except Exception as e:
+        # 捕获所有其他意外错误
+        print(f"发生未知错误: {e}", exc_info=True)  # exc_info=True会记录堆栈跟踪
+        return None
+
 if __name__ == '__main__':
-    remake_video('test1.mp4')
+    remake_video_robust('test2.mp4')
