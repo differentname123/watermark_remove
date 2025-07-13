@@ -642,7 +642,8 @@ def gen_cut_suggestion(video_path):
                         *   **删除 (Delete)**：必须有充分理由，例如内容完全冗余、质量严重低下或明显偏离主题。
                         *   **重排 (Reorder)**：这是最高成本的操作，必须慎之又慎。**只有当重排能带来压倒性的优势时（例如，创造出无法替代的“黄金三秒”钩子，或解决了致命的叙事缺陷），才予以考虑。** 你的理由必须极具说服力。
                     4.  **效果是唯一标准 (Impact is Everything)**：所有决策的唯一目标是让最终成片在**观众吸引力、叙事流畅性、信息价值和传播潜力**上获得**显著提升**。微小的、可有可无的优化不是你的追求。
-                    5.  如果该场景中有不相关的内容（如广告 推广）不管是不是我推荐的，等那么这个场景都应该被删除
+                    5.  如果该场景中有不相关的内容（如广告 推广 甚至是关于我的声明或者介绍）不管是不是我推荐的，那么这个场景都应该被删除
+                    6. 而且要尽量不要产生太多的剪切点，因为会导致难度大大提示
                     
                     # 任务指令
                     1.  **整体理解与诊断 (Holistic Understanding & Diagnosis)**：
@@ -820,7 +821,7 @@ def add_origin_audio(video_path, owner_speech_with_audio_list, voice_output_dir)
                 cut_audio_segment(vocals_path, start_time_s, end_time_s, audio_path)
                 if os.path.exists(audio_path):
                     speech['outputPath'] = audio_path
-                print(f"已将无声片段 {speech_id} 的音频补充为原始音频: {audio_path}")
+                print(f"已将无声片段 {speech_id} 的音频补充为原始音频: {audio_path} {startTime} {endTime}")
 
 
     return new_owner_speech_with_audio_list
