@@ -61,14 +61,15 @@ def find_subtitle(
     width_ratio_thresh: float = 0.1     # 最小宽度占比（相对于 image_width）
 ) -> Optional[np.ndarray]:
     """
-    从OCR结果中定位字幕框，并剔除横向宽度小于指定比例的框：
+    从OCR结果中定位字幕框，并剔除不符合要求的框：
       1) 只保留位于画面底部的多边形
       2) 只保留四点多边形
       3) 最小外接矩形旋转角度小于 rect_ang_thresh
       4) 矩形度 (多边形面积 / minAreaRect面积) > rect_ratio_thresh
       5) 可选：宽高比 > aspect_ratio_thresh
       6) 剔除宽度 < image_width * width_ratio_thresh 的框
-      7) 在剩余候选框里，用 Y 位置和 X 居中打分，选出最高者
+      7) **新增**：框的水平投影必须跨过画面中心线
+      8) 在剩余候选框里，用 Y 位置和 X 居中打分，选出最高者
 
     返回最终框的 4×2 numpy 数组，或 None。
     """
@@ -84,18 +85,26 @@ def find_subtitle(
     if len(cand) == 1:
         return cand[0]
 
-    # 2. 形状 & 大小 筛选
+    # 2. 形状 & 大小 & 中心线 跨越 筛选
     filtered = []
     min_width = image_width * width_ratio_thresh
+    center_x = image_width / 2  # 中心线横坐标
+
     for box in cand:
         # 必须是四边形
         if box.shape[0] != 4:
             continue
 
         # 计算包围盒宽度
-        width = np.max(box[:, 0]) - np.min(box[:, 0])
+        xs = box[:, 0]
+        width = xs.max() - xs.min()
         if width < min_width:
             # 宽度太小，剔除
+            continue
+
+        # 新增条件：水平投影必须跨过中心线
+        if not (xs.min() < center_x < xs.max()):
+            # 没有跨过中线，剔除
             continue
 
         # 计算最小外接矩形
@@ -127,7 +136,7 @@ def find_subtitle(
     # 3. 打分选最佳
     Y_WEIGHT = 1.0
     X_WEIGHT = 10
-    CENTER_X = image_width / 2
+    CENTER_X = center_x
 
     def score(box: np.ndarray) -> float:
         cy = np.mean(box[:, 1])
@@ -138,6 +147,7 @@ def find_subtitle(
 
     best = max(filtered, key=score)
     return best
+
 
 
 

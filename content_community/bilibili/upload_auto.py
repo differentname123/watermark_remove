@@ -196,9 +196,9 @@ def auto_upload():
             error_count += 1
             continue
 
-        # if key in upload_log and upload_log[key].get('status') == 'error':
-        #     print(f"⏭️ 跳过 {key}：之前重制失败，已标记")
-        #     continue
+        if key in upload_log and upload_log[key].get('status') == 'error':
+            print(f"⏭️ 跳过 {key}：之前重制失败，已标记")
+            continue
         # print("-" * 60)
 
         # 2.1 若日志里已记录成功投稿，则跳过
