@@ -76,7 +76,7 @@ def generate_audio_and_get_duration_sync(
                 y = y_trimmed
 
                 # 4. 在结尾增加 0.1s 的静音缓冲
-                pad_length = int(sr * 0.1)  # 0.1 秒对应的样本数
+                pad_length = int(sr * 0.2)  # 0.1 秒对应的样本数
                 y = np.concatenate([y, np.zeros(pad_length)])
                 print(f"  - 信息: 在末尾追加 0.1s 缓冲静音。")
             else:
@@ -110,7 +110,7 @@ if __name__ == "__main__":
     print("演示如何直接调用一个标准的同步函数，无需 async/await。\n")
 
     text_with_silence = "我们再次测试，这次换一个稳重的男声，并且直接调用函数。"
-    filename_no_trim = "test_librosa_no_trim.mp3"
+    filename_no_trim = "test_librosa_no_trim2.mp3"
     filename_trimmed = "test_librosa_trimmed.mp3"
 
     print("--- 首先，生成一个带有人为静音但不切除的版本 ---")

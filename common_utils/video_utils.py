@@ -1376,3 +1376,53 @@ def re_edit_video_ffmpeg(video_path, time_segments, output_path="output_video_ff
                 print(f"[FATAL] 重新编码拼接也失败了。")
                 if e3.stderr:
                     print(f"    [DEBUG] FFmpeg Stderr:\n---(start) ---\n{e3.stderr.strip()}\n--- (end) ---")
+
+
+def get_video_duration_seconds(video_path: str) -> float | None:
+    """
+    使用 ffprobe 获取视频时长（秒）。
+
+    Args:
+        video_path: 视频文件的路径。
+
+    Returns:
+        一个浮点数表示的视频时长（秒），如果无法获取则返回 None。
+    """
+    if not os.path.exists(video_path):
+        print(f"[ERROR] File not found: {video_path}")
+        return None
+
+    # 构建 ffprobe 命令
+    # -v error: 只在发生错误时打印日志
+    # -show_entries format=duration: 只显示 'format' 部分的 'duration' 字段
+    # -of default=noprint_wrappers=1:nokey=1: 使用默认输出格式，但不打印包装器和键，只输出值
+    cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        video_path
+    ]
+
+    print(f"[INFO] Running: {' '.join(shlex.quote(c) for c in cmd)}")
+
+    # 执行命令
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+
+    # 检查 ffprobe 是否成功执行
+    if proc.returncode != 0:
+        print(f"[ERROR] ffprobe failed (code {proc.returncode}) for file '{video_path}':")
+        print(proc.stderr)
+        return None
+
+    # 解析输出
+    try:
+        # proc.stdout 应该是类似 "123.456000\n" 的字符串
+        duration_str = proc.stdout.strip()
+        if not duration_str:
+            print(f"[ERROR] ffprobe returned empty duration for file '{video_path}'.")
+            return None
+        return float(duration_str)
+    except ValueError:
+        print(f"[ERROR] Could not parse duration from ffprobe output: '{proc.stdout}'")
+        return None

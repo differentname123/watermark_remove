@@ -579,7 +579,8 @@ def add_subtitle(input_video, subtitle_data, output_with_subtitles, bottom_margi
 
 def adjust_subtitle_box(video_path: str, final_box: list[list[int, int]]):
     """
-    调整字幕框左右边距为视频宽度的 10%，高度保持不变。
+    将字幕框左右边距至少设为视频宽度的 10%，
+    但如果原框更宽就不再缩窄它。
 
     参数:
         video_path: 视频文件路径
@@ -592,21 +593,32 @@ def adjust_subtitle_box(video_path: str, final_box: list[list[int, int]]):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise IOError(f"无法打开视频文件: {video_path}")
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     cap.release()
 
-    # 2. 计算新的左右边界x坐标，保留上下y坐标不变
-    x_left = int(width * 0.1)  # 左侧距离视频宽度的 10%
-    x_right = int(width * 0.9)  # 右侧距离视频宽度的 10%
-    y_top = final_box[0][1]  # 原框上边 y 不变
-    y_bottom = final_box[2][1]  # 原框下边 y 不变
+    # 2. 阈值：左右各保留 10%
+    thresh_left  = int(width * 0.1)
+    thresh_right = int(width * 0.9)
 
-    # 3. 构造新的 top_left 和 bottom_right
-    top_left = [x_left, y_top]
-    bottom_right = [x_right, y_bottom]
+    # 3. 原始框的最小/最大 x，和最小/最大 y
+    xs = [pt[0] for pt in final_box]
+    ys = [pt[1] for pt in final_box]
+    orig_x_min = min(xs)
+    orig_x_max = max(xs)
+    y_top      = min(ys)
+    y_bottom   = max(ys)
 
-    return top_left, bottom_right, width, height
+    # 4. 如果原框比 阈值 宽度小则扩张，否则保留
+    new_x_left  = min(orig_x_min, thresh_left)
+    new_x_right = max(orig_x_max, thresh_right)
+
+    # 5. 构造返回值
+    top_left     = [new_x_left,  y_top]
+    bottom_right = [new_x_right, y_bottom]
+
+    return top_left, bottom_right
+
 
 
 def gen_cut_suggestion(video_path):

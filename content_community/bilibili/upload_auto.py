@@ -17,8 +17,8 @@ import os
 import copy
 import time
 
-from common_utils.common_utils import get_config
-from common_utils.video_utils import add_image_to_video_end
+from common_utils.common_utils import get_config, format_seconds_to_mmss
+from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds
 from content_community.app.remake_video import remake_video_robust
 
 config_map = {}
@@ -343,7 +343,21 @@ def auto_upload():
         # ---------- 结果处理 ----------
         if result and result.get("aid") and result.get("bvid"):
             print(f"🎉 投稿成功！AID={result['aid']}  BVID={result['bvid']} 时间：{time.strftime('%Y-%m-%d %H:%M:%S')} username {userName} 耗时 {time.time() - start_time:.2f} 秒。")
-            # 尝试删除video_path和new_video_path
+
+
+            final_duration_sec = get_video_duration_seconds(video_path)
+            if final_duration_sec is not None:
+                formatted_duration = format_seconds_to_mmss(final_duration_sec)
+                print(f"ℹ️ 获取到最终视频时长: {formatted_duration}，正在更新元数据...")
+                # 确保 metadata 结构符合预期再更新
+                if 'metadata' in updated_entry and isinstance(updated_entry['metadata'], list) and updated_entry[
+                    'metadata']:
+                    updated_entry['metadata'][0]['duration'] = formatted_duration
+                else:
+                    print("⚠️ 无法在 updated_entry 中找到 'metadata' 列表来更新时长。")
+            else:
+                print("⚠️ 未能获取最终视频时长，metadata 中的 duration 字段将不被更新。")
+
             try:
                 if os.path.exists(video_path):
                     os.remove(video_path)

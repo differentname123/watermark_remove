@@ -923,3 +923,12 @@ def find_file_by_name(root_dir: str, target_filename: str) -> str | None:
         if target_filename in filenames:
             return os.path.join(dirpath, target_filename)
     return None
+
+def format_seconds_to_mmss(seconds: float) -> str:
+    """将总秒数格式化为 'MM:SS' 字符串。"""
+    if seconds is None or seconds < 0:
+        return "00:00"
+    total_seconds = int(round(seconds))  # 四舍五入到最近的整数秒
+    minutes = total_seconds // 60
+    seconds_part = total_seconds % 60
+    return f"{minutes:02d}:{seconds_part:02d}"
