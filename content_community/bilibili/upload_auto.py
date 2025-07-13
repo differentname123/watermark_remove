@@ -342,7 +342,7 @@ def auto_upload():
 
         # ---------- 结果处理 ----------
         if result and result.get("aid") and result.get("bvid"):
-            print(f"🎉 投稿成功！AID={result['aid']}  BVID={result['bvid']} 时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"🎉 投稿成功！AID={result['aid']}  BVID={result['bvid']} 时间：{time.strftime('%Y-%m-%d %H:%M:%S')} username {userName} 耗时 {time.time() - start_time:.2f} 秒。")
             # 尝试删除video_path和new_video_path
             try:
                 if os.path.exists(video_path):
