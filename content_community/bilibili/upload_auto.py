@@ -212,7 +212,7 @@ def auto_upload():
         if userName not in config_map.keys():
             print(f"⚠️ 跳过 {userName} 用户上传 请检查配置数据。")
             error_count += 1
-            continue
+            userName = 'base'
         config = config_map.get(userName, config_map['base'])
         print(f"🔍 处理 {key} (用户: {userName})")
         if not (isinstance(metadata, list) and metadata):
