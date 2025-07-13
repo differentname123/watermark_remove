@@ -196,9 +196,9 @@ def auto_upload():
             error_count += 1
             continue
 
-        if key in upload_log and upload_log[key].get('status') == 'error':
-            print(f"⏭️ 跳过 {key}：之前重制失败，已标记")
-            continue
+        # if key in upload_log and upload_log[key].get('status') == 'error':
+        #     print(f"⏭️ 跳过 {key}：之前重制失败，已标记")
+        #     continue
         # print("-" * 60)
 
         # 2.1 若日志里已记录成功投稿，则跳过
@@ -213,6 +213,7 @@ def auto_upload():
             print(f"⚠️ 跳过 {userName} 用户上传 请检查配置数据。")
             error_count += 1
             userName = 'base'
+            continue
         config = config_map.get(userName, config_map['base'])
         print(f"🔍 处理 {key} (用户: {userName})")
         if not (isinstance(metadata, list) and metadata):
@@ -343,22 +344,19 @@ def auto_upload():
         # ---------- 结果处理 ----------
         if result and result.get("aid") and result.get("bvid"):
             print(f"🎉 投稿成功！AID={result['aid']}  BVID={result['bvid']} 时间：{time.strftime('%Y-%m-%d %H:%M:%S')} username {userName} 耗时 {time.time() - start_time:.2f} 秒。")
-
-
-            final_duration_sec = get_video_duration_seconds(video_path)
-            if final_duration_sec is not None:
-                formatted_duration = format_seconds_to_mmss(final_duration_sec)
-                print(f"ℹ️ 获取到最终视频时长: {formatted_duration}，正在更新元数据...")
-                # 确保 metadata 结构符合预期再更新
-                if 'metadata' in updated_entry and isinstance(updated_entry['metadata'], list) and updated_entry[
-                    'metadata']:
-                    updated_entry['metadata'][0]['duration'] = formatted_duration
-                else:
-                    print("⚠️ 无法在 updated_entry 中找到 'metadata' 列表来更新时长。")
-            else:
-                print("⚠️ 未能获取最终视频时长，metadata 中的 duration 字段将不被更新。")
-
             try:
+                final_duration_sec = get_video_duration_seconds(video_path)
+                if final_duration_sec is not None:
+                    formatted_duration = format_seconds_to_mmss(final_duration_sec)
+                    print(f"ℹ️ 获取到最终视频时长: {formatted_duration}，正在更新元数据...")
+                    # 确保 metadata 结构符合预期再更新
+                    if 'metadata' in updated_entry and isinstance(updated_entry['metadata'], list) and updated_entry[
+                        'metadata']:
+                        updated_entry['metadata'][0]['duration'] = formatted_duration
+                    else:
+                        print("⚠️ 无法在 updated_entry 中找到 'metadata' 列表来更新时长。")
+                else:
+                    print("⚠️ 未能获取最终视频时长，metadata 中的 duration 字段将不被更新。")
                 if os.path.exists(video_path):
                     os.remove(video_path)
                 if new_video_path and os.path.exists(new_video_path):

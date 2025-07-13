@@ -617,7 +617,7 @@ def adjust_subtitle_box(video_path: str, final_box: list[list[int, int]]):
     top_left     = [new_x_left,  y_top]
     bottom_right = [new_x_right, y_bottom]
 
-    return top_left, bottom_right
+    return top_left, bottom_right, width, height
 
 
 
