@@ -1059,4 +1059,5 @@ def remake_video_robust(
         return None
 
 if __name__ == '__main__':
-    remake_video_robust('W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\\2025-07-13 20.53.06-视频-云顶哈士奇-云顶s15爆料，所有三星五费1v9 #云15爆料 #云顶之弈天下无双格斗大赛.mp4')
+    video_path = r"W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\2025-07-12 16.40.00-视频-王涛峰-澳总理还没启程赴华，先对中国说了料澳外长公开唱反调 #硬核深度计划.mp4"
+    remake_video_robust(video_path)
