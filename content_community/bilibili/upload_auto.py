@@ -245,7 +245,7 @@ def auto_upload():
         generation_options = value.get('generation_options', {})
         if generation_options.get('remake_video', False):
             # 如果需要重制视频，则调用重制函数
-            print(f"🔄 重制视频 {video_path}...")
+            print(f"🔄 重制视频 {video_path}... userName: {userName}")
             try:
                 final_video_path = remake_video_robust(video_path, bgm_library_path='../app/bgm_audio', force_regenerate=True)
                 if final_video_path:
@@ -331,7 +331,7 @@ def auto_upload():
             "topic_id": topic_id,
         }
 
-        print(f"🚀 开始投稿 {key} (ID: {video_id}) - 《{title}》")
+        print(f"🚀 开始投稿 {key} (ID: {video_id}) - 《{title}》 userName: {userName}，封面：{cover_path}，分区：{human_type2}，话题：{topic_name}，话题ID：{topic_id}。")
 
         # ---------- 调用上传接口 ----------
         try:
