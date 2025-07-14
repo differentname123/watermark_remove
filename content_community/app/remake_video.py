@@ -17,14 +17,14 @@ import cv2
 
 from LLM.gemini import get_llm_content_gemini_flash_video
 from common_utils.common_utils import string_to_object, optimize_subtitle_timing, merge_time_segments, read_json, \
-    save_json, fill_time_gaps, time_to_ms, find_file_by_name
+    save_json, fill_time_gaps, time_to_ms, find_file_by_name, merge_time_intervals
 from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box, find_overall_subtitle_box_target_number
 from common_utils.split_audio import separate_with_cli
 from common_utils.split_scenes import find_and_split_scenes
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
 from common_utils.tts.paddle_speech_demo import synthesize_and_get_duration
 from common_utils.video_utils import cover_video_area_gently, add_subtitles_to_video, cover_video_area_simple, \
-    re_edit_video_ffmpeg, extract_audio_from_video, cut_audio_segment, cover_video_area_blur
+    re_edit_video_ffmpeg, extract_audio_from_video, cut_audio_segment, cover_video_area_blur, get_video_duration_seconds
 from paddlespeech.cli.tts.infer import TTSExecutor
 
 import json
@@ -792,12 +792,12 @@ def auto_cut(video_path, all_info, output_path):
 
 
 
-def add_origin_audio(video_path, owner_speech_with_audio_list, voice_output_dir):
+def add_origin_audio(video_path, owner_speech_with_audio_list, voice_output_dir, video_duration):
     """
     补充原来的声音，因为有些时候视频中引用了其他人的声音，现在需要保留下来
     """
     base_name = os.path.basename(video_path)
-    new_owner_speech_with_audio_list = fill_time_gaps(owner_speech_with_audio_list)
+    new_owner_speech_with_audio_list = fill_time_gaps(owner_speech_with_audio_list, video_duration)
     if len(new_owner_speech_with_audio_list) > len(owner_speech_with_audio_list):
         origin_audio_path = base_name.replace('.mp4', '_origin_audio.wav')
         # 说明新增了片段，需要进行处理
@@ -955,6 +955,7 @@ def remake_video_robust(
 
     # --- 3. 核心处理流程 (每一步都有错误处理和数据校验) ---
     try:
+        video_duration = get_video_duration_seconds(paths['original'])  # 检查视频是否有效
         # 步骤 3.1: 获取主人公语音片段
         if 'suggestion_speech' not in all_info or force_regenerate:
             print("缓存未命中或强制刷新，正在提取主人公语音...")
@@ -980,11 +981,11 @@ def remake_video_robust(
         if not os.path.isfile(bgm_path):
             raise FileNotFoundError(f"BGM文件不存在: {bgm_path}")
         print(f"使用 BGM: {bgm_path}")
-
+        merged_timerange_list = merge_time_intervals(owner_speech_list)  # 确保时间片段合并
         # 步骤 3.2: 获取字幕框
         if 'final_subtitle_box' not in all_info or force_regenerate:
             print("正在计算字幕框...")
-            final_box = find_overall_subtitle_box_target_number(paths['original'])
+            final_box = find_overall_subtitle_box_target_number(paths['original'], merged_timerange_list=merged_timerange_list)
             if not final_box:
                 raise ValueError("寻找字幕框失败")
             all_info['final_subtitle_box'] = final_box
@@ -1020,7 +1021,7 @@ def remake_video_robust(
             voice_output_dir = f'{processing_dir}/{voice_name}'
 
             owner_speech_with_audio_list = gen_new_audio(owner_speech_list, voice_name, voice_output_dir)
-            new_owner_speech_with_audio_list = add_origin_audio(paths['original'], owner_speech_with_audio_list, voice_output_dir)
+            new_owner_speech_with_audio_list = add_origin_audio(paths['original'], owner_speech_with_audio_list, voice_output_dir, video_duration)
             if not new_owner_speech_with_audio_list:
                 raise ValueError("生成新音频或混合原音频失败")
             all_info['new_owner_speech_with_audio_list'] = new_owner_speech_with_audio_list
@@ -1058,4 +1059,4 @@ def remake_video_robust(
         return None
 
 if __name__ == '__main__':
-    remake_video_robust('test2.mp4')
+    remake_video_robust('W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\\2025-07-13 20.53.06-视频-云顶哈士奇-云顶s15爆料，所有三星五费1v9 #云15爆料 #云顶之弈天下无双格斗大赛.mp4')

@@ -9,6 +9,8 @@ import numpy as np
 from paddleocr import PaddleOCR
 from typing import List, Tuple, Dict, Any, Optional
 
+from common_utils.common_utils import time_to_ms
+
 
 def init_ocr_model() -> PaddleOCR:
     """
@@ -422,7 +424,134 @@ def find_overall_subtitle_box(video_path: str, time_interval_seconds: int = 20):
     print("=" * 60)
 
 
-def find_overall_subtitle_box_target_number(video_path: str, num_samples: int = 10):
+import os
+import shutil
+import cv2
+import numpy as np
+
+def find_overall_subtitle_box_target_number(
+    video_path: str,
+    merged_timerange_list: list[dict],
+    num_samples: int = 10
+):
+    """
+    主函数，找到包围视频字幕的最小框，并将框绘制到所有抽帧图片上。
+    且保证抽取到 num_samples 帧（或所有符合区间的帧）。
+    :param video_path: 视频文件路径
+    :param merged_timerange_list: [{ "startTime": "00:00:00.205", "endTime": "00:00:09.060" }, ...]
+    :param num_samples: 希望抽取的帧数
+    :return: 最终包围框顶点列表 [[x1, y1], ..., [x4, y4]]
+    """
+    output_dir = 'temp_dir'
+
+    # --- 准备工作：创建或清空输出目录 ---
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    # --- 检查视频文件 ---
+    if not os.path.exists(video_path):
+        print(f"错误: 视频文件未找到 '{video_path}'")
+        return
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"错误: 无法打开视频文件 '{video_path}'")
+        return
+
+    # 获取视频基本信息
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total_frames <= 0 or fps <= 0:
+        print("错误: 无法获取视频信息，抽帧失败。")
+        cap.release()
+        return
+
+    # --- 预处理：将所有时间区间转为毫秒，并对应到帧索引 ---
+    valid_frames = set()
+    for tr in merged_timerange_list:
+        start_ms = time_to_ms(tr['startTime'])
+        end_ms   = time_to_ms(tr['endTime'])
+        if end_ms <= start_ms:
+            continue
+        # 对应的帧索引区间
+        start_idx = int(np.ceil(start_ms / 1000 * fps))
+        end_idx   = int(np.floor(end_ms   / 1000 * fps))
+        # 限制在 [0, total_frames-1]
+        start_idx = max(0, start_idx)
+        end_idx   = min(total_frames - 1, end_idx)
+        valid_frames.update(range(start_idx, end_idx + 1))
+
+    valid_frames = sorted(valid_frames)
+    if not valid_frames:
+        print("错误: 没有任何帧落在指定的时间区间内。")
+        cap.release()
+        return
+
+    # --- 从 valid_frames 中均匀抽取 num_samples 帧 ---
+    num_to_pick = min(num_samples, len(valid_frames))
+    step = len(valid_frames) / num_to_pick
+    sample_indices = [valid_frames[int(i * step)] for i in range(num_to_pick)]
+
+    # --- 阶段 1: 按 sample_indices 抽帧并保存 ---
+    print(f"\n[阶段 1] 从 {len(valid_frames)} 个符合区间的帧中抽取 {len(sample_indices)} 帧...")
+    saved_frame_paths = []
+    for idx in sample_indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ret, frame = cap.read()
+        if not ret:
+            print(f"警告: 无法读取第 {idx} 帧。")
+            continue
+        path = os.path.join(output_dir, f"frame_{idx}.jpg")
+        cv2.imwrite(path, frame)
+        saved_frame_paths.append(path)
+    cap.release()
+    print(f"[阶段 1] 抽帧完成。共保存 {len(saved_frame_paths)} 帧图片。")
+
+    if not saved_frame_paths:
+        print("未能提取任何帧。")
+        return
+
+    # --- 阶段 2: 对抽出的帧进行字幕检测 ---
+    print(f"\n[阶段 2] 开始检测 {len(saved_frame_paths)} 张图片的字幕框...")
+    detected_boxes = []
+    for p in saved_frame_paths:
+        box = main_find_subtitle(p)
+        if box is not None:
+            detected_boxes.append(box)
+    print(f"[阶段 2] 检测完成。共检测到 {len(detected_boxes)} 个字幕框。")
+
+    if not detected_boxes:
+        print("未找到任何字幕框。")
+        return
+
+    # --- 阶段 3: 分析并计算最终包围框 ---
+    print("\n[阶段 3] 分析并计算最终包围区域...")
+    good_boxes = analyze_and_filter_boxes(detected_boxes)
+    if not good_boxes:
+        print("所有字幕框均被过滤。")
+        return
+
+    all_pts = np.array([pt for box in good_boxes for pt in box])
+    final_box = [
+        [int(all_pts[:,0].min()), int(all_pts[:,1].min())],
+        [int(all_pts[:,0].max()), int(all_pts[:,1].min())],
+        [int(all_pts[:,0].max()), int(all_pts[:,1].max())],
+        [int(all_pts[:,0].min()), int(all_pts[:,1].max())],
+    ]
+    print(f"[阶段 3] 最终包围框: {final_box}")
+
+    # --- 阶段 4: 绘制到所有抽帧图片上 ---
+    print(f"\n[阶段 4] 将包围框绘制到 {len(saved_frame_paths)} 张图片上...")
+    draw_box_on_images(saved_frame_paths, final_box)
+    print("[阶段 4] 绘制完成。")
+
+    print("\n" + "="*60)
+    print("任务成功！")
+    return final_box
+
+
+def find_overall_subtitle_box_target_number_old(video_path: str, num_samples: int = 10):
     """
     主函数，找到包围视频字幕的最小框，并将框绘制到所有抽帧图片上。
     :param video_path: 视频文件路径

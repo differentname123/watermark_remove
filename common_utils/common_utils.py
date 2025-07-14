@@ -842,69 +842,111 @@ def save_json(json_path, data):
 
 
 
-def fill_time_gaps(segments: list) -> list:
+def fill_time_gaps(
+    segments: list,
+    video_duration: float
+) -> list:
     """
-    填充列表中时间轴的断层。
+    填充列表中时间轴的断层，包括视频开头和结尾的空隙。
 
     Args:
-        segments (list): 包含时间段字典的原始列表。
+        segments (list): 包含时间段字典的原始列表，每个字典需含 'startTime' 和 'endTime'。
+        video_duration (float): 视频总时长（单位：秒）。
 
     Returns:
-        list: 填充了时间间隙并重新排序ID后的新列表。
+        list: 填充了所有时间间隙并重新排序 ID 后的新列表。
     """
-    if not segments or len(segments) < 2:
-        return segments
+    if not segments:
+        # 整个视频为空，填充一个全视频的无声片段
+        return [{
+            "id": 1,
+            "startTime": "00:00:00.000",
+            "endTime": ms_to_time(video_duration * 1000),
+            "text": "[无声]",
+            "optimizedText": "[无声]",
+            "old_startTime": None,
+            "old_endTime": None,
+            "forward_shift_ms": 0,
+            "backward_shift_ms": 0,
+            "duration": video_duration,
+            "outputPath": None,
+            "trimmedDuration": video_duration
+        }]
 
-    # 为防止原始列表顺序不正确，先根据 startTime 排序
-    # (虽然你的例子是按顺序的，但这是一个好习惯)
+    # 保证原始片段按起始时间排序
     segments.sort(key=lambda x: time_to_ms(x['startTime']))
-
     new_segments = []
-    # 遍历列表，检查相邻两个元素之间是否存在间隙
+
+    # 1. 检测开头空隙
+    first_start_ms = time_to_ms(segments[0]['startTime'])
+    if first_start_ms > 0:
+        new_segments.append({
+            "id": 0,
+            "startTime": "00:00:00.000",
+            "endTime": ms_to_time(first_start_ms),
+            "text": "[无声]",
+            "optimizedText": "[无声]",
+            "old_startTime": None,
+            "old_endTime": None,
+            "forward_shift_ms": 0,
+            "backward_shift_ms": 0,
+            "duration": first_start_ms / 1000.0,
+            "outputPath": None,
+            "trimmedDuration": first_start_ms / 1000.0
+        })
+
+    # 2. 遍历相邻片段间的内部空隙
     for i in range(len(segments) - 1):
-        current_segment = segments[i]
-        next_segment = segments[i+1]
+        current = segments[i]
+        nxt = segments[i + 1]
 
-        # 1. 首先将当前元素添加到新列表中
-        new_segments.append(current_segment)
+        new_segments.append(current)
 
-        # 2. 比较当前元素的 endTime 和下一个元素的 startTime
-        end_time_current = current_segment['endTime']
-        start_time_next = next_segment['startTime']
-
-        if end_time_current != start_time_next:
-            # 发现时间断层，创建一个新的字典来填充
-
-            gap_start_ms = time_to_ms(end_time_current)
-            gap_end_ms = time_to_ms(start_time_next)
-            gap_duration_ms = gap_end_ms - gap_start_ms
-
-            print(f"发现时间断层: 从 {end_time_current} 到 {start_time_next} {gap_duration_ms}")
-
-
-            # 创建一个表示无声间隙的新字典
-            gap_segment = {
-                "id": 0,  # ID 稍后会统一重新编号
-                "startTime": end_time_current,
-                "endTime": start_time_next,
-                "text": "[无声]",  # 使用特殊文本标记这是填充的间隙
+        end_ms = time_to_ms(current['endTime'])
+        next_start_ms = time_to_ms(nxt['startTime'])
+        if end_ms < next_start_ms:
+            # 填充空隙
+            new_segments.append({
+                "id": 0,
+                "startTime": current['endTime'],
+                "endTime": nxt['startTime'],
+                "text": "[无声]",
                 "optimizedText": "[无声]",
                 "old_startTime": None,
                 "old_endTime": None,
                 "forward_shift_ms": 0,
                 "backward_shift_ms": 0,
-                "duration": gap_duration_ms / 1000.0,
+                "duration": (next_start_ms - end_ms) / 1000.0,
                 "outputPath": None,
-                "trimmedDuration": gap_duration_ms / 1000.0
-            }
-            new_segments.append(gap_segment)
+                "trimmedDuration": (next_start_ms - end_ms) / 1000.0
+            })
 
-    # 3. 添加原始列表中的最后一个元素
-    new_segments.append(segments[-1])
+    # 3. 添加最后一个原始片段
+    last_seg = segments[-1]
+    new_segments.append(last_seg)
 
-    # 4. 重新为所有元素编号，确保 ID 是连续的
-    for index, segment in enumerate(new_segments):
-        segment['id'] = index + 1
+    # 4. 检测结尾空隙
+    last_end_ms = time_to_ms(last_seg['endTime'])
+    total_ms = int(video_duration * 1000)
+    if last_end_ms < total_ms:
+        new_segments.append({
+            "id": 0,
+            "startTime": last_seg['endTime'],
+            "endTime": ms_to_time(total_ms),
+            "text": "[无声]",
+            "optimizedText": "[无声]",
+            "old_startTime": None,
+            "old_endTime": None,
+            "forward_shift_ms": 0,
+            "backward_shift_ms": 0,
+            "duration": (total_ms - last_end_ms) / 1000.0,
+            "outputPath": None,
+            "trimmedDuration": (total_ms - last_end_ms) / 1000.0
+        })
+
+    # 5. 重新为所有片段编号
+    for idx, seg in enumerate(new_segments, start=1):
+        seg['id'] = idx
 
     return new_segments
 
@@ -932,3 +974,251 @@ def format_seconds_to_mmss(seconds: float) -> str:
     minutes = total_seconds // 60
     seconds_part = total_seconds % 60
     return f"{minutes:02d}:{seconds_part:02d}"
+
+def merge_time_intervals(segments: list) -> list:
+    """
+    根据 startTime 和 endTime 合并列表中连续或重叠的时间段。
+
+    该函数会：
+    1.  按开始时间对片段进行排序。
+    2.  迭代查找结束时间与下一个开始时间连续或重叠的片段。
+    3.  合并这些片段，更新时间戳，并智能地组合文本和其他元数据。
+    4.  重新计算合并后片段的总时长。
+
+    Args:
+        segments (list): 包含时间段字典的列表。每个字典至少需要 'startTime' 和 'endTime'。
+                         列表中的字典结构应与您提供的示例一致。
+
+    Returns:
+        list: 一个包含合并后时间段的新列表。
+    """
+
+    # --- 内部辅助函数，用于将时间字符串转换为毫秒 ---
+    def _time_to_ms(time_input: str | float | int) -> int:
+        """一个健壮的时间转换函数，将多种格式统一为毫秒。"""
+        if not time_input:
+            return 0
+        if isinstance(time_input, (int, float)):
+            return int(time_input * 1000)
+
+        time_str = str(time_input).strip().replace(',', '.')
+        parts = time_str.split(':')
+
+        try:
+            if len(parts) == 3:  # 格式: HH:MM:SS.ms
+                h, m, s = int(parts[0]), int(parts[1]), float(parts[2])
+                return int((h * 3600 + m * 60 + s) * 1000)
+            elif len(parts) == 2:  # 格式: MM:SS.ms (例如 "00:04.545")
+                m, s = int(parts[0]), float(parts[1])
+                return int((m * 60 + s) * 1000)
+            elif len(parts) == 1:  # 格式: SS.ms (例如 "4.545")
+                s = float(parts[0])
+                return int(s * 1000)
+            raise ValueError(f"无法识别的时间格式: '{time_input}'")
+        except (ValueError, IndexError) as e:
+            raise ValueError(f"解析时间字符串 '{time_input}' 时出错: {e}")
+
+    # --- 主逻辑开始 ---
+
+    # 如果列表为空或只有一个元素，无需合并
+    if not segments or len(segments) < 2:
+        return copy.deepcopy(segments)
+
+    # 1. 按 startTime 排序，这是合并算法的基础
+    # 使用深拷贝以避免修改原始输入列表
+    sorted_segments = sorted(copy.deepcopy(segments), key=lambda s: _time_to_ms(s['startTime']))
+
+    merged_list = []
+    # 2. 将第一个片段作为当前正在处理的合并片段
+    current_merge = sorted_segments[0]
+
+    # 3. 从第二个片段开始遍历
+    for next_segment in sorted_segments[1:]:
+        current_end_ms = _time_to_ms(current_merge['endTime'])
+        next_start_ms = _time_to_ms(next_segment['startTime'])
+
+        # 4. 检查是否连续或重叠
+        if next_start_ms <= current_end_ms:
+            # --- 条件满足，执行合并 ---
+
+            # 如果下一个片段的结束时间更晚，则扩展当前合并片段的结束时间
+            if _time_to_ms(next_segment['endTime']) > current_end_ms:
+                current_merge['endTime'] = next_segment['endTime']
+                # 相应地更新其他与结束点相关的字段
+                current_merge['old_endTime'] = next_segment.get('old_endTime')
+                current_merge['backward_shift_ms'] = next_segment.get('backward_shift_ms')
+
+            # 合并文本内容，用空格隔开
+            current_merge['text'] = (current_merge.get('text', '') + " " + next_segment.get('text', '')).strip()
+            current_merge['optimizedText'] = (
+                        current_merge.get('optimizedText', '') + " " + next_segment.get('optimizedText', '')).strip()
+
+            # 累加 trimmedDuration，因为它可能代表原始独立片段的时长
+            current_merge['trimmedDuration'] = current_merge.get('trimmedDuration', 0) + next_segment.get(
+                'trimmedDuration', 0)
+
+            # 聚合 outputPath，放入一个列表中以清晰地表示来源
+            paths = current_merge.get('outputPath', [])
+            if not isinstance(paths, list):
+                paths = [paths] if paths else []  # 如果不是列表，则创建为列表
+            if next_segment.get('outputPath'):
+                paths.append(next_segment.get('outputPath'))
+            current_merge['outputPath'] = paths
+
+        else:
+            # --- 条件不满足，无法合并 ---
+
+            # 根据最终的 startTime 和 endTime 重新计算总时长
+            final_start_ms = _time_to_ms(current_merge['startTime'])
+            final_end_ms = _time_to_ms(current_merge['endTime'])
+            current_merge['duration'] = round((final_end_ms - final_start_ms) / 1000.0, 3)
+
+            # 将已完成的合并片段添加到结果列表
+            merged_list.append(current_merge)
+
+            # 将当前遍历的这个片段作为新的合并起点
+            current_merge = next_segment
+
+    # 5. 循环结束后，将最后一个正在处理的片段添加到结果列表中
+    # 同样需要为它计算最终时长
+    final_start_ms = _time_to_ms(current_merge['startTime'])
+    final_end_ms = _time_to_ms(current_merge['endTime'])
+    current_merge['duration'] = round((final_end_ms - final_start_ms) / 1000.0, 3)
+    merged_list.append(current_merge)
+
+    return merged_list
+
+if __name__ == '__main__':
+    input_data = [
+      {
+        "id": 1,
+        "startTime": "00:00:00.205",
+        "endTime": "00:00:04.545",
+        "text": "这期视频呢，咱们来看一下S15所有三星5费1V9的视频",
+        "optimizedText": "本期视频，我们来看S15所有三星五费1V9的集锦。",
+        "old_startTime": "00:00.410",
+        "old_endTime": "00:04.280",
+        "forward_shift_ms": 205,
+        "backward_shift_ms": 265,
+        "duration": 4.34,
+        "outputPath": "./2025-07-13 20.53.06-视频-云顶哈士奇-云顶s15爆料，所有三星五费1v9 #云15爆料 #云顶之弈天下无双格斗大赛_remake_files/zh-CN-YunxiNeural\\1.wav",
+        "trimmedDuration": 4.850666666666666
+      },
+      {
+        "id": 2,
+        "startTime": "00:00:04.545",
+        "endTime": "00:00:09.060",
+        "text": "首先呢，咱们来看一下S15，唯一一个3形态的5费卡，盲僧",
+        "optimizedText": "首先，我们来看S15中，唯一一个三形态的五费卡：盲僧。",
+        "old_startTime": "00:04.810",
+        "old_endTime": "00:08.560",
+        "forward_shift_ms": 265,
+        "backward_shift_ms": 500,
+        "duration": 4.515,
+        "outputPath": "./2025-07-13 20.53.06-视频-云顶哈士奇-云顶s15爆料，所有三星五费1v9 #云15爆料 #云顶之弈天下无双格斗大赛_remake_files/zh-CN-YunxiNeural\\2.wav",
+        "trimmedDuration": 6.002666666666666
+      },
+      {
+        "id": 4,
+        "startTime": "00:00:43.790",
+        "endTime": "00:00:45.380",
+        "text": "三星布隆",
+        "optimizedText": "三星布隆。",
+        "old_startTime": "00:44.290",
+        "old_endTime": "00:44.880",
+        "forward_shift_ms": 500,
+        "backward_shift_ms": 500,
+        "duration": 1.59,
+        "outputPath": "./2025-07-13 20.53.06-视频-云顶哈士奇-云顶s15爆料，所有三星五费1v9 #云15爆料 #云顶之弈天下无双格斗大赛_remake_files/zh-CN-YunxiNeural\\3.wav",
+        "trimmedDuration": 0.9893333333333333
+      },
+      {
+        "id": 6,
+        "startTime": "00:00:59.000",
+        "endTime": "00:01:00.820",
+        "text": "三星永恩",
+        "optimizedText": "三星永恩。",
+        "old_startTime": "00:59.500",
+        "old_endTime": "01:00.320",
+        "forward_shift_ms": 500,
+        "backward_shift_ms": 500,
+        "duration": 1.82,
+        "outputPath": "./2025-07-13 20.53.06-视频-云顶哈士奇-云顶s15爆料，所有三星五费1v9 #云15爆料 #云顶之弈天下无双格斗大赛_remake_files/zh-CN-YunxiNeural\\4.wav",
+        "trimmedDuration": 1.0106666666666666
+      },
+      {
+        "id": 8,
+        "startTime": "00:01:23.660",
+        "endTime": "00:01:25.470",
+        "text": "三星萨勒芬妮",
+        "optimizedText": "三星萨勒芬妮。",
+        "old_startTime": "01:24.160",
+        "old_endTime": "01:24.970",
+        "forward_shift_ms": 500,
+        "backward_shift_ms": 500,
+        "duration": 1.81,
+        "outputPath": "./2025-07-13 20.53.06-视频-云顶哈士奇-云顶s15爆料，所有三星五费1v9 #云15爆料 #云顶之弈天下无双格斗大赛_remake_files/zh-CN-YunxiNeural\\5.wav",
+        "trimmedDuration": 1.352
+      },
+      {
+        "id": 10,
+        "startTime": "00:01:44.800",
+        "endTime": "00:01:46.890",
+        "text": "三星卡牌，5费？",
+        "optimizedText": "三星卡牌，五费？",
+        "old_startTime": "01:45.300",
+        "old_endTime": "01:46.390",
+        "forward_shift_ms": 500,
+        "backward_shift_ms": 500,
+        "duration": 2.09,
+        "outputPath": "./2025-07-13 20.53.06-视频-云顶哈士奇-云顶s15爆料，所有三星五费1v9 #云15爆料 #云顶之弈天下无双格斗大赛_remake_files/zh-CN-YunxiNeural\\6.wav",
+        "trimmedDuration": 1.8426666666666667
+      },
+      {
+        "id": 12,
+        "startTime": "00:02:08.500",
+        "endTime": "00:02:10.030",
+        "text": "三星格温",
+        "optimizedText": "三星格温。",
+        "old_startTime": "02:09.000",
+        "old_endTime": "02:09.530",
+        "forward_shift_ms": 500,
+        "backward_shift_ms": 500,
+        "duration": 1.53,
+        "outputPath": "./2025-07-13 20.53.06-视频-云顶哈士奇-云顶s15爆料，所有三星五费1v9 #云15爆料 #云顶之弈天下无双格斗大赛_remake_files/zh-CN-YunxiNeural\\7.wav",
+        "trimmedDuration": 0.9466666666666667
+      },
+      {
+        "id": 14,
+        "startTime": "00:02:29.700",
+        "endTime": "00:02:31.150",
+        "text": "三星婕拉",
+        "optimizedText": "三星婕拉。",
+        "old_startTime": "02:30.200",
+        "old_endTime": "02:30.650",
+        "forward_shift_ms": 500,
+        "backward_shift_ms": 500,
+        "duration": 1.45,
+        "outputPath": "./2025-07-13 20.53.06-视频-云顶哈士奇-云顶s15爆料，所有三星五费1v9 #云15爆料 #云顶之弈天下无双格斗大赛_remake_files/zh-CN-YunxiNeural\\8.wav",
+        "trimmedDuration": 0.968
+      },
+      {
+        "id": 16,
+        "startTime": "00:02:44.100",
+        "endTime": "00:02:45.300",
+        "text": "三星维克兹",
+        "optimizedText": "三星维克兹。",
+        "old_startTime": "02:44.600",
+        "old_endTime": "02:45.300",
+        "forward_shift_ms": 500,
+        "backward_shift_ms": 0,
+        "duration": 1.2,
+        "outputPath": "./2025-07-13 20.53.06-视频-云顶哈士奇-云顶s15爆料，所有三星五费1v9 #云15爆料 #云顶之弈天下无双格斗大赛_remake_files/zh-CN-YunxiNeural\\9.wav",
+        "trimmedDuration": 1.1813333333333333
+      }
+    ]
+    # 调用函数进行合并
+    merged_output = merge_time_intervals(input_data)
+
+    # 打印格式化的 JSON 输出，方便查看
+    print(json.dumps(merged_output, indent=2, ensure_ascii=False))
