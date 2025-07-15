@@ -437,10 +437,11 @@ def find_overall_subtitle_box_target_number(
     """
     主函数，找到包围视频字幕的最小框，并将框绘制到所有抽帧图片上。
     且保证抽取到 num_samples 帧（或所有符合区间的帧）。
+    如果字幕框高度超过视频高度的10%，则返回 None。
     :param video_path: 视频文件路径
     :param merged_timerange_list: [{ "startTime": "00:00:00.205", "endTime": "00:00:09.060" }, ...]
     :param num_samples: 希望抽取的帧数
-    :return: 最终包围框顶点列表 [[x1, y1], ..., [x4, y4]]
+    :return: 最终包围框顶点列表 [[x1, y1], ..., [x4, y4]] 或 None
     """
     output_dir = 'temp_dir'
 
@@ -452,20 +453,21 @@ def find_overall_subtitle_box_target_number(
     # --- 检查视频文件 ---
     if not os.path.exists(video_path):
         print(f"错误: 视频文件未找到 '{video_path}'")
-        return
+        return None
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print(f"错误: 无法打开视频文件 '{video_path}'")
-        return
+        return None
 
     # 获取视频基本信息
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    if total_frames <= 0 or fps <= 0:
+    video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if total_frames <= 0 or fps <= 0 or video_height <= 0:
         print("错误: 无法获取视频信息，抽帧失败。")
         cap.release()
-        return
+        return None
 
     # --- 预处理：将所有时间区间转为毫秒，并对应到帧索引 ---
     valid_frames = set()
@@ -486,7 +488,7 @@ def find_overall_subtitle_box_target_number(
     if not valid_frames:
         print("错误: 没有任何帧落在指定的时间区间内。")
         cap.release()
-        return
+        return None
 
     # --- 从 valid_frames 中均匀抽取 num_samples 帧 ---
     num_to_pick = min(num_samples, len(valid_frames))
@@ -510,7 +512,7 @@ def find_overall_subtitle_box_target_number(
 
     if not saved_frame_paths:
         print("未能提取任何帧。")
-        return
+        return None
 
     # --- 阶段 2: 对抽出的帧进行字幕检测 ---
     print(f"\n[阶段 2] 开始检测 {len(saved_frame_paths)} 张图片的字幕框...")
@@ -523,21 +525,29 @@ def find_overall_subtitle_box_target_number(
 
     if not detected_boxes:
         print("未找到任何字幕框。")
-        return
+        return None
 
     # --- 阶段 3: 分析并计算最终包围框 ---
     print("\n[阶段 3] 分析并计算最终包围区域...")
     good_boxes = analyze_and_filter_boxes(detected_boxes)
     if not good_boxes:
         print("所有字幕框均被过滤。")
-        return
+        return None
 
     all_pts = np.array([pt for box in good_boxes for pt in box])
+    ymin = int(all_pts[:,1].min())
+    ymax = int(all_pts[:,1].max())
+    height = ymax - ymin
+    # 高度限制：不能超过视频高度的10%
+    if height > video_height * 0.1:
+        print(f"错误: 计算到的字幕框高度 {height}px 超过视频高度的 10% ({int(video_height*0.1)}px)。")
+        return None
+
     final_box = [
-        [int(all_pts[:,0].min()), int(all_pts[:,1].min())],
-        [int(all_pts[:,0].max()), int(all_pts[:,1].min())],
-        [int(all_pts[:,0].max()), int(all_pts[:,1].max())],
-        [int(all_pts[:,0].min()), int(all_pts[:,1].max())],
+        [int(all_pts[:,0].min()), ymin],
+        [int(all_pts[:,0].max()), ymin],
+        [int(all_pts[:,0].max()), ymax],
+        [int(all_pts[:,0].min()), ymax],
     ]
     print(f"[阶段 3] 最终包围框: {final_box}")
 
@@ -549,6 +559,7 @@ def find_overall_subtitle_box_target_number(
     print("\n" + "="*60)
     print("任务成功！")
     return final_box
+
 
 
 def find_overall_subtitle_box_target_number_old(video_path: str, num_samples: int = 10):

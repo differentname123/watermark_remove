@@ -1,8 +1,8 @@
 import scenedetect
 import os
-import csv
-import pprint  # <-- 1. 导入 pprint 模块，用于美观地打印字典
+import pprint
 
+from scenedetect import FrameTimecode
 from scenedetect.video_manager import VideoManager
 from scenedetect.scene_manager import SceneManager
 from scenedetect.stats_manager import StatsManager
@@ -11,82 +11,165 @@ from scenedetect.detectors import ContentDetector
 
 def find_and_split_scenes(
         video_path,
-        output_dir='videos',
-        stats_file_prefix='',
-        threshold=50,
+        high_threshold=50,
         min_scene_len=25,
         max_scenes=20,
-        step=10,
+        step=5,
         max_threshold=100
 ):
     """
-    检测视频中的场景，并自动调整阈值直到场景数量不超过 max_scenes 或达到最大阈值。
+    使用两阶段检测法，精确地分割视频场景。
+
+    首先使用动态调整的高阈值进行粗略分割，以控制场景总数。
+    然后使用低阈值进行精细检测，并用其结果对粗略场景的边界进行校正，
+    以提高分割点的准确性。
 
     参数:
     video_path (str): 输入视频文件路径。
-    output_dir (str): 分割后视频的输出目录。
-    stats_file_prefix (str): 统计数据（时间戳）CSV文件前缀。
-    threshold (int): 初始检测阈值。
+    high_threshold (int): 初始的高检测阈值。
     min_scene_len (int): 最小场景时长（帧）。
-    max_scenes (int): 最大允许的场景数量。
-    step (int): 每次调整阈值的步长。
-    max_threshold (int): 最大阈值上限。
+    max_scenes (int): 粗分割时允许的最大场景数量。
+    step (int): 当场景过多时，每次调整高阈值的步长。
+    max_threshold (int): 高阈值的上限。
+
     返回:
-    dict: 场景信息字典，键为 "场景1", 值为 (start_timecode, end_timecode)。
+    dict: 经过精炼校正的场景信息字典，键为 "场景X", 值为 (start_timecode, end_timecode)。
     """
-    current_threshold = threshold
-    scene_info_dict = {}
+    current_high_threshold = high_threshold
+    refined_scene_info = {}
 
-    while current_threshold <= max_threshold:
-        # 初始化管理器
-        video_manager = VideoManager([video_path])
-        stats_manager = StatsManager()
-        scene_manager = SceneManager(stats_manager=stats_manager)
-        scene_manager.add_detector(
-            ContentDetector(threshold=current_threshold, min_scene_len=min_scene_len)
-        )
+    video_manager = VideoManager([video_path])
+    try:
+        base_timecode = video_manager.get_base_timecode()
+        video_manager.set_downscale_factor()
+        video_manager.start()
 
-        try:
-            base_timecode = video_manager.get_base_timecode()
-            video_manager.set_downscale_factor()
-            video_manager.start()
+        while current_high_threshold <= max_threshold:
+            # --- 阶段 1: 使用高阈值进行粗略分割 ---
+            print("-" * 80)
+            print(f"阶段 1: 使用高阈值 {current_high_threshold} 进行粗略检测...")
 
-            print(f'使用阈值 {current_threshold} 分析视频 {video_path}...')
-            scene_manager.detect_scenes(frame_source=video_manager)
-            scene_list = scene_manager.get_scene_list(base_timecode)
-            num_scenes = len(scene_list)
-            print(f'检测到 {num_scenes} 个场景。')
+            stats_manager_coarse = StatsManager()
+            scene_manager_coarse = SceneManager(stats_manager=stats_manager_coarse)
+            scene_manager_coarse.add_detector(
+                ContentDetector(threshold=current_high_threshold, min_scene_len=min_scene_len)
+            )
 
-            # 如果场景数量满足条件，则跳出循环
-            if num_scenes <= max_scenes:
-                # 生成结果字典
-                for i, scene in enumerate(scene_list):
+            # 检测场景
+            scene_manager_coarse.detect_scenes(frame_source=video_manager)
+            coarse_scene_list = scene_manager_coarse.get_scene_list(base_timecode)
+            num_coarse_scenes = len(coarse_scene_list)
+            print(f"检测到 {num_coarse_scenes} 个粗略场景。")
+
+            # 如果场景数量满足条件，则进入精炼阶段
+            if 0 < num_coarse_scenes <= max_scenes:
+                print(f"场景数量 {num_coarse_scenes} 在目标范围 (1, {max_scenes}] 内，开始进行边界精炼。")
+
+                # --- 阶段 2: 使用低阈值获取精细候选切点 ---
+                low_threshold = current_high_threshold / 2
+                print("-" * 80)
+                print(f"阶段 2: 使用低阈值 {low_threshold:.2f} 获取精细候选切点...")
+
+                # !!! 关键步骤: 重置视频管理器到视频开头，以便重新检测
+                video_manager.reset()
+
+                stats_manager_fine = StatsManager()
+                scene_manager_fine = SceneManager(stats_manager=stats_manager_fine)
+                scene_manager_fine.add_detector(
+                    ContentDetector(threshold=low_threshold, min_scene_len=min_scene_len)
+                )
+
+                # 重新检测
+                scene_manager_fine.detect_scenes(frame_source=video_manager)
+                fine_scene_list = scene_manager_fine.get_scene_list(base_timecode)
+                print(f"检测到 {len(fine_scene_list)} 个精细候选场景。")
+
+                # --- 阶段 3: 边界对齐与校正 ---
+                print("-" * 80)
+                print("阶段 3: 对齐粗场景边界到最近的精细切点...")
+
+                # 提取所有粗略切点和精细切点的时间码 (FrameTimecode对象)
+                coarse_cut_points = [scene[0] for scene in coarse_scene_list]
+                fine_cut_points = [scene[0] for scene in fine_scene_list]
+
+                if not fine_cut_points:
+                    print("警告: 低阈值未检测到任何切点，将使用粗略分割结果。")
+                    refined_scene_list = coarse_scene_list
+                else:
+                    refined_cut_points = [coarse_cut_points[0]]  # 第一个切点（视频开头）保持不变
+
+                    # 对每个粗略切点（除了第一个），找到一个最接近的精细切点
+                    for coarse_cut in coarse_cut_points[1:]:
+                        closest_fine_cut = min(
+                            fine_cut_points,
+                            key=lambda fine_cut: abs(fine_cut.get_frames() - coarse_cut.get_frames())
+                        )
+                        refined_cut_points.append(closest_fine_cut)
+                        print(f"  粗切点 {coarse_cut.get_timecode()} -> 校正为 {closest_fine_cut.get_timecode()} 差值 {abs(closest_fine_cut.get_frames() - coarse_cut.get_frames())} 帧")
+
+                    # 使用校正后的切点列表重新构建场景列表
+                    refined_scene_list = []
+                    for i in range(len(refined_cut_points) - 1):
+                        start_time = refined_cut_points[i]
+                        end_time = refined_cut_points[i + 1]
+                        refined_scene_list.append((start_time, end_time))
+
+                    # 添加最后一个场景，其结束时间为视频的实际结尾
+                    last_scene_start = refined_cut_points[-1]
+                    video_end_time = coarse_scene_list[-1][1]  # 使用粗分割的结尾作为视频总长
+                    refined_scene_list.append((last_scene_start, video_end_time))
+
+                # 生成最终结果字典
+                for i, scene in enumerate(refined_scene_list):
                     start_time, end_time = scene
                     scene_key = f"场景{i + 1}"
-                    scene_info_dict[scene_key] = (
+                    refined_scene_info[scene_key] = (
                         start_time.get_timecode(), end_time.get_timecode()
                     )
-                break
-            else:
-                # 增加阈值并重试
-                print(f'场景数 {num_scenes} 大于限制 {max_scenes}, 将阈值调整为 {current_threshold + step} 并重试...')
-                current_threshold += step
-        finally:
-            video_manager.release()
-    else:
-        print(f'已达到最大阈值 {max_threshold}, 仍检测到 {num_scenes} 个场景。')
-        # 即便超过阈值，仍返回最后一次的结果字典
+                break  # 成功处理，跳出 while 循环
 
-    pprint.pprint(scene_info_dict)
-    return scene_info_dict
+            elif num_coarse_scenes == 0:
+                print("未检测到任何场景，请尝试降低初始阈值。")
+                break
+
+            else:
+                print(
+                    f"场景数 {num_coarse_scenes} 大于限制 {max_scenes}, 将阈值调整为 {current_high_threshold + step} 并重试...")
+                current_high_threshold += step
+                # !!! 关键步骤: 重置视频管理器以进行下一次高阈值尝试
+                video_manager.reset()
+
+        else:  # while 循环正常结束 (即达到 max_threshold)
+            print(f"已达到最大阈值 {max_threshold}, 仍无法将场景数降至 {max_scenes} 以下。")
+            print("将使用最后一次检测到的粗略结果。")
+            # 在这种情况下，也生成字典返回
+            for i, scene in enumerate(coarse_scene_list):
+                start_time, end_time = scene
+                scene_key = f"场景{i + 1}"
+                refined_scene_info[scene_key] = (
+                    start_time.get_timecode(), end_time.get_timecode()
+                )
+
+    finally:
+        video_manager.release()
+
+    print("-" * 80)
+    print("最终精炼场景分割结果:")
+    pprint.pprint(refined_scene_info)
+    return refined_scene_info
 
 
 # --- 主程序入口 ---
 if __name__ == '__main__':
     # 把这里换成你的视频文件路径
-    my_video_path = '../content_community/app/test1_covered_with_subtitles_redub.mp4'
-    # 指定输出目录名
-    output_directory = 'videos'
+    my_video_path = r"W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\2025-07-15 08.37.31-视频-老詹的BGM(小文)-休赛期又伤了，乔治接受左膝关节镜了#乔治 #76人 #恩比德 #dou来nba.mp4"
 
-    scene_info_dict = find_and_split_scenes(my_video_path)
+    # 运行带有精炼功能的场景分割
+    scene_info_dict = find_and_split_scenes(
+        my_video_path,
+        high_threshold=50,  # 初始高阈值
+        max_scenes=20,  # 期望的最大场景数
+        min_scene_len=25,  # 最小场景长度（帧）
+        step=5  # 阈值调整步长
+    )
     print("\n场景信息字典已生成并打印。")

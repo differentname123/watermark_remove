@@ -1075,5 +1075,5 @@ def remake_video_robust(
         return None
 
 if __name__ == '__main__':
-    video_path = r"W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\2025-07-12 16.40.00-视频-王涛峰-澳总理还没启程赴华，先对中国说了料澳外长公开唱反调 #硬核深度计划.mp4"
+    video_path = r"W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\2025-07-15 08.37.31-视频-老詹的BGM(小文)-休赛期又伤了，乔治接受左膝关节镜了#乔治 #76人 #恩比德 #dou来nba.mp4"
     remake_video_robust(video_path)
