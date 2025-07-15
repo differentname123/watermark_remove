@@ -196,9 +196,9 @@ def auto_upload():
             error_count += 1
             continue
 
-        if key in upload_log and upload_log[key].get('status') == 'error':
-            print(f"⏭️ 跳过 {key}：之前重制失败，已标记")
-            continue
+        # if key in upload_log and upload_log[key].get('status') == 'error':
+        #     print(f"⏭️ 跳过 {key}：之前重制失败，已标记")
+        #     continue
         # print("-" * 60)
 
         # 2.1 若日志里已记录成功投稿，则跳过
@@ -334,12 +334,20 @@ def auto_upload():
         print(f"🚀 开始投稿 {key} (ID: {video_id}) - 《{title}》 userName: {userName}，封面：{cover_path}，分区：{human_type2}，话题：{topic_name}，话题ID：{topic_id}。")
 
         # ---------- 调用上传接口 ----------
-        try:
-            result = upload_to_bilibili(**upload_params)
-        except Exception as e:
-            print(f"❌ 上传接口异常：{e}")
-            print(upload_params)
-            continue
+        max_retries = 3
+        result = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                result = upload_to_bilibili(**upload_params)
+                break
+            except Exception as e:
+                print(f"❌ 上传接口异常 (第 {attempt} 次重试)：{e}")
+                print(upload_params)
+                if attempt < max_retries:
+                    print("等待 1 分钟后重试…")
+                    time.sleep(60)
+                else:
+                    print("已达最大重试次数，放弃本次上传。")
 
         # ---------- 结果处理 ----------
         if result and result.get("aid") and result.get("bvid"):

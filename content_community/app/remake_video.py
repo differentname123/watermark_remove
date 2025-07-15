@@ -1048,6 +1048,20 @@ def remake_video_robust(
             raise RuntimeError("添加BGM后，最终文件未生成")
 
         print(f"视频重制成功！最终文件位于: {paths['final_video']}")
+
+        final_name = os.path.basename(paths['final_video'])
+        for entry in os.listdir(processing_dir):
+            full_path = os.path.join(processing_dir, entry)
+            if entry == final_name or entry == 'all_info.json':
+                continue
+            try:
+                if os.path.isdir(full_path):
+                    shutil.rmtree(full_path)
+                else:
+                    os.remove(full_path)
+            except Exception as cleanup_err:
+                print(f"清理时出错，无法删除 {full_path}: {cleanup_err}")
+
         return paths['final_video']
 
     except (ValueError, FileNotFoundError, RuntimeError) as e:
