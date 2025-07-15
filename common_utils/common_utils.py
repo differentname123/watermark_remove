@@ -879,7 +879,7 @@ def fill_time_gaps(
 
     # 1. 检测开头空隙
     first_start_ms = time_to_ms(segments[0]['startTime'])
-    if first_start_ms > 0:
+    if first_start_ms > 0 and first_start_ms > 1000:
         new_segments.append({
             "id": 0,
             "startTime": "00:00:00.000",
@@ -928,7 +928,7 @@ def fill_time_gaps(
     # 4. 检测结尾空隙
     last_end_ms = time_to_ms(last_seg['endTime'])
     total_ms = int(video_duration * 1000)
-    if last_end_ms < total_ms:
+    if (total_ms - last_end_ms) > 1000 :
         new_segments.append({
             "id": 0,
             "startTime": last_seg['endTime'],

@@ -971,8 +971,10 @@ def remake_video_robust(
         recommendations = suggestion_speech.get('recommendations', {})
         voice_name = recommendations.get('voice', {}).get('voice_name')
         bgm_id = recommendations.get('bgm', {}).get('id')
-
-        if not all([owner_speech_list, voice_name, bgm_id]):
+        if not owner_speech_list:
+            print('无主人说话可直接返回原视频')
+            return paths['original']
+        if not all([voice_name, bgm_id]):
             raise ValueError("从 suggestion_speech 中获取 'transcription', 'voice_name' 或 'bgm_id' 失败")
 
         # 构建BGM的绝对路径，更可靠
