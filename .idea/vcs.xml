@@ -2,7 +2,6 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/LLM/GPT-SoVITS" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/LLM/LatentSync" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/LLM/TikTokDownloader" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/LLM/Wan2GP" vcs="Git" />

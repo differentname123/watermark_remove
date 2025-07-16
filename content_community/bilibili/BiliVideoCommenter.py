@@ -17,8 +17,8 @@ from content_community.bilibili.comment import BilibiliCommenter
 URL_MODIFY_RELATION = "https://api.bilibili.com/x/relation/modify"
 
 # --- 2. 全局配置 ---
-total_cookie = get_config("bilibili_total_cookie")
-csrf_token = get_config("bilibili_csrf_token")
+total_cookie = get_config("dahao_bilibili_total_cookie")
+csrf_token = get_config("dahao_bilibili_csrf_token")
 
 CONFIG = {
     "STRATEGIES": {
@@ -676,10 +676,10 @@ if __name__ == '__main__':
                                        daemon=True)
     follower_thread.start()
 
-    # --- 评论线程已暂停 ---
-    logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
-    comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
-    comment_thread.start()
+    # # --- 评论线程已暂停 ---
+    # logging.info("评论功能已暂停。如需启用，请取消主程序中的相关代码注释。")
+    # comment_thread = threading.Thread(target=comment_worker, name="CommentWorker", daemon=True)
+    # comment_thread.start()
 
     # 保持主线程运行
     try:

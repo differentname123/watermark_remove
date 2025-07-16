@@ -63,53 +63,63 @@ def _get_volume_info(file_path: str) -> dict:
     return {"mean_volume": mean_v, "max_volume": max_v}
 
 
-def maximize_volume(
-        input_path: str,
-        output_path: str = "output_maximized.mp3"  # 默认输出名，可被覆盖
-) -> None:
-    """
-    通过一个函数调用，实现“先压缩，后标准化”的音量最大化处理。
-    日志输出精简为三行核心信息。
-    """
-    # 1. 分析原始文件
-    before_info = _get_volume_info(input_path)
-    if before_info['mean_volume'] is None:
-        print(f"错误: 无法读取输入文件 '{input_path}'，处理中止。")
-        return
-    print(f"处理前: mean_volume={before_info['mean_volume']:.2f} dB, max_volume={before_info['max_volume']:.2f} dB")
+def maximize_volume(input_path: str, output_path: str = "output_maximized.wav") -> None:
+    before = _get_volume_info(input_path)
+    print(f"处理前: mean={before['mean_volume']:.2f} dB, max={before['max_volume']:.2f} dB")
 
-    # 创建临时文件
-    temp_fd, temp_path = tempfile.mkstemp(suffix='.mp3')
+    # 准备一个中间文件
+    temp_fd, temp_file = tempfile.mkstemp(suffix='.wav')
     os.close(temp_fd)
 
     try:
-        # 2. 压缩并存入临时文件
-        compress_filter = "acompressor=threshold=-20dB:ratio=4:attack=20:release=250"
-        cmd_compress = f'ffmpeg -y -hide_banner -nostats -i "{input_path}" -af "{compress_filter}" "{temp_path}"'
-        subprocess.run(shlex.split(cmd_compress), check=True, capture_output=True)
+        # 1. 强力压缩 + 峰值限制
+        comp_lim = (
+            "acompressor=threshold=-30dB:ratio=10:attack=5:release=200,"
+            "alimiter=limit=-0.1dB"
+        )
+        subprocess.run(
+            shlex.split(
+                f'ffmpeg -y -hide_banner -nostats -i "{input_path}" -af "{comp_lim}" "{temp_file}"'
+            ),
+            check=True, capture_output=True
+        )
 
-        # 3. 分析压缩后文件
-        after_compress_info = _get_volume_info(temp_path)
-        if after_compress_info['max_volume'] is None:
-            print("错误: 压缩步骤失败，处理中止。")
-            return
-        print(
-            f"压缩后: mean_volume={after_compress_info['mean_volume']:.2f} dB, max_volume={after_compress_info['max_volume']:.2f} dB")
+        mid1 = _get_volume_info(temp_file)
+        print(f"压缩+限制后: mean={mid1['mean_volume']:.2f} dB, max={mid1['max_volume']:.2f} dB")
 
-        # 4. 标准化至 0dB 并生成最终文件
-        gain_db = 0.0 - after_compress_info['max_volume']
-        normalize_filter = f"volume={gain_db:.2f}dB"
-        cmd_normalize = f'ffmpeg -y -hide_banner -nostats -i "{temp_path}" -af "{normalize_filter}" -c:a libmp3lame -q:a 2 "{output_path}"'
-        subprocess.run(shlex.split(cmd_normalize), check=True, capture_output=True)
+        # 2. 智能动态归一化
+        dyn_norm = "dynaudnorm=p=1.0"
+        subprocess.run(
+            shlex.split(
+                f'ffmpeg -y -hide_banner -nostats -i "{temp_file}" -af "{dyn_norm}" "{temp_file}.norm.wav"'
+            ),
+            check=True, capture_output=True
+        )
+        norm_file = f"{temp_file}.norm.wav"
+
+        mid2 = _get_volume_info(norm_file)
+        print(f"动态归一化后: mean={mid2['mean_volume']:.2f} dB, max={mid2['max_volume']:.2f} dB")
+
+        # 3. 峰值归一化 —— 把 max 推到 0 dB
+        gain_db = 0.0 - mid2['max_volume']
+        print(f"第三步：应用峰值增益 volume={gain_db:.2f} dB")
+        subprocess.run(
+            shlex.split(
+                f'ffmpeg -y -hide_banner -nostats -i "{norm_file}" '
+                f'-af "volume={gain_db:.2f}dB" "{output_path}"'
+            ),
+            check=True, capture_output=True
+        )
 
     finally:
-        # 5. 清理临时文件
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        # 清理临时文件
+        for f in (temp_file, norm_file):
+            if os.path.exists(f):
+                os.remove(f)
 
-    final_info = _get_volume_info(output_path)
-    print(f"处理后: mean_volume={final_info['mean_volume']:.2f} dB, max_volume={final_info['max_volume']:.2f} dB")
-    print(f"处理完成！文件已保存到: {output_path}")
+    final = _get_volume_info(output_path)
+    print(f"处理后: mean={final['mean_volume']:.2f} dB, max={final['max_volume']:.2f} dB")
+    print(f"已保存到: {output_path}")
 
 def generate_audio_and_get_duration_sync(
         text: str,
