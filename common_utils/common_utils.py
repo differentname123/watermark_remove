@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 import pandas as pd
+from typing import Dict, Tuple, List, Any
 
 def string_to_object(input_str: str):
     """
@@ -1222,3 +1223,95 @@ if __name__ == '__main__':
 
     # 打印格式化的 JSON 输出，方便查看
     print(json.dumps(merged_output, indent=2, ensure_ascii=False))
+
+
+def map_and_adjust_scenes(
+    scenes: Dict[str, Tuple[str, str]],
+    texts: List[Dict[str, Any]]
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """
+    将文案按场景映射，并根据与场景边界的距离，
+    在 start 侧或 end 侧选择距离更近的一端进行裁剪。
+    若裁剪了当前段的 startTime，并且前一段的 endTime
+    与新的 startTime 相同，则同步推进前一段的 endTime。
+
+    Args:
+        scenes: {scene_name: (startTime, endTime)}
+        texts: [{'startTime','endTime','text',…}, …]
+        time_to_ms: fn(str) -> int, 将时间字符串转毫秒
+
+    Returns:
+        new_scenes: {
+            scene_name: {
+                'time_range': (startTime, endTime),
+                'texts': [..adjusted..],
+                'full_text': '...'
+            },
+            …
+        }
+        adjusted_texts: 全局调整后的 texts 列表
+    """
+    # 深拷贝，防止修改原始列表
+    adjusted_texts = [t.copy() for t in texts]
+    for t in adjusted_texts:
+        t['start_ms'] = time_to_ms(t['startTime'])
+        t['end_ms']   = time_to_ms(t['endTime'])
+
+    # 排序
+    adjusted_texts.sort(key=lambda x: x['start_ms'])
+    scene_items = sorted(scenes.items(), key=lambda x: time_to_ms(x[1][0]))
+    new_scenes: Dict[str, Any] = {}
+    n = len(adjusted_texts)
+
+    for scene_name, (s_start, s_end) in scene_items:
+        s_start_ms = time_to_ms(s_start)
+        s_end_ms   = time_to_ms(s_end)
+        scene_list: List[Dict[str, Any]] = []
+
+        for i, t in enumerate(adjusted_texts):
+            # 完全不相交则跳过
+            if t['end_ms'] <= s_start_ms or t['start_ms'] >= s_end_ms:
+                continue
+
+            # 计算与场景边界的“非重合”时长
+            before_diff = max(0, s_start_ms - t['start_ms'])
+            after_diff  = max(0, t['end_ms'] - s_end_ms)
+
+            # 如果两端都越界，取距离小的一端进行裁剪；否则裁剪唯一越界一端
+            if before_diff > 0 or after_diff > 0:
+                if before_diff <= after_diff:
+                    # 裁剪 start
+                    old_start = t['start_ms']
+                    t['start_ms'] = max(t['start_ms'], s_start_ms)
+                    if old_start < s_start_ms:
+                        t['startTime'] = s_start
+                    # 如果前一段恰好与新的 start_ms 对齐，也推进它的 end
+                    if i > 0:
+                        prev_t = adjusted_texts[i - 1]
+                        if prev_t['end_ms'] == t['start_ms']:
+                            prev_t['end_ms']   = t['start_ms']
+                            prev_t['endTime'] = t['startTime']
+                else:
+                    # 裁剪 end
+                    old_end = t['end_ms']
+                    t['end_ms']   = min(t['end_ms'], s_end_ms)
+                    if old_end > s_end_ms:
+                        t['endTime'] = s_end
+                    # 如果后一段的 start_ms 与 old_end 或 new end 对齐，同步调整后一段的 start
+                    if i + 1 < n:
+                        next_t = adjusted_texts[i + 1]
+                        if next_t['start_ms'] in (old_end, t['end_ms']):
+                            next_t['start_ms'] = t['end_ms']
+                            next_t['startTime'] = t['endTime']
+
+            scene_list.append(t)
+
+        # 拼接本场景完整文本
+        full_text = ''.join(item['text'] for item in scene_list)
+        new_scenes[scene_name] = {
+            'time_range': (s_start, s_end),
+            'texts': scene_list,
+            'full_text': full_text
+        }
+
+    return new_scenes, adjusted_texts

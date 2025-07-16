@@ -110,9 +110,9 @@ def find_and_split_scenes(
                     # 使用校正后的切点列表重新构建场景列表
                     refined_scene_list = []
                     for i in range(len(refined_cut_points) - 1):
-                        start_time = refined_cut_points[i]
-                        end_time = refined_cut_points[i + 1]
-                        refined_scene_list.append((start_time, end_time))
+                        s, e = refined_cut_points[i], refined_cut_points[i + 1]
+                        if s.get_frames() < e.get_frames():
+                            refined_scene_list.append((s, e))
 
                     # 添加最后一个场景，其结束时间为视频的实际结尾
                     last_scene_start = refined_cut_points[-1]

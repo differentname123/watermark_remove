@@ -17,7 +17,7 @@ import cv2
 
 from LLM.gemini import get_llm_content_gemini_flash_video
 from common_utils.common_utils import string_to_object, optimize_subtitle_timing, merge_time_segments, read_json, \
-    save_json, fill_time_gaps, time_to_ms, find_file_by_name, merge_time_intervals
+    save_json, fill_time_gaps, time_to_ms, find_file_by_name, merge_time_intervals, map_and_adjust_scenes
 from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box, find_overall_subtitle_box_target_number
 from common_utils.split_audio import separate_with_cli
 from common_utils.split_scenes import find_and_split_scenes
@@ -448,6 +448,83 @@ def get_owner_speech(video_path):
     return result
 
 
+def get_owner_speech_pure(video_path):
+    """
+    获取视频中的主人公语音片段。以及相应的语音
+    """
+    prompt = """
+    你是一名专业的音频处理AI，任务是进行说话人识别、语音转写**和文案优化**。
+
+    # 任务背景
+    - 我是视频创作者，我将为你提供一份带有时间戳的语音转写初稿或音频文件。
+    - 内容中混合了我的旁白、其他人的声音、以及外部视频片段的声音。
+
+    # 任务目标
+    1.  **识别主体**：在所有声音中，只识别并提取出属于“我”（视频创作者）的旁白部分。
+    2.  **内容筛选**：完全忽略所有其他人声、背景音、以及非我本人说出的语句。
+    3.  **精准对齐**：将我说的每一句旁白，都切分成一个符合自然语义的完整短句。每一句都必须带有精确到毫秒的起始和结束时间戳。
+    4.  **验证校准**：如果给出了时间区间，请验证该区间是否准确对应我的声音，并进行必要的校准。
+    **5.  文案润色 (新增目标):**
+        -   **在完成上述步骤后，针对每一句识别出的原始旁白 (`text` 字段)，你需要生成一句新的文本。**
+        -   **润色要求：**
+            -   **保持原意**: 新句子的核心含义必须与原句完全一致。
+            -   **长度严格一致**: **此为关键要求。** 新句子的长度（字数）**必须尽最大可能**与原句保持一致,或者少于原句子，最不希望大于原句子。这是为了确保优化后的文案能精准匹配原视频的时间轴和口型，因此请严格遵守此项规则。
+            -   **整体通顺**: 所有润色后的新句子按顺序串联起来，也应能形成一篇通顺、连贯的文稿。
+
+    # 输出要求
+    - **格式**：最终结果必须是一个纯净、合法的 JSON 数组 (`Array of Objects`)。
+    - **内容**：你的回答**必须且只能是**这个 JSON 数组本身，绝对不能包含任何解释性文字、注释、Markdown 标记（例如 ```json）或任何非 JSON 内容。
+    - **结构**：数组中的每个对象代表我的一句旁白，包含以下**五个**字段：
+        - `id`: (Number) 序号，从 1 开始递增。
+        - `startTime`: (String) 开始时间，格式为 `HH:MM:SS.mmm`。
+        - `endTime`: (String) 结束时间，格式为 `HH:MM:SS.mmm`。
+        - `text`: (String) 旁白**原始**文本内容。
+        - **`optimizedText`: (String) 经过润色后的新旁白文本，与原句意义相同、长度相近。**
+    注意时间戳一定要是精确到毫秒的格式，且必须严格遵守 `HH:MM:SS.mmm` 的格式。
+    # JSON 格式示例
+    ```json
+    [
+      {
+        "id": 1,
+        "startTime": "00:00:03.125",
+        "endTime": "00:00:05.890",
+        "text": "欢迎来到我的视频。",
+        "optimizedText": "欢迎来到我的频道。"
+      },
+      {
+        "id": 2,
+        "startTime": "00:00:07.500",
+        "endTime": "00:00:10.000",
+        "text": "今天我们来聊一个重要话题。",
+        "optimizedText": "这次我们要谈一个核心要点。"
+      }
+    ]
+    """
+    count = 0
+    while True:
+        count += 1
+        if count > 3:
+            print("重试次数超过3次，退出程序。")
+            return []
+        print("正在生成和优化字幕...")
+        raw = get_llm_content_gemini_flash_video(prompt=prompt, video_path=video_path)
+        result = string_to_object(raw)
+
+        # 步骤 3: 优化字幕计时
+        optimized_subtitles = optimize_subtitle_timing(result)
+        result = optimized_subtitles
+
+        # 检查是否存在不正常的字幕时长（小于0或大于10秒）
+        if any(not (0 <= subtitle.get('duration', 0) <= 20) for subtitle in optimized_subtitles):
+            print(f"检测到无效的字幕时长（小于0或大于20秒）：{optimized_subtitles}，将在2秒后重试...")
+            continue  # 如果存在异常值，则跳过本次循环的剩余部分，重新开始
+
+        else:
+            break  # 成功，跳出 while 循环
+
+    # 步骤 6: 返回最终的、验证过的结果
+    return result
+
 def cover_subtitle(video_path, output_path, top_left, bottom_right):
     """
     覆盖视频中的字幕
@@ -725,6 +802,208 @@ def gen_cut_suggestion(video_path):
         traceback.print_exc()
         return None
 
+
+def gen_cut_suggestion_with_scene(video_path, scene_info_dict):
+    """
+    生成剪辑的建议，交换场景顺序或者删除场景。
+    """
+    try:
+        prompt = """**角色:**
+                    你是一个专业的视频剪辑师和内容优化专家。你擅长通过分析视频画面和文案，提出能显著提升视频质量的剪辑和文案优化方案。
+                    
+                    **任务:**
+                    将我提供一个视频文件以及一份详细的场景信息JSON。你的任务是严格按照以下步骤，对我提供的视频进行深度分析，并以JSON格式返回一个完整的优化方案。
+                    
+                    **工作流程与要求:**
+                    
+                    **第一步：深度场景理解 (Foundation of Everything)**
+                    这是所有后续操作的基础，请务C必深入执行。
+                    *   **综合分析:** 针对我提供的每一个场景（`scene`），你必须将视频内容（在指定的 `time_range` 内）与我提供的文案（`full_texts`）紧密结合起来进行理解。
+                    *   **画面解读:** 仔细观察每个场景的视觉元素、动态变化、情感基调和核心信息。
+                    *   **文案关联:** 将画面内容与`full_texts`进行关联分析。思考文案是如何解释、补充或升华画面的。
+                    *   **无文案场景:** 如果一个场景的 `full_texts` 为空字符串，这不代表它没有内容或不重要。你必须更加仔细地分析其视觉语言，理解它可能扮演的角色，例如：作为情绪过渡、信息停顿、视觉冲击，或是为后续内容铺垫。请务必在你的分析中体现出对这类场景的理解。
+                    
+                    **第二步：移除个人信息场景 (Privacy Guard)**
+                    在完成深度理解后，审查所有场景。
+                    *   **识别并删除:** 立即识别并删除任何包含我的个人身份信息（如Logo、个人头像、姓名、联系方式等）的场景。这是强制性要求。
+                    
+                    **第三步：智能剪辑建议 (Smart Re-cutting)**
+                    基于你对内容的深刻理解，提出以“提升视频质量”为唯一目标的剪辑建议。
+                    *   **评估叙事流:** 分析当前场景顺序的逻辑性、节奏感和情感曲线。
+                    *   **提出优化方案:** 你只被允许进行两种操作：**删除场景**或**调整场景顺序**。
+                        *   **删除:** 只有当某个场景内容空洞、冗余，或与主题关联性弱，删除后能使视频更紧凑、主题更突出时，才建议删除。
+                        *   **重排:** 只有当调整顺序能创造更强的逻辑递进、戏剧冲突或情感共鸣，从而显著提升观看体验时，才建议重排。
+                    *   **避免无意义的改动:** 我非常反感为了改而改的微小调整。如果原始顺序已经足够好，或者任何改动带来的提升都微不足道，请明确指出应保留原顺序，并解释原因。减少不必要的剪辑工作量是一个重要的考量点。
+                    
+                    **第四步：文案优化 (Copywriting Enhancement)**
+                    根据你最终确定的场景顺序 (`final_cut_sequence`)，对每个保留下来的场景的文案进行优化。
+                    *   **目标:** 新文案的目标是最大化地提升视频的吸引力、清晰度和影响力。它可以是让表达更精炼、更具感染力，或是更好地与画面配合。
+                    *   **约束条件:**
+                        1.  **内容焕新:** 调整后的文案（`adjusted_texts`）**不能**与原始文案（`full_texts`）一模一样。
+                        2.  **字数对齐:** 新文案的字数必须与原文案的字数**大致相等**。这是为了确保优化后的文案能够匹配场景固定的时长，避免音画不同步的问题。不允许大幅增加或缩减字数，字数差值范围必须在20%以内。
+                    
+                    **第五步：格式化输出 (Strict JSON Output)**
+                    你的最终输出**必须**是一个完整的、格式正确的JSON对象，不能包含任何额外的解释性文字或标记。请严格遵循我提供的示例结构。
+                    
+                    ### **期望的输出 `JSON` 格式 (必须严格遵守):**
+                    
+                    ```json
+                    {
+                      "overall_strategy": "在这里对你最终剪辑策略进行一个高度概括的说明。解释为什么你选择保留/调整顺序，以及这个策略如何服务于“提升视频质量”的最终目标。",
+                      "final_cut_sequence": [
+                        {
+                          "scene_id": "场景1",
+                          "scene_desc": "在这里用一句话精准描述这个场景的核心内容或作用。",
+                          "reasoning": "解释为什么这个场景被保留在当前位置。它在新的叙事结构中扮演什么角色。",
+                          "original_start_time": "00:00:00.000",
+                          "original_end_time": "00:00:05.311",
+                          "full_texts": "中国劳动力至少会出现1亿到3亿人失业。未来的出路必将是自由职业和回农村。",
+                          "adjusted_texts": "未来，我国或将面临上亿规模的失业挑战。返乡创业与成为自由职业者，是两大破局之路。"
+                        }
+                      ],
+                      "deleted_scenes": [
+                        {
+                          "scene_id": "场景3",
+                          "scene_desc": "描述被删除场景的内容。",
+                          "reasoning": "清晰地解释删除这个场景的原因（例如：包含个人信息、内容冗余、节奏拖沓等）。",
+                          "original_start_time": "00:00:10.621",
+                          "original_end_time": "00:00:15.646"
+                        }
+                      ]
+                    }
+                    ```
+                    场景信息如下:
+        """
+        prompt = f"{prompt}\n{scene_info_dict}"
+        raw = get_llm_content_gemini_flash_video(prompt=prompt, video_path=video_path)
+        result = string_to_object(raw)
+        # 增加原始的时间段到result
+        final_cut_sequence = result.get('final_cut_sequence', [])
+        deleted_scenes = result.get('deleted_scenes', [])
+        for scene in final_cut_sequence:
+            scene_id = scene.get('scene_id')
+            # if scene_id:
+            #     # 在场景信息中添加原始时间段
+            #     time_list = scene_info_dict.get(scene_id, [])
+            #     scene['original_start_time'] = time_list[0]
+            #     scene['original_end_time'] = time_list[1]
+        for scene in deleted_scenes:
+            scene_id = scene.get('scene_id')
+            # if scene_id:
+            #     # 在删除的场景信息中添加原始时间段
+            #     time_list = scene_info_dict.get(scene_id, [])
+            #     scene['original_start_time'] = time_list[0]
+            #     scene['original_end_time'] = time_list[1]
+        return result
+    except Exception as e:
+        traceback.print_exc()
+        return None
+
+
+def gen_cut_suggestion_with_speech(video_path, owner_speech_list):
+    """
+    生成剪辑的建议，交换场景顺序或者删除场景。
+    """
+    try:
+        scene_info_dict = find_and_split_scenes(video_path)
+        if not scene_info_dict:
+            print("未能成功获取视频场景信息。", scene_info_dict)
+            return
+        prompt = """# 角色
+                    你是一位拥有十年以上经验的**资深视频剪辑总监**和**首席社交媒体内容策略师**。你不仅精通抖音、Bilibili、YouTube Shorts的算法和用户心理，更重要的是，你是一位**务实的创作者**，深刻理解每一次剪辑都意味着时间成本。你的决策冷静、精准，始终追求“投入产出比”最高的神级剪辑。
+
+                    # 核心原则
+                    在开始任何分析之前，请将以下原则作为你思考的基石：
+
+                    1.  **叙事逻辑优先 (Narrative First)**：视频的流畅性和逻辑连贯性是基础。任何调整都不能破坏故事的内在逻辑或观众的理解流畅度。
+                    2.  **保留是默认选项 (Keep is the Default)**：尊重原始素材的创作意图。不要为了调整而调整。如果一个场景没有严重问题，就应该保留。
+                    3.  **高门槛调整原则 (High Bar for Changes)**：
+                        *   **删除 (Delete)**：必须有充分理由，例如内容完全冗余、质量严重低下或明显偏离主题。
+                        *   **重排 (Reorder)**：这是最高成本的操作，必须慎之又慎。**只有当重排能带来压倒性的优势时（例如，创造出无法替代的“黄金三秒”钩子，或解决了致命的叙事缺陷），才予以考虑。** 你的理由必须极具说服力。
+                    4.  **效果是唯一标准 (Impact is Everything)**：所有决策的唯一目标是让最终成片在**观众吸引力、叙事流畅性、信息价值和传播潜力**上获得**显著提升**。微小的、可有可无的优化不是你的追求。
+                    5.  如果该场景中有不相关的内容（如广告 推广 甚至是关于我的声明或者介绍）不管是不是我推荐的，那么这个场景都应该被删除
+                    6. 而且要尽量不要产生太多的剪切点，因为会导致难度大大提示
+
+                    # 任务指令
+                    1.  **整体理解与诊断 (Holistic Understanding & Diagnosis)**：
+                        *   首先，快速看完所有场景描述，总结出视频的**核心价值主张**（即“观众为什么要看这个视频？”）。
+                        *   识别出整个视频中最具潜力的**“黄金时刻”或“高光片段”**。这是你后续决策的关键锚点。
+
+                    2.  **逐一评估 (Scene-by-Scene Evaluation)**：
+                        *   结合你对整体的理解，独立评估每个原始场景。评估维度包括：
+                            *   **信息密度**：是否传递了关键信息？
+                            *   **视觉冲击力**：画面是否吸引人？
+                            *   **情绪价值**：能否引发观众的情绪（好奇、共鸣、兴奋、爽感等）？
+                            *   **叙事功能**：在故事中扮演什么角色（开端、发展、高潮、结尾、铺垫、转折）？
+                            *   **冗余性**：是否拖沓、重复或可被更好的场景替代？
+
+                    3.  **制定剪辑策略 (Formulate the Editing Strategy)**：
+                        *   严格遵循上述**【核心原则】**，结合你的评估，构建最终剪辑方案。
+                        *   对于每一个决策（保留、重排、删除），在`reasoning`中清晰阐述你的思考过程，特别是要体现你的**审慎和对效果的追求**。例如，解释为什么保留是当前最佳选择，或者阐述一个重排建议为何能带来“压倒性优势”。
+
+                    4.  **生成最终方案 (Generate Final Plan)**：
+                        *   将你的决策结果以纯JSON格式输出。
+
+                    # 输出要求
+                    *   **严格的JSON格式**：你的输出必须是**一个完整且格式正确的JSON对象**，不能包含任何JSON格式之外的标记、注释、代码块标识（如 ```json ... ```）或任何解释性文本。
+                    *   **内容结构**：JSON对象必须包含以下三个顶级键：`overall_strategy`, `final_cut_sequence`, `deleted_scenes`。
+
+                    ---
+                    ### **JSON输出格式定义与示例**
+
+                    ```json
+                    {
+                      "overall_strategy": "（这里是你基于【核心原则】和【整体诊断】得出的顶层策略。例如：原始顺序的叙事逻辑清晰，核心价值突出，仅需删除一个冗余场景来加快节奏，无需进行高成本的重排。）",
+                      "final_cut_sequence": [
+                        {
+                          "scene_id": "场景1",
+                          "scene_desc": "（场景的简短描述）",
+                          "reasoning": "（你的决策理由。例如：作为视频的自然开端，有效建立情境，逻辑清晰，是最佳的起始点，无需调整。）"
+                        },
+                        {
+                          "scene_id": "场景3",
+                          "scene_desc": "（场景的简短描述）",
+                          "reasoning": "（例如：这是视频的‘高光时刻’，情绪价值最高，紧随场景1能快速抓住用户，保留其在故事发展中的位置可确保叙事连贯性。）"
+                        }
+                      ],
+                      "deleted_scenes": [
+                        {
+                          "scene_id": "场景2",
+                          "scene_desc": "（场景的简短描述）",
+                          "reasoning": "（你的决策理由。例如：此场景与场景3内容高度重叠，且信息密度较低，属于明显冗余。删除后能让叙事流直接从情境建立进入高光时刻，节奏更紧凑。）"
+                        }
+                      ]
+                    }
+                    ```
+
+                    **原始场景分割信息如下**:
+
+        """
+        prompt = f"{prompt}\n{scene_info_dict}"
+        raw = get_llm_content_gemini_flash_video(prompt=prompt, video_path=video_path)
+        result = string_to_object(raw)
+        # 增加原始的时间段到result
+        final_cut_sequence = result.get('final_cut_sequence', [])
+        deleted_scenes = result.get('deleted_scenes', [])
+        for scene in final_cut_sequence:
+            scene_id = scene.get('scene_id')
+            if scene_id:
+                # 在场景信息中添加原始时间段
+                time_list = scene_info_dict.get(scene_id, [])
+                scene['original_start_time'] = time_list[0]
+                scene['original_end_time'] = time_list[1]
+        for scene in deleted_scenes:
+            scene_id = scene.get('scene_id')
+            if scene_id:
+                # 在删除的场景信息中添加原始时间段
+                time_list = scene_info_dict.get(scene_id, [])
+                scene['original_start_time'] = time_list[0]
+                scene['original_end_time'] = time_list[1]
+        return result
+    except Exception as e:
+        traceback.print_exc()
+        return None
+
 def auto_cut(video_path, all_info, output_path):
     """
     尝试根据场景建议对视频进行剪辑。
@@ -790,7 +1069,90 @@ def auto_cut(video_path, all_info, output_path):
 
     return cut_suggestion_info
 
+def fix_speech_list_by_scene(video_path, owner_speech_list):
+    scene_info_dict = find_and_split_scenes(video_path)
+    if not scene_info_dict:
+        print("未能成功获取视频场景信息。", scene_info_dict)
+        return scene_info_dict, owner_speech_list
+    new_scenes, adjusted_texts = map_and_adjust_scenes(scene_info_dict, owner_speech_list)
+    return new_scenes, adjusted_texts
 
+
+def auto_cut_with_speech(video_path, all_info, output_path, owner_speech_list):
+    """
+    尝试根据场景建议对视频进行剪辑。
+    如果剪辑过程失败，则将原始视频文件复制到输出路径。
+
+    参数:
+    video_path (str): 原始视频的文件路径。
+    all_info (dict): 包含视频信息的字典，可能会有 'cut_suggestion_info'。
+    output_path (str): 处理后视频的输出路径。
+
+    返回:
+    dict: 返回剪辑建议信息；如果不存在则返回空字典。
+    """
+    # 1. 检查输入文件是否存在
+    if not os.path.exists(video_path):
+        print(f"ERROR: 视频文件未找到: {video_path}")
+        return {}
+    new_scenes, adjusted_texts = fix_speech_list_by_scene(video_path, owner_speech_list)
+    pure_scenes = {key: {"time_range": value.get("time_range"), "full_texts": value.get("full_text")} for key, value in
+     new_scenes.items()}
+
+    all_info['new_scenes'] = new_scenes
+    all_info['adjusted_texts'] = adjusted_texts
+
+    if not new_scenes:
+        # 没有场景就直接复制文件
+        shutil.copy(video_path, output_path)
+        return {}
+    cut_suggestion_info = gen_cut_suggestion_with_scene(video_path, pure_scenes)
+    all_info['cut_suggestion_info'] = cut_suggestion_info
+
+    # 2. 如果没有现成的剪辑建议，则生成新的
+    if not cut_suggestion_info:
+        print("INFO: 未找到剪辑建议，正在生成新的建议...")
+        try:
+            # 假设 gen_cut_suggestion 是一个可能耗时或失败的函数
+            cut_suggestion_info = gen_cut_suggestion(video_path)
+            all_info['cut_suggestion_info'] = cut_suggestion_info
+            print(f"INFO: 成功生成剪辑建议: {cut_suggestion_info}")
+        except Exception as e:
+            print(f"ERROR: 生成剪辑建议时发生错误: {e}")
+            cut_suggestion_info = {} # 确保 cut_suggestion_info 依然是一个字典
+
+    # 3. 检查剪辑建议是否有效，无效则直接复制文件
+    if not cut_suggestion_info or not cut_suggestion_info.get('final_cut_sequence'):
+        print("WARNING: 没有可用的剪辑序列，将直接复制原始视频。")
+        try:
+            shutil.copy(video_path, output_path)
+            print(f"INFO: 已将原始视频成功复制到: {output_path}")
+        except Exception as e:
+            print(f"ERROR: 复制文件时发生错误: {e}")
+        return cut_suggestion_info
+
+    # 4. 核心处理逻辑：尝试剪辑视频
+    try:
+        final_cut_sequence = cut_suggestion_info['final_cut_sequence']
+        print(f"INFO: 检测到 {len(final_cut_sequence)} 个剪辑片段，准备进行处理。")
+
+        merged_list = merge_time_segments(final_cut_sequence)
+
+        print("INFO: 开始使用 FFmpeg 对视频进行重新剪辑...")
+        re_edit_video_ffmpeg(video_path, merged_list, output_path=output_path)
+        print(f"INFO: 视频已成功剪辑并保存到: {output_path}")
+
+    except Exception as e:
+        # 5. 失败回退：如果 try 块中任何地方出错，执行这里的复制操作
+        print(f"ERROR: 视频剪辑处理失败: {e}")
+        print("INFO: 执行回退操作：复制原始视频文件。")
+        try:
+            shutil.copy(video_path, output_path)
+            print(f"INFO: 已将原始视频成功复制到: {output_path}")
+        except Exception as copy_e:
+            print(f"ERROR: 复制原始视频文件时也发生错误: {copy_e}")
+
+    return cut_suggestion_info
 
 def add_origin_audio(video_path, owner_speech_with_audio_list, voice_output_dir, video_duration):
     """
@@ -826,76 +1188,187 @@ def add_origin_audio(video_path, owner_speech_with_audio_list, voice_output_dir,
 
     return new_owner_speech_with_audio_list
 
-def remake_video(video_path):
+def remake_video_op(
+        video_path: str,
+        output_root='./',
+        bgm_library_path: str = 'bgm_audio',
+        force_regenerate: bool = False
+) -> str | None:
     """
-    重制视频
-    """
-    base_name = os.path.basename(video_path)
-    all_info_json_path = base_name.replace('.mp4', '_all_info.json')
-    all_info = read_json(all_info_json_path)
+    重制视频的健壮版本。
 
-    # 获取主人公语音片段
-    if all_info and 'suggestion_speech' in all_info:
+    Args:
+        video_path (str): 原始视频的绝对或相对路径.
+        output_root (str): 所有输出文件（包括中间文件和最终结果）存放的根目录.
+        bgm_library_path (str): BGM 音频库的路径.
+        force_regenerate (bool): 如果为 True, 将忽略缓存, 重新生成所有数据.
+
+    Returns:
+        str | None: 成功则返回最终视频的路径, 失败则返回 None.
+    """
+    # --- 1. 初始化和路径设置 (核心改进) ---
+    try:
+        # 验证输入路径
+        if not os.path.isfile(video_path):
+            print(f"输入视频文件不存在: {video_path}")
+            return None
+
+        # 创建独立的输出目录，避免污染根目录
+        base_name = os.path.basename(video_path)
+        video_name_without_ext = os.path.splitext(base_name)[0]
+        # 所有输出都将在这个目录里
+        processing_dir = os.path.join(output_root, f"{video_name_without_ext}_remake_files")
+        os.makedirs(processing_dir, exist_ok=True)
+        print(f"所有文件将输出到: {processing_dir}")
+
+        # 使用字典统一管理所有路径，清晰且不易出错
+        paths = {
+            'original': video_path,
+            'info_json': os.path.join(processing_dir, 'all_info.json'),
+            'covered': os.path.join(processing_dir, f"{video_name_without_ext}_covered.mp4"),
+            'with_subtitles': os.path.join(processing_dir, f"{video_name_without_ext}_with_subtitles.mp4"),
+            'redubbed': os.path.join(processing_dir, f"{video_name_without_ext}_redub.mp4"),
+            'auto_cut': os.path.join(processing_dir, f"{video_name_without_ext}_auto_cut.mp4"),
+            'final_video': os.path.join(processing_dir, f"{video_name_without_ext}_final.mp4"),
+        }
+
+        # --- 2. 加载或创建核心信息文件 ---
+        if os.path.exists(paths['info_json']) and not force_regenerate:
+            print(f"从 {paths['info_json']} 加载缓存信息...")
+            all_info = read_json(paths['info_json'])
+        else:
+            all_info = {}
+
+    except Exception as e:
+        print(f"初始化失败: {e}", exc_info=True)
+        return None
+    owner_speech_list = all_info.get('owner_speech_list', [])
+    # --- 3. 核心处理流程 (每一步都有错误处理和数据校验) ---
+    try:
+        video_duration = get_video_duration_seconds(paths['original'])  # 检查视频是否有效
+        # 步骤 3.1: 获取主人公语音片段
+        if 'owner_speech_list' not in all_info or force_regenerate:
+            print("缓存未命中或强制刷新，正在提取主人公语音...")
+            owner_speech_list = get_owner_speech_pure(paths['original'])
+            if not owner_speech_list:
+                raise ValueError("提取主人公语音失败或返回格式不正确")
+            all_info['owner_speech_list'] = owner_speech_list
+            save_json(paths['info_json'], all_info)
+        if not owner_speech_list:
+            print('无主人说话可直接返回原视频')
+            return paths['original']
+
+        auto_cut_with_speech(paths['original'], all_info, paths['auto_cut'], owner_speech_list)
+
+
         suggestion_speech = all_info['suggestion_speech']
-        print(f"检测到 {len(suggestion_speech)} 个主人公语音片段，直接使用...")
-    else:
-        suggestion_speech = get_owner_speech(video_path)
-        all_info['suggestion_speech'] = suggestion_speech
-        save_json(all_info_json_path, all_info)
-    owner_speech_list = suggestion_speech['transcription']
-    recommendations = suggestion_speech['recommendations']
-    voice_name = recommendations['voice']['voice_name']
-    bgm_path = recommendations['bgm']['id']
-    bgm_path = f'bgm_audio/{bgm_path.replace(".mp4", ".wav")}'
+        owner_speech_list = suggestion_speech.get('transcription', [])
+        # 安全地获取嵌套数据
+        recommendations = suggestion_speech.get('recommendations', {})
+        voice_name = recommendations.get('voice', {}).get('voice_name')
+        bgm_id = recommendations.get('bgm', {}).get('id')
+        if not owner_speech_list:
+            print('无主人说话可直接返回原视频')
+            return paths['original']
+        if not all([voice_name, bgm_id]):
+            raise ValueError("从 suggestion_speech 中获取 'transcription', 'voice_name' 或 'bgm_id' 失败")
 
-    # 获取字幕框
-    if 'final_subtitle_box' in all_info:
-        final_box = all_info['final_subtitle_box']
-        print(f"检测到 {final_box} 已存在的字幕框，直接使用...")
-    else:
-        final_box = find_overall_subtitle_box_target_number(video_path)
-        all_info['final_subtitle_box'] = final_box
-    top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(video_path, final_box)
+        # 构建BGM的绝对路径，更可靠
+        bgm_filename = bgm_id.replace(".mp4", ".wav")
+        bgm_path = os.path.join(bgm_library_path, bgm_filename)
+        if not os.path.isfile(bgm_path):
+            raise FileNotFoundError(f"BGM文件不存在: {bgm_path}")
+        print(f"使用 BGM: {bgm_path}")
+        merged_timerange_list = merge_time_intervals(owner_speech_list)  # 确保时间片段合并
+        # 步骤 3.2: 获取字幕框
+        if 'final_subtitle_box' not in all_info or force_regenerate:
+            print("正在计算字幕框...")
+            final_box = find_overall_subtitle_box_target_number(paths['original'], merged_timerange_list=merged_timerange_list)
+            if not final_box:
+                raise ValueError("寻找字幕框失败")
+            all_info['final_subtitle_box'] = final_box
+            save_json(paths['info_json'], all_info)
 
-    # 覆盖字幕区域
-    covered_video_path = video_path.replace('.mp4', '_covered.mp4')
-    print(f"正在覆盖字幕区域，输出文件: {covered_video_path}...")
-    cover_subtitle(video_path, covered_video_path, top_left, bottom_right)
 
+        top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(paths['original'], all_info['final_subtitle_box'])
 
-    # 增加新的文案和字幕
-    add_subtitle_output_path = covered_video_path.replace('.mp4', '_with_subtitles.mp4')
-    font_size = bottom_right[1] - top_left[1]
-    font_size = int(font_size * 0.8)
-    bottom_margin = vid_h - bottom_right[1] + int(int(bottom_right[1] - top_left[1]) * 0.1)
-    add_subtitle(covered_video_path, owner_speech_list, add_subtitle_output_path, bottom_margin=bottom_margin, font_size=font_size, fixed_rect=[top_left, bottom_right])
+        # 步骤 3.3: 覆盖字幕区域
+        print(f"正在覆盖字幕区域...")
+        cover_subtitle(paths['original'], paths['covered'], top_left, bottom_right)
+        if not os.path.exists(paths['covered']):
+            raise RuntimeError("覆盖字幕后，输出文件未生成")
 
-    # add_subtitle_output_path = 'test_covered_with_subtitles.mp4'
-    # 生成新的音频并且配上新的声音
-    if 'new_owner_speech_with_audio_list' in all_info:
+        # 步骤 3.4: 增加新的文案和字幕
+        font_size = int((bottom_right[1] - top_left[1]) * 0.8)
+        bottom_margin = vid_h - bottom_right[1] + int((bottom_right[1] - top_left[1]) * 0.1)
+        print("正在添加新字幕...")
+        add_subtitle(
+            paths['covered'],
+            owner_speech_list,
+            paths['with_subtitles'],
+            bottom_margin=bottom_margin,
+            font_size=font_size,
+            fixed_rect=[top_left, bottom_right]
+        )
+        if not os.path.exists(paths['with_subtitles']):
+            raise RuntimeError("添加新字幕后，输出文件未生成")
+
+        # 步骤 3.5: 生成新音频并配音
+        if 'new_owner_speech_with_audio_list' not in all_info or force_regenerate:
+            print("正在生成新音频...")
+            voice_output_dir = f'{processing_dir}/{voice_name}'
+
+            owner_speech_with_audio_list = gen_new_audio(owner_speech_list, voice_name, voice_output_dir)
+            new_owner_speech_with_audio_list = add_origin_audio(paths['original'], owner_speech_with_audio_list, voice_output_dir, video_duration)
+            if not new_owner_speech_with_audio_list:
+                raise ValueError("生成新音频或混合原音频失败")
+            all_info['new_owner_speech_with_audio_list'] = new_owner_speech_with_audio_list
+            save_json(paths['info_json'], all_info)
+
         new_owner_speech_with_audio_list = all_info['new_owner_speech_with_audio_list']
-        print(f"检测到 {len(new_owner_speech_with_audio_list)} 个优化后的字幕，直接使用...")
-    else:
-        owner_speech_wiht_audio_list = gen_new_audio(owner_speech_list, voice_name)
-        new_owner_speech_with_audio_list = add_origin_audio(video_path, owner_speech_wiht_audio_list)
-        all_info['new_owner_speech_with_audio_list'] = new_owner_speech_with_audio_list
-        save_json(all_info_json_path, all_info)
-    redub_output_file_path = add_subtitle_output_path.replace('.mp4', '_redub.mp4')
-    # 使用ffmpeg重制视频
-    # 过滤掉new_owner_speech_with_audio_list中text为"[无声]"的片段
-    # new_owner_speech_with_audio_list = [speech for speech in new_owner_speech_with_audio_list if speech['text'] =="[无声]"]
-    redub_video_with_ffmpeg(add_subtitle_output_path, new_owner_speech_with_audio_list, output_path=redub_output_file_path)
+        print("正在为视频重配音...")
+        redub_video_with_ffmpeg(paths['with_subtitles'], new_owner_speech_with_audio_list,
+                                output_path=paths['redubbed'])
+        if not os.path.exists(paths['redubbed']):
+            raise RuntimeError("重配音后，输出文件未生成")
 
-    # 自动切割视频，删除场景或者交换场景顺序
-    auto_cut_output_path = redub_output_file_path.replace('.mp4', '_auto_cut.mp4')
-    print(f"正在自动切割视频，输出文件: {auto_cut_output_path}...")
-    auto_cut(redub_output_file_path, all_info, auto_cut_output_path)
-    save_json(all_info_json_path, all_info)
+        # 步骤 3.6: 自动剪辑
+        print("正在自动剪辑...")
+        auto_cut(paths['redubbed'], all_info, paths['auto_cut'])
+        save_json(paths['info_json'], all_info)  # 保存可能在auto_cut中更新的信息
+        if not os.path.exists(paths['auto_cut']):
+            raise RuntimeError("自动剪辑后，输出文件未生成")
 
+        # 步骤 3.7: 添加背景音乐
+        print("正在添加背景音乐...")
+        add_bgm_to_video(paths['auto_cut'], bgm_path, paths['final_video'])
+        if not os.path.exists(paths['final_video']):
+            raise RuntimeError("添加BGM后，最终文件未生成")
 
-    bgm_file = bgm_path
-    output_file = auto_cut_output_path.replace('.mp4', '_with_bgm.mp4')
-    add_bgm_to_video(auto_cut_output_path, bgm_file, output_file)
+        print(f"视频重制成功！最终文件位于: {paths['final_video']}")
+
+        # final_name = os.path.basename(paths['final_video'])
+        # for entry in os.listdir(processing_dir):
+        #     full_path = os.path.join(processing_dir, entry)
+        #     if entry == final_name or entry == 'all_info.json':
+        #         continue
+        #     try:
+        #         if os.path.isdir(full_path):
+        #             shutil.rmtree(full_path)
+        #         else:
+        #             os.remove(full_path)
+        #     except Exception as cleanup_err:
+        #         print(f"清理时出错，无法删除 {full_path}: {cleanup_err}")
+
+        return paths['final_video']
+
+    except (ValueError, FileNotFoundError, RuntimeError) as e:
+        traceback.print_exc()
+        print(f"处理流程中断: {e}")
+        return None
+    except Exception as e:
+        traceback.print_exc()
+        return None
 
 
 def remake_video_robust(
@@ -1074,6 +1547,13 @@ def remake_video_robust(
         traceback.print_exc()
         return None
 
+
+
+
 if __name__ == '__main__':
-    video_path = r"W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\2025-07-15 08.37.31-视频-老詹的BGM(小文)-休赛期又伤了，乔治接受左膝关节镜了#乔治 #76人 #恩比德 #dou来nba.mp4"
-    remake_video_robust(video_path)
+    video_path = r"W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\2025-07-14 11.36.47-视频-餐饮小诸葛-外卖乱战，谁是受害者？ #餐饮 #外卖战 #餐饮外卖 #餐饮人 @抖音小助手.mp4"
+    # remake_video_robust(video_path)
+    remake_video_op(video_path)
+
+
+
