@@ -799,6 +799,7 @@ def gen_cut_suggestion(video_path):
                 scene['original_end_time'] = time_list[1]
         return result
     except Exception as e:
+        print(scene)
         traceback.print_exc()
         return None
 

@@ -1247,12 +1247,12 @@ def init_config():
     config_map['443415885'] = {"name": "dahao", "SESSDATA": dahao_SESSDATA, "BILI_JCT": dahao_BILI_JCT,
                                "total_cookie": dahao_total_cookie}
 
-    base_SESSDATA = get_config("bilibili_sessdata_cookie")  # 必需。你的B站登录会话 SESSDATA cookie 值。
-    base_BILI_JCT = get_config("bilibili_csrf_token")
-    base_total_cookie = get_config("bilibili_total_cookie")
-
-    config_map['3546909677455941'] = {"name": "base", "SESSDATA": base_SESSDATA, "BILI_JCT": base_BILI_JCT,
-                                      "total_cookie": base_total_cookie}
+    # base_SESSDATA = get_config("bilibili_sessdata_cookie")  # 必需。你的B站登录会话 SESSDATA cookie 值。
+    # base_BILI_JCT = get_config("bilibili_csrf_token")
+    # base_total_cookie = get_config("bilibili_total_cookie")
+    #
+    # config_map['3546909677455941'] = {"name": "base", "SESSDATA": base_SESSDATA, "BILI_JCT": base_BILI_JCT,
+    #                                   "total_cookie": base_total_cookie}
 
     mama_SESSDATA = get_config("mama_bilibili_sessdata_cookie")  # 可选。妈妈账号的 SESSDATA cookie 值。
     mama_BILI_JCT = get_config("mama_bilibili_csrf_token")
