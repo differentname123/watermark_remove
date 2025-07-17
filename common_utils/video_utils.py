@@ -1463,6 +1463,7 @@ def create_enhanced_cover(
     dimensions = _get_image_dimensions(input_image_path)
     if not dimensions: return None
     img_w, img_h = dimensions
+    true_high = int(img_w * 3 / 4)
 
     if not text_lines:
         print("警告: 未提供任何文字，将直接复制图片。")
@@ -1472,10 +1473,13 @@ def create_enhanced_cover(
 
     # !! 关键修改 1: 优化颜色主题，并增强阴影对比度 !!
     color_themes = {
-        # 主题1: 经典白字黑边 (最通用，最清晰)
+        # # 主题1: 经典白字黑边 (最通用，最清晰)
         'classic_white': {'fontcolor': 'White', 'shadowcolor': 'black@0.8'},
-        # 主题2: 活力黄黑配 (最醒目，适合娱乐内容)
-        'vibrant_yellow': {'fontcolor': '#FFD700', 'shadowcolor': 'black@0.85'}
+        # # 主题2: 活力黄黑配 (最醒目，适合娱乐内容)
+        'vibrant_yellow': {'fontcolor': '#FFD700', 'shadowcolor': 'black@0.85'},
+        'cyber_cyan': {'fontcolor': '0x00FFFF', 'shadowcolor': 'black@0.4'},
+        'energetic_orange': {'fontcolor': '#FF6347', 'shadowcolor': 'white@0.8'},
+
     }
 
     # 如果指定的主题不存在，或为 'auto'，则从预设中随机选择
@@ -1500,7 +1504,7 @@ def create_enhanced_cover(
 
     escaped_font_path = font_path.replace(':', '\\:') if os.name == 'nt' else font_path
 
-    position_map = {'center': img_h / 2, 'top_third': img_h / 5, 'bottom_third': img_h * 0.75}
+    position_map = {'center': img_h / 2, 'top_third': (img_h / 2 - true_high / 2 + font_size/ 2), 'bottom_third': img_h * 0.75}
     block_y_center = position_map.get(position, img_h * 0.5)  # 默认居中
     start_y = block_y_center - total_text_height / 2
 
