@@ -18,7 +18,7 @@ import copy
 import time
 import traceback
 
-from common_utils.common_utils import get_config, format_seconds_to_mmss
+from common_utils.common_utils import get_config, format_seconds_to_mmss, split_text
 from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover
 from content_community.app.remake_video import remake_video_robust
 
@@ -289,7 +289,7 @@ def auto_upload():
             create_enhanced_cover(
                 input_image_path=cover_path,
                 output_image_path=output_image_path,
-                text_lines=[best_scheme.get('封面', {}).get('配文', '')],
+                text_lines=split_text(best_scheme.get('封面', {}).get('配文', ''), max_len=10),
             )
             cover_path = output_image_path if os.path.exists(output_image_path) else cover_path
         except Exception as e:

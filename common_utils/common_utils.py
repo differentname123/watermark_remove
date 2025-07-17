@@ -1315,3 +1315,43 @@ def map_and_adjust_scenes(
         }
 
     return new_scenes, adjusted_texts
+
+def split_text(text: str, max_len: int) -> List[str]:
+    """
+    将 text 按最多 max_len 个字符切分为若干子串，尽量在标点处分割。
+    :param text: 待切分的长字符串
+    :param max_len: 子串的最大长度
+    :return: 子串列表
+    """
+    if max_len < 1:
+        raise ValueError("max_len must be at least 1")
+
+    # 定义常见的中英文断句标点
+    punctuation = r'[，。！？；：,\.!?;:]'
+    parts = []
+
+    start = 0
+    n = len(text)
+    while start < n:
+        # 剩余长度不超限，直接加剩余部分
+        if n - start <= max_len:
+            parts.append(text[start:].strip())
+            break
+
+        # 考虑从 start 到 start+max_len 范围内，寻找最后一个标点
+        window = text[start:start + max_len]
+        # 在 window 中逆序查找符合标点的最靠后位置
+        m = max((m.start() for m in re.finditer(punctuation, window)), default=-1)
+
+        if m != -1:
+            # 在标点处（含标点）切分
+            cut = start + m + 1
+        else:
+            # 找不到标点，就硬性切在 max_len
+            cut = start + max_len
+
+        segment = text[start:cut].strip()
+        parts.append(segment)
+        start = cut
+
+    return parts
