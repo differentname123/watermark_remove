@@ -16,9 +16,10 @@ import json
 import os
 import copy
 import time
+import traceback
 
 from common_utils.common_utils import get_config, format_seconds_to_mmss
-from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds
+from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover
 from content_community.app.remake_video import remake_video_robust
 
 config_map = {}
@@ -278,11 +279,23 @@ def auto_upload():
         except Exception as e:
             print(f"⚠️  尾部插图失败，继续使用原视频：{e}")
 
-        # ---------- 准备投稿参数 ----------
-        cover_path = (
-            metadata[0].get('abs_cover_path') if os.path.exists(metadata[0].get('abs_cover_path', ''))
-            else best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
-        )
+        try:
+            # ---------- 准备投稿参数 ----------
+            cover_path = (
+                metadata[0].get('abs_cover_path') if os.path.exists(metadata[0].get('abs_cover_path', ''))
+                else best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
+            )
+            output_image_path = cover_path.replace('.jpg', '_enhanced.jpg')
+            create_enhanced_cover(
+                input_image_path=cover_path,
+                output_image_path=output_image_path,
+                text_lines=[best_scheme.get('封面', {}).get('配文', '')],
+            )
+            cover_path = output_image_path if os.path.exists(output_image_path) else cover_path
+        except Exception as e:
+            traceback.print_exc()
+            print(f"⚠️  封面处理失败：{e}")
+
         origin_tag = metadata[0].get('tag', [])
         origin_tag.extend(metadata[0].get('text_extra', []))
         title = best_scheme.get('标题', '欢迎来看我的视频！')

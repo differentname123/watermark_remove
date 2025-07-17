@@ -10,6 +10,8 @@
 """
 
 import os
+import random
+import shutil
 import subprocess
 import json
 import tempfile
@@ -1425,4 +1427,115 @@ def get_video_duration_seconds(video_path: str) -> float | None:
         return float(duration_str)
     except ValueError:
         print(f"[ERROR] Could not parse duration from ffprobe output: '{proc.stdout}'")
+        return None
+
+def _get_image_dimensions(image_path: str) -> tuple[int, int] or None:
+    # (此辅助函数无需修改)
+    command = [
+        'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+        '-show_entries', 'stream=width,height', '-of', 'json', image_path
+    ]
+    try:
+        result = subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8')
+        data = json.loads(result.stdout)
+        return data['streams'][0]['width'], data['streams'][0]['height']
+    except Exception as e:
+        print(f"错误: 无法获取图片尺寸 '{image_path}'.")
+        print(f"具体错误: {e}")
+        return None
+
+
+def create_enhanced_cover(
+        input_image_path: str,
+        output_image_path: str,
+        text_lines: list[str],
+        font_path='C:/Windows/Fonts/simhei.ttf',
+        position: str = 'top_third',
+        color_theme: str = 'auto',
+        font_size_ratio: float = 1.0,
+        line_spacing_ratio: float = 1.4,
+        overwrite: bool = True
+) -> str or None:
+    if not all([os.path.exists(input_image_path), os.path.exists(font_path)]):
+        print("错误: 输入文件或字体文件未找到。")
+        return None
+
+    dimensions = _get_image_dimensions(input_image_path)
+    if not dimensions: return None
+    img_w, img_h = dimensions
+
+    if not text_lines:
+        print("警告: 未提供任何文字，将直接复制图片。")
+        if overwrite or not os.path.exists(output_image_path):
+            shutil.copy(input_image_path, output_image_path)
+        return output_image_path
+
+    # !! 关键修改 1: 优化颜色主题，并增强阴影对比度 !!
+    color_themes = {
+        # 主题1: 经典白字黑边 (最通用，最清晰)
+        'classic_white': {'fontcolor': 'White', 'shadowcolor': 'black@0.8'},
+        # 主题2: 活力黄黑配 (最醒目，适合娱乐内容)
+        'vibrant_yellow': {'fontcolor': '#FFD700', 'shadowcolor': 'black@0.85'}
+    }
+
+    # 如果指定的主题不存在，或为 'auto'，则从预设中随机选择
+    if color_theme not in color_themes or color_theme == 'auto':
+        # 默认随机选择，但可以优先选择最经典的
+        # chosen_theme = color_themes['classic_white']
+        chosen_theme = random.choice(list(color_themes.values()))
+    else:
+        chosen_theme = color_themes[color_theme]
+
+    longest_line = max(text_lines, key=len)
+    target_text_width = img_w * 0.95
+    estimated_char_width_ratio = 1.0
+    font_size = int(min((target_text_width / len(longest_line)), img_h / 8) * font_size_ratio)
+
+    # !! 关键修改 2: 增加阴影偏移量，模拟更厚的描边效果 !!
+    # 将偏移量从原来的5%提升到8%
+    shadow_offset = max(2, int(font_size * 0.06))
+
+    line_height = int(font_size * line_spacing_ratio)
+    total_text_height = line_height * (len(text_lines) - 1) + font_size
+
+    escaped_font_path = font_path.replace(':', '\\:') if os.name == 'nt' else font_path
+
+    position_map = {'center': img_h / 2, 'top_third': img_h / 5, 'bottom_third': img_h * 0.75}
+    block_y_center = position_map.get(position, img_h * 0.5)  # 默认居中
+    start_y = block_y_center - total_text_height / 2
+
+    filters = []
+    for i, line in enumerate(text_lines):
+        line_y = start_y + i * line_height
+        x_expr = '(w-text_w)/2'
+
+        drawtext_options = {
+            'fontfile': f"'{escaped_font_path}'",
+            'text': f"'{line.replace(':', '\\:').replace('%', '\\%').replace('\'', '')}'",
+            'fontsize': str(font_size),
+            'fontcolor': chosen_theme['fontcolor'],
+            'x': x_expr,
+            'y': str(line_y),
+            'shadowcolor': chosen_theme['shadowcolor'],
+            'shadowx': str(shadow_offset),
+            'shadowy': str(shadow_offset)
+        }
+        filters.append("drawtext=" + ":".join(f"{k}={v}" for k, v in drawtext_options.items()))
+
+    vf_string = ",".join(filters)
+    command = ['ffmpeg', '-i', input_image_path, '-vf', vf_string]
+    if overwrite: command.append('-y')
+    command.append(output_image_path)
+
+    print(f"主题: {chosen_theme}")
+
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8')
+        print(f"🎉 成功! 优化后的封面已保存到 '{output_image_path}'")
+        return output_image_path
+    except subprocess.CalledProcessError as e:
+        print("FFMPEG 执行失败!")
+        print(f"错误码: {e.returncode}")
+        print("FFMPEG 输出 (stderr):")
+        print(e.stderr)
         return None
