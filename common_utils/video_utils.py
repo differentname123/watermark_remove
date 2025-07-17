@@ -1493,7 +1493,7 @@ def create_enhanced_cover(
     longest_line = max(text_lines, key=len)
     target_text_width = img_w * 0.95
     estimated_char_width_ratio = 1.0
-    font_size = int(min((target_text_width / len(longest_line)), img_h / 8) * font_size_ratio)
+    font_size = int(min((target_text_width / len(longest_line)), img_h / 4) * font_size_ratio)
 
     # !! 关键修改 2: 增加阴影偏移量，模拟更厚的描边效果 !!
     # 将偏移量从原来的5%提升到8%
