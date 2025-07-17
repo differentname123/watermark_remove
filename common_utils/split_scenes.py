@@ -66,7 +66,7 @@ def find_and_split_scenes(
                 print(f"场景数量 {num_coarse_scenes} 在目标范围 (1, {max_scenes}] 内，开始进行边界精炼。")
 
                 # --- 阶段 2: 使用低阈值获取精细候选切点 ---
-                low_threshold = current_high_threshold / 2
+                low_threshold = current_high_threshold / 3
                 print("-" * 80)
                 print(f"阶段 2: 使用低阈值 {low_threshold:.2f} 获取精细候选切点...")
 
@@ -162,12 +162,12 @@ def find_and_split_scenes(
 # --- 主程序入口 ---
 if __name__ == '__main__':
     # 把这里换成你的视频文件路径
-    my_video_path = r"W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\2025-07-15 08.37.31-视频-老詹的BGM(小文)-休赛期又伤了，乔治接受左膝关节镜了#乔治 #76人 #恩比德 #dou来nba.mp4"
+    my_video_path = r"W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\2025-07-17 17.06.02-视频-娱乐传递官-宗馥莉——小公主的复仇.mp4"
 
     # 运行带有精炼功能的场景分割
     scene_info_dict = find_and_split_scenes(
-        my_video_path,
-        high_threshold=50,  # 初始高阈值
+        'test.mp4',
+        high_threshold=85,  # 初始高阈值
         max_scenes=20,  # 期望的最大场景数
         min_scene_len=25,  # 最小场景长度（帧）
         step=5  # 阈值调整步长

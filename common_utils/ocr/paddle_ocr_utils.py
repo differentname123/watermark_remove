@@ -109,10 +109,10 @@ def find_subtitle(
             # 没有跨过中线，剔除
             continue
 
-        # 计算最小外接矩形
         rect = cv2.minAreaRect(box.astype(np.float32))
-        angle = abs(rect[2])
-        if angle > rect_ang_thresh:
+        angle = abs(rect[2])  # 例如 0 … 90
+        effective_angle = min(angle, 90 - angle)
+        if effective_angle > rect_ang_thresh:
             continue
 
         # 矩形度（多边形面积 / minAreaRect 面积）
@@ -216,7 +216,7 @@ def main_find_subtitle(image_path: str, output_path='temp.jpg'):
 def analyze_and_filter_boxes(
         boxes: List[List[List[int]]],
         height_tolerance_ratio: float = 0.3,
-        y_pos_tolerance_ratio: float = 0.5,
+        y_pos_tolerance_ratio: float = 0.25,
         z_score_threshold: float = 2.0
 ) -> List[List[List[int]]]:
     """
@@ -539,8 +539,8 @@ def find_overall_subtitle_box_target_number(
     ymax = int(all_pts[:,1].max())
     height = ymax - ymin
     # 高度限制：不能超过视频高度的10%
-    if height > video_height * 0.1:
-        print(f"错误: 计算到的字幕框高度 {height}px 超过视频高度的 10% ({int(video_height*0.1)}px)。")
+    if height > video_height * 0.15:
+        print(f"错误: 计算到的字幕框高度 {height}px 超过视频高度的 10% ({int(video_height*0.1)}px)。 {good_boxes}")
         return None
 
     final_box = [
@@ -672,4 +672,4 @@ def find_overall_subtitle_box_target_number_old(video_path: str, num_samples: in
 # 使用示例
 # ==============================================================================
 if __name__ == '__main__':
-    main_find_subtitle('example.jpg', 'output.jpg')
+    main_find_subtitle('test.jpg', 'output.jpg')
