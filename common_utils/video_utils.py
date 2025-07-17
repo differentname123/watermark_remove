@@ -1449,7 +1449,7 @@ def create_enhanced_cover(
         input_image_path: str,
         output_image_path: str,
         text_lines: list[str],
-        font_path='C:/Windows/Fonts/simhei.ttf',
+        font_path='C:/Windows/Fonts/msyhbd.ttc',
         position: str = 'top_third',
         color_theme: str = 'auto',
         font_size_ratio: float = 1.0,
