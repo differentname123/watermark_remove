@@ -51,6 +51,12 @@ jie_total_cookie = get_config("jie_bilibili_total_cookie")
 config_map['jie'] = (jie_SESSDATA, jie_BILI_JCT, jie_BILI_JCT)
 
 
+qiqi_SESSDATA = get_config("qiqi_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
+qiqi_BILI_JCT = get_config("qiqi_bilibili_csrf_token")
+qiqi_total_cookie = get_config("qiqi_bilibili_total_cookie")
+config_map['qiqi'] = (qiqi_SESSDATA, qiqi_BILI_JCT, qiqi_total_cookie)
+
+
 from content_community.bilibili.bilibili_uploader import upload_to_bilibili, fetch_bili_topics
 
 # ---------- 文件路径常量 ----------
@@ -197,9 +203,9 @@ def auto_upload():
             error_count += 1
             continue
 
-        if key in upload_log and upload_log[key].get('status') == 'error':
-            print(f"⏭️ 跳过 {key}：之前重制失败，已标记")
-            continue
+        # if key in upload_log and upload_log[key].get('status') == 'error':
+        #     print(f"⏭️ 跳过 {key}：之前重制失败，已标记")
+        #     continue
         # print("-" * 60)
 
         # 2.1 若日志里已记录成功投稿，则跳过
