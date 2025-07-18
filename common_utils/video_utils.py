@@ -1504,7 +1504,7 @@ def create_enhanced_cover(
 
     escaped_font_path = font_path.replace(':', '\\:') if os.name == 'nt' else font_path
 
-    position_map = {'center': img_h / 2, 'top_third': (img_h / 2 - true_high / 2 + font_size /2), 'bottom_third': img_h * 0.75}
+    position_map = {'center': img_h / 2, 'top_third': (img_h / 2 - true_high / 2), 'bottom_third': img_h * 0.75}
     block_y_center = position_map.get(position, img_h * 0.5)  # 默认居中
     start_y = block_y_center - total_text_height / 2
 

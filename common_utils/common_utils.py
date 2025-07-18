@@ -1227,13 +1227,15 @@ if __name__ == '__main__':
 
 def map_and_adjust_scenes(
     scenes: Dict[str, Tuple[str, str]],
-    texts: List[Dict[str, Any]]
+    texts: List[Dict[str, Any]],
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """
     将文案按场景映射，并根据与场景边界的距离，
     在 start 侧或 end 侧选择距离更近的一端进行裁剪。
     若裁剪了当前段的 startTime，并且前一段的 endTime
     与新的 startTime 相同，则同步推进前一段的 endTime。
+    若裁剪了当前段的 endTime，并且后一段的 startTime
+    与新的 endTime 相同，则同步推进后一段的 startTime。
 
     Args:
         scenes: {scene_name: (startTime, endTime)}
@@ -1277,33 +1279,56 @@ def map_and_adjust_scenes(
             before_diff = max(0, s_start_ms - t['start_ms'])
             after_diff  = max(0, t['end_ms'] - s_end_ms)
 
-            # 如果两端都越界，取距离小的一端进行裁剪；否则裁剪唯一越界一端
+            # 如果任一端越界，需要裁剪
             if before_diff > 0 or after_diff > 0:
-                if before_diff <= after_diff:
-                    # 裁剪 start
+                # 仅左侧超界
+                if before_diff > 0 and after_diff == 0:
                     old_start = t['start_ms']
-                    t['start_ms'] = max(t['start_ms'], s_start_ms)
-                    if old_start < s_start_ms:
-                        t['startTime'] = s_start
-                    # 如果前一段恰好与新的 start_ms 对齐，也推进它的 end
+                    t['start_ms'] = s_start_ms
+                    t['startTime'] = s_start
+                    # 同步调整前一段 end
                     if i > 0:
                         prev_t = adjusted_texts[i - 1]
-                        if prev_t['end_ms'] == t['start_ms']:
-                            prev_t['end_ms']   = t['start_ms']
+                        if prev_t['end_ms'] == old_start:
+                            prev_t['end_ms'] = t['start_ms']
                             prev_t['endTime'] = t['startTime']
-                else:
-                    # 裁剪 end
+
+                # 仅右侧超界
+                elif after_diff > 0 and before_diff == 0:
                     old_end = t['end_ms']
-                    t['end_ms']   = min(t['end_ms'], s_end_ms)
-                    if old_end > s_end_ms:
-                        t['endTime'] = s_end
-                    # 如果后一段的 start_ms 与 old_end 或 new end 对齐，同步调整后一段的 start
+                    t['end_ms'] = s_end_ms
+                    t['endTime'] = s_end
+                    # 同步调整后一段 start
                     if i + 1 < n:
                         next_t = adjusted_texts[i + 1]
-                        if next_t['start_ms'] in (old_end, t['end_ms']):
+                        if next_t['start_ms'] == old_end or next_t['start_ms'] == t['end_ms']:
                             next_t['start_ms'] = t['end_ms']
                             next_t['startTime'] = t['endTime']
 
+                # 双侧都超界
+                else:
+                    if before_diff <= after_diff:
+                        # 裁剪 start
+                        old_start = t['start_ms']
+                        t['start_ms'] = s_start_ms
+                        t['startTime'] = s_start
+                        if i > 0:
+                            prev_t = adjusted_texts[i - 1]
+                            if prev_t['end_ms'] == old_start:
+                                prev_t['end_ms'] = t['start_ms']
+                                prev_t['endTime'] = t['startTime']
+                    else:
+                        # 裁剪 end
+                        old_end = t['end_ms']
+                        t['end_ms'] = s_end_ms
+                        t['endTime'] = s_end
+                        if i + 1 < n:
+                            next_t = adjusted_texts[i + 1]
+                            if next_t['start_ms'] == old_end or next_t['start_ms'] == t['end_ms']:
+                                next_t['start_ms'] = t['end_ms']
+                                next_t['startTime'] = t['endTime']
+
+            # 将此文本加入当前场景
             scene_list.append(t)
 
         # 拼接本场景完整文本
@@ -1315,6 +1340,7 @@ def map_and_adjust_scenes(
         }
 
     return new_scenes, adjusted_texts
+
 
 def split_text(text: str, max_len: int) -> List[str]:
     """

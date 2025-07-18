@@ -51,10 +51,10 @@ jie_total_cookie = get_config("jie_bilibili_total_cookie")
 config_map['jie'] = (jie_SESSDATA, jie_BILI_JCT, jie_BILI_JCT)
 
 
-qiqi_SESSDATA = get_config("qiqi_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
-qiqi_BILI_JCT = get_config("qiqi_bilibili_csrf_token")
-qiqi_total_cookie = get_config("qiqi_bilibili_total_cookie")
-config_map['qiqi'] = (qiqi_SESSDATA, qiqi_BILI_JCT, qiqi_total_cookie)
+# qiqi_SESSDATA = get_config("qiqi_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
+# qiqi_BILI_JCT = get_config("qiqi_bilibili_csrf_token")
+# qiqi_total_cookie = get_config("qiqi_bilibili_total_cookie")
+# config_map['qiqi'] = (qiqi_SESSDATA, qiqi_BILI_JCT, qiqi_total_cookie)
 
 
 from content_community.bilibili.bilibili_uploader import upload_to_bilibili, fetch_bili_topics
