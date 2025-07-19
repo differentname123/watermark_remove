@@ -1278,11 +1278,11 @@ def init_config():
     config_map['202157045'] = {"name": "jie", "SESSDATA": jie_SESSDATA, "BILI_JCT": jie_BILI_JCT,
                                       "total_cookie": jie_total_cookie}
 
-    # qiqi_SESSDATA = get_config("qiqi_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
-    # qiqi_BILI_JCT = get_config("qiqi_bilibili_csrf_token")
-    # qiqi_total_cookie = get_config("qiqi_bilibili_total_cookie")
-    # config_map['131446458'] = {"name": "qiqi", "SESSDATA": qiqi_SESSDATA, "BILI_JCT": qiqi_BILI_JCT,
-    #                                   "total_cookie": qiqi_total_cookie}
+    qiqi_SESSDATA = get_config("qiqi_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
+    qiqi_BILI_JCT = get_config("qiqi_bilibili_csrf_token")
+    qiqi_total_cookie = get_config("qiqi_bilibili_total_cookie")
+    config_map['131446458'] = {"name": "qiqi", "SESSDATA": qiqi_SESSDATA, "BILI_JCT": qiqi_BILI_JCT,
+                                      "total_cookie": qiqi_total_cookie}
     return config_map
 
 def fun():
