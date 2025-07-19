@@ -101,68 +101,63 @@ def add_image_to_video_end(
         max_retries: int = 3
 ) -> None:
     """
-    将一张图片拼接到视频末尾。如果输出文件小于输入视频文件，最多重试 max_retries 次。
+    将任意图片拼接到视频末尾，自动适配尺寸和比例，避免 concat 失败。
 
     :param video_path: 输入视频路径
     :param image_path: 输入图片路径
     :param output_path: 输出视频路径
-    :param image_duration: 图片在视频末尾的持续时长（秒）
-    :param max_retries: 最大重试次数
-    :raises RuntimeError: 如果所有重试均失败
+    :param image_duration: 图片显示时长
+    :param max_retries: 失败时的最大重试次数
+    :raises RuntimeError: 所有尝试失败后抛出异常
     """
-    # 初次探测视频元信息、时长
+    # 获取视频元信息
     meta = probe_video(video_path)
     video_dur = probe_duration(video_path)
     total_dur = video_dur + image_duration
+    width, height, fps = meta["width"], meta["height"], meta["fps"]
 
-    # 构造 filter_complex 字符串
+    # 为图片设置通用滤镜：缩放 + 设置像素宽高比（SAR）+ 补黑边
+    # 这样可以兼容任何图片尺寸，且统一 SAR
     filter_complex = (
-        f"[1:v]fps={meta['fps']:.2f},"
-        f"scale={meta['width']}:{meta['height']},"
-        "format=yuv420p[img];"
+        f"[1:v]scale=w={width}:h={height}:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,"
+        f"setsar=1,fps={fps:.2f},format=yuv420p[img];"
         "[0:v][img]concat=n=2:v=1:a=0[v]"
     )
 
-    # 公共 ffmpeg 参数
     base_cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", video_path,
         "-loop", "1", "-t", str(image_duration), "-i", image_path,
         "-filter_complex", filter_complex,
         "-map", "[v]",
-        "-map", "0:a?",  # 如果有音频就映射
+        "-map", "0:a?",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
-        "-c:a", "aac",  # 必须重新编码才能用 apad
-        "-af", "apad",  # 自动补零
-        "-t", str(total_dur),  # 强制输出时长
+        "-c:a", "aac",
+        "-af", "apad",
+        "-t", str(total_dur)
     ]
 
     input_size = os.path.getsize(video_path)
 
     for attempt in range(1, max_retries + 1):
         try:
-            # 每次都重新生成输出文件
             cmd = base_cmd + [output_path]
             subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
-            # ffmpeg 出错，记录并重试
             print(f"[警告] 第 {attempt} 次合成失败：{e}")
         else:
-            # 检查输出文件大小
             if os.path.exists(output_path):
                 output_size = os.path.getsize(output_path)
                 if output_size >= input_size * 0.8:
-                    # 成功且大小正常，退出循环
                     return
                 else:
-                    print(
-                        f"[警告] 第 {attempt} 次生成的视频大小 ({output_size}) 小于输入视频大小 ({input_size * 0.8})，重试中...")
+                    print(f"[警告] 第 {attempt} 次输出文件过小：{output_size}，重试中...")
             else:
                 print(f"[警告] 第 {attempt} 次没有生成输出文件，重试中...")
 
-    # 如果循环结束仍未成功，则抛出异常
-    raise RuntimeError(f"多次尝试后仍未生成有效视频（{max_retries} 次）")
+    raise RuntimeError(f"多次尝试后仍未生成有效视频（共 {max_retries} 次）")
 
 
 def cover_video_area(
