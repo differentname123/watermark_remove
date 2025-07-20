@@ -1,6 +1,7 @@
 import json
 import random
 import time
+from bs4 import BeautifulSoup, Tag, NavigableString
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import requests
@@ -16,6 +17,70 @@ USER_AGENT = (
     "Chrome/115.0.5790.110 Safari/537.36"
 )
 ZHIHU_COOKIE_STRING = "_xsrf=EGbVA6NHTaM3dXlCMEiWj9aRBvWl4inW; _zap=34c3bc6c-ebae-4e0d-9a06-5bfb7b8a9548; d_c0=APARO_5-wBmPTvibmi_6NacNH42miN-ERZY=|1735194921; Hm_lvt_98beee57fd2ef70ccdd5ca52b9740c49=1752912686; HMACCOUNT=14EFD85132347319; DATE=1752912688356; crystal=U2FsdGVkX19HZsSWXHhQvCmTy0IhrzSuQUWjAmBNS9sgZFRn8/yuh3qnHWWPtqhs6Fx+lpP4dATHFISdyemFNM4nXvmwy0g7ICamPZ7CB/IU+sI4WwbiZS83jULObdwxNXvxwM1lrWOA06h6rgMPFiBn+qiMLtZXpkprUsDW2FNS69MOpODrf6kUIyRL/QXg9IJ08veQmhzEr8G7YQHsdz07b0Wmj/50nQPJAtdug/kh+RlGpYjjx8ALS6jGD2Gq; __snaker__id=RQbe8vWX2MrZo7OW; cmci9xde=U2FsdGVkX184glWsyX1mezYXZa3qDzIhjRBe9TQQVEY+LLFTFMDXP9nSs9RkgMzxPSZtU4lOrgeYZefNb02KEA==; pmck9xge=U2FsdGVkX1/T3lTFMBSW1MNHTt55yQ7uWCI2fzMhaBs=; assva6=U2FsdGVkX1803CTSuJgB3mtcX8vMBRJ4mrNXHxoktsA=; assva5=U2FsdGVkX18s7ilkblADh/oGQosbZLgtP7rzonbhC4T0Gf8YWm1GZf8atIJSu1QVH69xU8U+rNeMHgJRf8dEEQ==; vmce9xdq=U2FsdGVkX1+9L5kRV9p5NPBm2ZFxevxsXB601UTW1lO8oB1sywbxX35uCVgDtPFrCRoAhGz6Qw95IDt5HxZKgRgHcwII5jsliZ9AEeEMx0QyMg0NlFbFg2/No39rs8FcREB1wxx4Hg7ZLGq+HBSZ6UbnPSt1xTw3YsTv3I27GXM=; z_c0=2|1:0|10:1752912935|4:z_c0|92:Mi4xemV3ZkR3QUFBQUFBOEJFN19uN0FHU1lBQUFCZ0FsVk5KNkpvYVFCQlUzLUlBR3dQNGcwQkhEOWNXcmsyZ0VFZnJB|55035f8a3b883e94b09b952267d56c00a1a59a98cc43712feb238eb4056739b8; q_c1=e3e3832501fe4a17ba8bf7b5b47f6e60|1752912935000|1752912935000; __zse_ck=004_9njDuYcKusVXiMuD5SZ7LomPNAudnA3idCp0Ig/GY0=5gYSDmi0TNqJ7FjyXoqYArffzF1BhUy=GuO4ecVqJEGHl8QUnfJi3U5WYI/Y1QFhwF7Gz7I7xqjnm05LC1vY2-1G/2qpHnazSH76s+360GqWHjozS9rp18hQPVk+DOgjdq/n5leUgxJ+237tPuguqC5x1a1EjhuQ/RyoAp0+8lSPskVcy16jac+kELW9lwJayh1jscDZfo7NsPnlZfJUWL; gdxidpyhxdE=tdTqBn8olmH5j1Mvzgb2xuBP1JV%5CEOlNCeWjTWLag7PU1kAgwZc0iYoJNXHP4pesZ9c6pt6sCy9XvWRvcCih4H3wlMve85vPDsuwZGH0niB0eBEbOdwyCMBakjZYqhkOUjVurq3zUjP5bbW9MM0av5%2Fc9lNsShTacGcfNJ14hrRJYUyE%3A1752924069740; tst=h; SESSIONID=g7XUl1IInUF9AXT8Qhzu67qCg6YIsGbsJhzvVkXxO1E; JOID=V1kQAE26VE5LfxtUC7zz1qk37Fgd2WcQGxAuGUTXBQx0O0AEN73oNiV4G1YISQCL874KJt7dAvWPk3H3dDUAq3I=; osd=W1kVBkq2VEtNeBdUDrr02qky6l8R2WIWHBwuHELQCQxxPUcIN7juMSl4HlAPRQCO9bkGJtvbBfmPlnfweDUFrXU=; Hm_lpvt_98beee57fd2ef70ccdd5ca52b9740c49=1752950198; BEC=5ee33e0856ed13c879689106c041a08d"
+
+def parse_zhihu_hot_list(html_content):
+    """
+    解析知乎热榜的HTML文件，并提取出问题、描述、图片、热度等信息。
+
+    :param html_file_path: 包含知乎热榜内容的HTML文件路径。
+    :return: 一个包含解析后数据的列表，每个元素是一个字典，代表一个热榜条目。
+    """
+    soup = BeautifulSoup(html_content, 'lxml')
+
+    # 存储所有解析出的热榜条目
+    parsed_data = []
+
+    # 定位到包含所有热榜条目的主容器
+    hot_list_container = soup.find('div', class_='HotList-list')
+    if not hot_list_container:
+        print("错误: 未能找到热榜列表容器。HTML结构可能已更改。")
+        return []
+
+    # 找到所有的热榜条目，每个条目都是一个<section>标签
+    hot_items = hot_list_container.find_all('section', class_='HotItem')
+
+    for item in hot_items:
+        # 初始化一个字典来存储当前条目的信息
+        item_data = {}
+
+        # --- 提取排名 ---
+        rank_tag = item.find('div', class_='HotItem-rank')
+        item_data['rank'] = rank_tag.text.strip() if rank_tag else 'N/A'
+
+        # --- 提取标签（如“新”） ---
+        label_tag = item.find('div', class_='HotItem-label')
+        item_data['label'] = label_tag.text.strip() if label_tag else 'N/A'
+
+        # --- 提取内容容器 ---
+        content_container = item.find('div', class_='HotItem-content')
+        if content_container:
+            # --- 提取问题标题 ---
+            title_tag = content_container.find('h2', class_='HotItem-title')
+            item_data['title'] = title_tag.text.strip() if title_tag else 'N/A'
+
+            # --- 提取问题描述/摘要 ---
+            excerpt_tag = content_container.find('p', class_='HotItem-excerpt')
+            item_data['excerpt'] = excerpt_tag.text.strip() if excerpt_tag else ''
+
+            # --- 提取链接 ---
+            link_tag = content_container.find('a')
+            item_data['link'] = link_tag['href'] if link_tag else 'N/A'
+
+            # --- 提取热度信息 ---
+            metrics_tag = content_container.find('div', class_='HotItem-metrics')
+            item_data['metrics'] = metrics_tag.text.strip().replace('​', '') if metrics_tag else 'N/A'
+
+        # --- 提取图片链接 ---
+        image_link_tag = item.find('a', class_='HotItem-img')
+        if image_link_tag:
+            image_tag = image_link_tag.find('img')
+            item_data['image_url'] = image_tag['src'] if image_tag and image_tag.has_attr('src') else 'N/A'
+        else:
+            item_data['image_url'] = 'N/A'
+
+        parsed_data.append(item_data)
+
+    return parsed_data
 
 def fetch_zhihu_hot(cookie_string: str = None):
     """
@@ -42,26 +107,21 @@ def fetch_zhihu_hot(cookie_string: str = None):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
     }
 
-    # 解析 cookie 字符串为字典
     cookies = parse_cookie_string(cookie_string)
 
-    # 使用 Session 对象可以自动处理 cookies
     session = requests.Session()
 
     try:
         # 发送 GET 请求，这次带上了 cookies 参数
         response = session.get(url, headers=headers, cookies=cookies)
 
-        # 检查请求是否成功 (状态码 2xx)
         response.raise_for_status()
 
         print("请求成功!")
         print(f"状态码: {response.status_code}")
-        # 打印响应内容的前500个字符以作验证
-        print("响应内容 (前500字符):")
-        print(response.text[:500])
+        hot_list_data = parse_zhihu_hot_list(response.text)
 
-        return response
+        return hot_list_data
 
     except requests.exceptions.RequestException as e:
         print(f"请求失败: {e}")
@@ -121,7 +181,8 @@ def fetch_zhihu_answer_comments(answer_id: str, limit: int = 100) -> List[Dict]:
                 if not comments_data:
                     print("信息：API未返回更多评论数据，已获取全部内容。")
                     break
-
+                for comment in comments_data:
+                    comment['content_format'] = parse_content(comment.get('content', ''))
                 all_comments.extend(comments_data)
                 print(f"成功获取 {len(comments_data)} 条评论，当前总数: {len(all_comments)}")
 
@@ -153,6 +214,59 @@ def fetch_zhihu_answer_comments(answer_id: str, limit: int = 100) -> List[Dict]:
     return all_comments[:limit]
 
 
+def parse_content(html_string: str):
+    """
+    解析包含文本、媒体或纯文本的字符串，按顺序提取内容。
+    V2版本特性:
+    - 正确处理 <br> 标签，将其转换成换行符。
+    - 能够处理不含任何HTML标签的纯文本输入。
+    - 更加健壮，能处理标签与纯文本混合的情况。
+    """
+    # 如果输入为空或仅包含空白，直接返回空列表
+    if not html_string or not html_string.strip():
+        return []
+
+    soup = BeautifulSoup(html_string, 'html.parser')
+    results = []
+
+    # 遍历所有顶层子元素，可能是标签(Tag)也可能是纯文本(NavigableString)
+    for element in soup.children:
+        # --- 情况1: 元素是一个HTML标签 ---
+        if isinstance(element, Tag):
+            # --- 处理文本段落 <p> ---
+            if element.name == 'p':
+                # 使用 separator='\n' 来保留 <br> 带来的换行
+                text = element.get_text(separator='\n', strip=True)
+                if text:
+                    results.append({
+                        'type': 'text',
+                        'content': text
+                    })
+
+            # --- 处理媒体 <figure> ---
+            elif element.name == 'figure':
+                img_tag = element.find('img')
+                if img_tag:
+                    url = img_tag.get('data-original') or img_tag.get('data-actualsrc') or img_tag.get('src')
+                    if url and 'data:image/svg+xml' not in url:  # 过滤掉占位符SVG
+                        media_type = 'gif' if url.lower().endswith('.gif') else 'image'
+                        results.append({
+                            'type': media_type,
+                            'url': url
+                        })
+                # 此处可以继续添加对 video 等其他标签的处理
+
+        # --- 情况2: 元素是纯文本字符串 ---
+        elif isinstance(element, NavigableString):
+            text = str(element).strip()
+            if text:
+                results.append({
+                    'type': 'text',
+                    'content': text
+                })
+
+    return results
+
 # --- 同步获取问题回答并补充评论 ---
 def fetch_question_answers(question_id: str, output_filename: str, desired_answers: int = 5, max_no_increase: int = 3):
     print(f"--- 目标问题ID: {question_id}, 期望获取 {desired_answers} 个回答 ---")
@@ -161,7 +275,7 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
-            headless=True,
+            headless=False,
             args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-infobars"],
             slow_mo=50
         )
@@ -252,6 +366,7 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
             print(f"警告: 跳过无效回答数据: {answer}")
             continue
         comments = fetch_zhihu_answer_comments(answer_id, limit=50)
+        answer['content_format'] = parse_content(answer.get('content', ''))
         answer["comments"] = comments
         print(f"回答ID {answer_id} 的评论数量: {len(comments)}")
     save_json(output_filename, final_data)
@@ -259,5 +374,10 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
 
 if __name__ == "__main__":
-    question_id = "1929972027688707067"
+    question_id = "1930024551430976353"
     fetch_question_answers(question_id, f"zhihu_answers_{question_id}.json", desired_answers=10)
+    # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
+    #
+    # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:
+    #     json.dump(hot_list_data, f, ensure_ascii=False, indent=4)
+    # print("结果已保存到 zhihu_hot_list.json 文件中。")

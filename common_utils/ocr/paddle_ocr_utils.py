@@ -539,7 +539,7 @@ def find_overall_subtitle_box_target_number(
     ymax = int(all_pts[:,1].max())
     height = ymax - ymin
     # 高度限制：不能超过视频高度的10%
-    if height > video_height * 0.15:
+    if height > video_height * 0.2:
         print(f"错误: 计算到的字幕框高度 {height}px 超过视频高度的 10% ({int(video_height*0.1)}px)。 {good_boxes}")
         return None
 
