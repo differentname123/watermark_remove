@@ -254,7 +254,15 @@ def parse_content(html_string: str):
                             'type': media_type,
                             'url': url
                         })
-                # 此处可以继续添加对 video 等其他标签的处理
+            elif element.name == 'a':
+                text = element.get_text(strip=True)
+                href = element.get('href')
+                if text and href:
+                    results.append({
+                        'type': 'link',
+                        'content': text,
+                        'url': href
+                    })
 
         # --- 情况2: 元素是纯文本字符串 ---
         elif isinstance(element, NavigableString):
@@ -275,7 +283,7 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
-            headless=False,
+            headless=True,
             args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-infobars"],
             slow_mo=50
         )
@@ -321,6 +329,9 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
             if script_tag:
                 json_data_str = script_tag.inner_text()
                 initial_data = json.loads(json_data_str)
+                questions = initial_data.get('initialState', {}).get('entities', {}).get('questions', {}).get(question_id, {})
+                questions['detail_format'] = parse_content(questions.get('detail', ''))
+
                 initial_answers = initial_data.get('initialState', {}).get('entities', {}).get('answers', {})
                 if initial_answers:
                     all_answers_data.extend(initial_answers.values())
@@ -356,7 +367,8 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
     print(f"\n--- 抓取完成，共捕获 {len(all_answers_data)} 条回答数据 ---")
     final_data = all_answers_data[:desired_answers]
-    save_json(output_filename, final_data)
+    real_final_result = {'question': questions, 'answers': final_data}
+    save_json(output_filename, real_final_result)
     print(f"原始API响应数据已保存至文件: {output_filename}")
 
     print(f"\n--- 开始补充评论信息获取 ---")
@@ -369,13 +381,14 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
         answer['content_format'] = parse_content(answer.get('content', ''))
         answer["comments"] = comments
         print(f"回答ID {answer_id} 的评论数量: {len(comments)}")
-    save_json(output_filename, final_data)
+    real_final_result = {'question': questions, 'answers': final_data}
+    save_json(output_filename, real_final_result)
     print(f"最终结果已保存至文件: {output_filename}")
 
 
 if __name__ == "__main__":
     question_id = "1930024551430976353"
-    fetch_question_answers(question_id, f"zhihu_answers_{question_id}.json", desired_answers=10)
+    fetch_question_answers(question_id, f"zhihu_answers_{question_id}.json", desired_answers=5)
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
     #
     # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:
