@@ -1,4 +1,6 @@
 import json
+import os
+import pathlib
 import random
 import time
 from bs4 import BeautifulSoup, Tag, NavigableString
@@ -7,7 +9,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 import requests
 from typing import List, Dict
 
-from common_utils.common_utils import save_json
+from common_utils.common_utils import save_json, download_public_image
 
 # --- 配置区域 ---
 AUTH_FILE = "zhihu_auth_state.json"
@@ -275,6 +277,58 @@ def parse_content(html_string: str):
 
     return results
 
+def download_image(real_final_result):
+    # 获取question的detail_format字段
+    question = real_final_result.get('question', {})
+    question_detail = question.get('detail_format', [])
+    question_id = question.get('id', 'unknown')
+    image_dir = question_id
+    if not os.path.exists(image_dir):
+        os.makedirs(image_dir)
+    count = 0
+    # 找到类型为'image'的内容
+    for item in question_detail:
+        if item.get('type') == 'image':
+            count += 1
+            image_url = item.get('url')
+            if image_url:
+                base_name = f"question_image_{question_id}_{count}.jpg"
+                save_path = os.path.join(image_dir, base_name)
+                save_path = pathlib.Path(save_path)
+                if os.path.exists(save_path):
+                    print(f"文件已存在，跳过下载: {save_path}")
+                else:
+                    download_public_image(image_url, save_path)
+                if os.path.exists(save_path):
+                    item['image_abs_path'] = str(save_path.resolve())
+                    item['image_path'] = base_name
+
+    # 获取answers的content_format字段
+    answers = real_final_result.get('answers', [])
+    for answer in answers:
+        content_format = answer.get('content_format', [])
+        if not content_format:
+            continue
+        count = 0
+        for item in content_format:
+            if item.get('type') == 'image':
+                count += 1
+                image_url = item.get('url')
+                if image_url:
+                    base_name = f"answer_image_{answer.get('id', 'unknown')}_{count}.jpg"
+                    save_path = os.path.join(image_dir, base_name)
+                    save_path = pathlib.Path(save_path)
+                    if os.path.exists(save_path):
+                        print(f"文件已存在，跳过下载: {save_path}")
+                    else:
+                        download_public_image(image_url, save_path)
+                    if os.path.exists(save_path):
+                        item['image_abs_path'] = str(save_path.resolve())
+                        item['image_path'] = base_name
+    return real_final_result
+
+
+
 # --- 同步获取问题回答并补充评论 ---
 def fetch_question_answers(question_id: str, output_filename: str, desired_answers: int = 5, max_no_increase: int = 3):
     print(f"--- 目标问题ID: {question_id}, 期望获取 {desired_answers} 个回答 ---")
@@ -384,12 +438,15 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
         print(f"回答ID {answer_id} 的评论数量: {len(comments)}")
     real_final_result = {'question': questions, 'answers': final_data}
     save_json(output_filename, real_final_result)
+
+    real_final_result = download_image(real_final_result)
+    save_json(output_filename, real_final_result)
     print(f"最终结果已保存至文件: {output_filename}")
 
 
 if __name__ == "__main__":
     question_id = "1929871927457080536"
-    fetch_question_answers(question_id, f"zhihu_answers_{question_id}.json", desired_answers=3)
+    fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=20)
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
     #
     # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:
