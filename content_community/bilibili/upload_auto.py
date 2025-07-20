@@ -56,7 +56,7 @@ qiqi_BILI_JCT = get_config("qiqi_bilibili_csrf_token")
 qiqi_total_cookie = get_config("qiqi_bilibili_total_cookie")
 config_map['qiqi'] = (qiqi_SESSDATA, qiqi_BILI_JCT, qiqi_total_cookie)
 
-
+error_user_map = {}
 from content_community.bilibili.bilibili_uploader import upload_to_bilibili, fetch_bili_topics
 
 # ---------- 文件路径常量 ----------
@@ -216,6 +216,10 @@ def auto_upload():
         # ---------- 数据合法性检查 ----------
         metadata = value.get('metadata')
         userName = value.get('userName', 'other')
+        if userName in error_user_map:
+            print(f"⚠️ 跳过 {userName} 用户上传：之前上传失败，错误信息：{error_user_map[userName]}")
+            error_count += 1
+            continue
         if userName not in config_map.keys():
             print(f"⚠️ 跳过 {userName} 用户上传 请检查配置数据。")
             error_count += 1
@@ -404,6 +408,7 @@ def auto_upload():
             new_uploads_made = True
         else:
             err = result.get("message", "未知错误") if isinstance(result, dict) else str(result)
+            error_user_map[userName] = err
             print(f"❌ 投稿失败：{err}")
 
         # 3. 如有新成功上传，则更新日志文件
