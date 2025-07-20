@@ -363,6 +363,7 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
             page.screenshot(path="error_screenshot.png", full_page=True)
             print("已保存错误截图至 error_screenshot.png")
         finally:
+            page.remove_listener("response", handle_response)
             browser.close()
 
     print(f"\n--- 抓取完成，共捕获 {len(all_answers_data)} 条回答数据 ---")
@@ -387,8 +388,8 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
 
 if __name__ == "__main__":
-    question_id = "1930024551430976353"
-    fetch_question_answers(question_id, f"zhihu_answers_{question_id}.json", desired_answers=5)
+    question_id = "1929871927457080536"
+    fetch_question_answers(question_id, f"zhihu_answers_{question_id}.json", desired_answers=3)
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
     #
     # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:
