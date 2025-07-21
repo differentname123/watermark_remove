@@ -1102,25 +1102,25 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     owner_commenter = commenter_map.get(uid, None)
     other_commenters = [c for k, c in commenter_map.items() if k != uid]
     share_video = hudong_info.get("share_video", False)
-    triple_like_video = hudong_info.get("triple_like_video", False)
-    if not share_video or not  triple_like_video:
-        for commenter in commenter_map.values():
-            share_success = commenter.share_video(bvid=bvid)
-            if share_success:
-                share_video = True
-                print("分享操作流程成功完成！")
-            else:
-                print("分享操作流程失败。")
-            print("步骤 6: 尝试对视频进行一键三连...")
-            triple_like_success = commenter.triple_like_video(bvid=bvid)
-            if triple_like_success:
-                triple_like_video = True
-                print("一键三连操作流程成功完成！")
-            else:
-                print("一键三连操作流程失败。")
-
-    hudong_info['share_video'] = share_video
-    hudong_info['triple_like_video'] = triple_like_video
+    # triple_like_video = hudong_info.get("triple_like_video", False)
+    # if not share_video or not  triple_like_video:
+    #     for commenter in commenter_map.values():
+    #         share_success = commenter.share_video(bvid=bvid)
+    #         if share_success:
+    #             share_video = True
+    #             print("分享操作流程成功完成！")
+    #         else:
+    #             print("分享操作流程失败。")
+    #         print("步骤 6: 尝试对视频进行一键三连...")
+    #         triple_like_success = commenter.triple_like_video(bvid=bvid)
+    #         if triple_like_success:
+    #             triple_like_video = True
+    #             print("一键三连操作流程成功完成！")
+    #         else:
+    #             print("一键三连操作流程失败。")
+    #
+    # hudong_info['share_video'] = share_video
+    # hudong_info['triple_like_video'] = triple_like_video
 
     owner_danmu_list = hudong_info.get('owner_danmu', [])
     owner_danmu_used_list = hudong_info.get('owner_danmu_used', [])
@@ -1261,11 +1261,11 @@ def init_config():
     config_map['1639172564'] = {"name": "mama", "SESSDATA": mama_SESSDATA, "BILI_JCT": mama_BILI_JCT,
                                 "total_cookie": mama_total_cookie}
 
-    # ruru_SESSDATA = get_config("ruru_bilibili_sessdata_cookie")  # 可选。小姑姑账号的 SESSDATA cookie 值。
-    # ruru_BILI_JCT = get_config("ruru_bilibili_csrf_token")
-    # ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
-    # config_map['1223805908'] = {"name": "ruru", "SESSDATA": ruru_SESSDATA, "BILI_JCT": ruru_BILI_JCT,
-    #                             "total_cookie": ruru_total_cookie}
+    ruru_SESSDATA = get_config("ruru_bilibili_sessdata_cookie")  # 可选。小姑姑账号的 SESSDATA cookie 值。
+    ruru_BILI_JCT = get_config("ruru_bilibili_csrf_token")
+    ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
+    config_map['1223805908'] = {"name": "ruru", "SESSDATA": ruru_SESSDATA, "BILI_JCT": ruru_BILI_JCT,
+                                "total_cookie": ruru_total_cookie}
 
     nana_SESSDATA = get_config("nana_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
     nana_BILI_JCT = get_config("nana_bilibili_csrf_token")

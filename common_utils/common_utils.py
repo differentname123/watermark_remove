@@ -895,17 +895,20 @@ def read_json(json_path):
         except json.JSONDecodeError as e:
             raise ValueError(f"无法解析 JSON 文件 '{json_path}': {e}")
 
+
 def save_json(json_path, data):
     """
-    将数据保存为 JSON 文件。
+    将数据保存为 JSON 文件。如果路径不存在则自动创建。
 
     Args:
         json_path (str): 要保存的 JSON 文件路径。
         data (dict): 要保存的数据。
     """
+    # 确保目录存在
+    os.makedirs(os.path.dirname(json_path), exist_ok=True)
+
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
-
 
 
 def fill_time_gaps(

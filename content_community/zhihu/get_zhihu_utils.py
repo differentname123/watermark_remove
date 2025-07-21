@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import pathlib
@@ -9,7 +10,8 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 import requests
 from typing import List, Dict
 
-from common_utils.common_utils import save_json, download_public_image
+from LLM.gemini import analyze_images_gemini
+from common_utils.common_utils import save_json, download_public_image, read_json, string_to_object
 
 # --- 配置区域 ---
 AUTH_FILE = "zhihu_auth_state.json"
@@ -40,7 +42,8 @@ def process_content_format(content_list: list) -> list:
             if image_path:
                 temp_list.append({
                     "type": "image",
-                    "image_name": image_path
+                    "image_name": image_path,
+                    "image_path": item.get("image_abs_path", None)
                 })
 
     if not temp_list:
@@ -271,6 +274,7 @@ def parse_zhihu_hot_list(html_content):
 
     return parsed_data
 
+
 def fetch_zhihu_hot(cookie_string: str = None):
     """
     严格复制指定的 fetch 请求，以获取知乎热榜页面。
@@ -315,6 +319,7 @@ def fetch_zhihu_hot(cookie_string: str = None):
     except requests.exceptions.RequestException as e:
         print(f"请求失败: {e}")
         return None
+
 
 def parse_cookie_string(cookie_string: str) -> Dict[str, str]:
     """将浏览器Cookie字符串解析成字典格式。"""
@@ -464,6 +469,7 @@ def parse_content(html_string: str):
 
     return results
 
+
 def download_image(real_final_result):
     # 获取question的detail_format字段
     question = real_final_result.get('question', {})
@@ -514,28 +520,103 @@ def download_image(real_final_result):
                         item['image_path'] = base_name
     return real_final_result
 
+
 def add_image_desc(real_final_result):
     """
     为问题和回答中的图片添加描述信息。
     目前仅为图片添加了占位符描述，实际应用中可以根据具体内容进行更详细的描述。
     """
-    real_final_result_copy = real_final_result.copy()
+    image_info_list = []
+    real_final_result_copy = copy.deepcopy(real_final_result)
     # 去除real_final_result_copy中的answers在的comments
     for answer in real_final_result_copy.get('answers', []):
         answer.pop('comments', None)
-    question = real_final_result.get('question', {})
-    question_detail = question.get('detail_format', [])
+    question_detail = real_final_result.get('question_description', {})
 
     for item in question_detail:
         if item.get('type') == 'image':
-            item['description'] = "这是一个图片"
+            image_info_list.append(item['image_path'])
 
     answers = real_final_result.get('answers', [])
     for answer in answers:
-        content_format = answer.get('content_format', [])
+        content_format = answer.get('content', [])
         for item in content_format:
             if item.get('type') == 'image':
-                item['description'] = "这是一个回答中的图片"
+                image_info_list.append(item['image_path'])
+
+    if not image_info_list:
+        return real_final_result
+
+    prompt = """
+            你是一位精通多模态分析和视频脚本策划的AI专家。你的任务是接收一个包含文本上下文的JSON文件和一系列对应的图片文件，为每一张图片生成一段深度结合其视觉内容与文本上下文的、可用于视频制作的结构化描述。
+
+            我将为你提供两部分核心输入：
+            一个完整的JSON对象：其中包含了所有图文的排版结构和文字内容。
+            一系列实际的图片文件：这些图片的文件名与JSON中的image_name一一对应。
+
+            你的分析必须同时基于这两部分输入进行。
+            我将提供给你一个完整的JSON对象，该对象完整记录了一段知乎问答的所有内容，其结构如下：
+            - 它包含`question_title`, `question_description`等顶层字段。
+            - question_description和每个answer的content字段都是一个数组，由"type": "text"和"type": "image"的对象交错组成。这个顺序精准地反映了原文的图文排版。
+
+            **你的任务是：**
+
+            1.  **解析完整数据**：接收并理解我提供的整个JSON对象。
+            2.  **自动定位与关联**：
+                * 先根据我上传的图片名称一一定位json数据中`type`为`image`的对象。
+                * 对于你找到的**每一张图片**，自动从找到图片的上下文，也就是上一个type为`text`的对象和下一个type为`text`的对象中提取相关信息。如果图片是数组的第一个元素，则其‘前文’为空；如果它是最后一个元素，则其‘后文’为空。
+            3.  **批量生成描述**：
+                * 结合每张图片的**直接上下文**以及该回答的**整体论点**。
+                * 逐一生成描述: 对定位到的每一张图片，运用以下“三步分析法”生成其描述：
+                  第一步：客观画面分析: 详细客观说明图片的基本内容和类型（如网页截图、数据图表、新闻配图、表情包等）。
+                  第二步：上下文功能解读: 结合你提取的上下文文字，分析这张图片在此处的核心作用。它是在为上文观点提供证据、补充信息、进行讽刺/调侃，还是用于视觉总结或情感渲染？揭示作者放置这张图片的意图。
+                  第三步：生成最终描述: 将前两步的分析融合成一段精炼、流畅的综合描述。这段描述必须能直接指导视频创作者，让他们明白“画面是什么”以及“为什么要在解说词的这个节点插入这个画面”。
+            4.  **整合输出**：
+                * 请只返回一个纯粹的JSON对象，不要包含任何额外的欢迎语、解释或总结。
+                * 这个JSON对象的键 (key) 必须是图片的名称 (image_name)。
+                * 这个JSON对象的值 (value) 必须是按照上述规则为该图片生成的最终综合描述。
+                * 结果中需要包含所有在输入数据中找到的图片及其描述。
+
+            **下面是你需要处理的完整JSON数据：**
+    """
+    prompt = f'{prompt}\n{real_final_result_copy}'
+    print("--- 开始分析图片内容 --- 图片数量:", len(image_info_list))
+
+    MAX_RETRIES = 3
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            raw = analyze_images_gemini(
+                prompt=prompt,
+                image_paths=image_info_list
+            )
+            image_analysis_result = string_to_object(raw)
+
+            if len(image_analysis_result) == len(image_info_list):
+                break  # 成功匹配，退出重试循环
+            else:
+                print(f"[尝试 {attempt}] 分析结果数量与图片数量不一致，重试中...")
+        except Exception as e:
+            print(f"[尝试 {attempt}] 出现异常：{e}，重试中...")
+
+    else:
+        raise ValueError("重试3次后仍无法获得正确数量的分析结果")
+
+    for item in real_final_result.get('question_description', []):
+        if item.get('type') == 'image':
+            image_name = item['image_name']
+            desc = image_analysis_result.get(image_name, "")
+            if desc:
+                item['image_desc'] = desc
+
+    # 更新 answers 中的 content
+    for answer in real_final_result.get('answers', []):
+        for item in answer.get('content', []):
+            if item.get('type') == 'image':
+                image_name = item['image_name']
+                desc = image_analysis_result.get(image_name, "")
+                if desc:
+                    item['image_desc'] = desc
 
     return real_final_result
 
@@ -594,7 +675,8 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
             if script_tag:
                 json_data_str = script_tag.inner_text()
                 initial_data = json.loads(json_data_str)
-                questions = initial_data.get('initialState', {}).get('entities', {}).get('questions', {}).get(question_id, {})
+                questions = initial_data.get('initialState', {}).get('entities', {}).get('questions', {}).get(
+                    question_id, {})
                 questions['detail_format'] = parse_content(questions.get('detail', ''))
 
                 initial_answers = initial_data.get('initialState', {}).get('entities', {}).get('answers', {})
@@ -649,23 +731,29 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
         print(f"回答ID {answer_id} 的评论数量: {len(comments)}")
     real_final_result = {'question': questions, 'answers': final_data}
     save_json(output_filename, real_final_result)
+    print(f"回答评论数据已保存至文件: {output_filename}")
 
     real_final_result = download_image(real_final_result)
     save_json(output_filename, real_final_result)
+    print(f"图片已下载并更新至文件: {output_filename}")
     video_script_data = transform_zhihu_to_video_script(
         output_filename,
         comment_upvote_threshold=10
     )
-    save_json(output_filename, video_script_data)
-
-    print(f"最终结果已保存至文件: {output_filename}")
+    real_final_result = add_image_desc(video_script_data)
+    save_json(output_filename, real_final_result)
+    print(f"带图片描述结果保存至文件: {output_filename}")
 
 
 if __name__ == "__main__":
     question_id = "1929871927457080536"
     fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=20)
+
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
-    #
     # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:
     #     json.dump(hot_list_data, f, ensure_ascii=False, indent=4)
     # print("结果已保存到 zhihu_hot_list.json 文件中。")
+
+    # output_file = f"{question_id}/zhihu_answers_{question_id}.json"
+    # real_final_result = read_json(output_file)
+    # add_image_desc(real_final_result)
