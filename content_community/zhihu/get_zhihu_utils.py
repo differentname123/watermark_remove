@@ -20,6 +20,194 @@ USER_AGENT = (
 )
 ZHIHU_COOKIE_STRING = "_xsrf=EGbVA6NHTaM3dXlCMEiWj9aRBvWl4inW; _zap=34c3bc6c-ebae-4e0d-9a06-5bfb7b8a9548; d_c0=APARO_5-wBmPTvibmi_6NacNH42miN-ERZY=|1735194921; Hm_lvt_98beee57fd2ef70ccdd5ca52b9740c49=1752912686; HMACCOUNT=14EFD85132347319; DATE=1752912688356; crystal=U2FsdGVkX19HZsSWXHhQvCmTy0IhrzSuQUWjAmBNS9sgZFRn8/yuh3qnHWWPtqhs6Fx+lpP4dATHFISdyemFNM4nXvmwy0g7ICamPZ7CB/IU+sI4WwbiZS83jULObdwxNXvxwM1lrWOA06h6rgMPFiBn+qiMLtZXpkprUsDW2FNS69MOpODrf6kUIyRL/QXg9IJ08veQmhzEr8G7YQHsdz07b0Wmj/50nQPJAtdug/kh+RlGpYjjx8ALS6jGD2Gq; __snaker__id=RQbe8vWX2MrZo7OW; cmci9xde=U2FsdGVkX184glWsyX1mezYXZa3qDzIhjRBe9TQQVEY+LLFTFMDXP9nSs9RkgMzxPSZtU4lOrgeYZefNb02KEA==; pmck9xge=U2FsdGVkX1/T3lTFMBSW1MNHTt55yQ7uWCI2fzMhaBs=; assva6=U2FsdGVkX1803CTSuJgB3mtcX8vMBRJ4mrNXHxoktsA=; assva5=U2FsdGVkX18s7ilkblADh/oGQosbZLgtP7rzonbhC4T0Gf8YWm1GZf8atIJSu1QVH69xU8U+rNeMHgJRf8dEEQ==; vmce9xdq=U2FsdGVkX1+9L5kRV9p5NPBm2ZFxevxsXB601UTW1lO8oB1sywbxX35uCVgDtPFrCRoAhGz6Qw95IDt5HxZKgRgHcwII5jsliZ9AEeEMx0QyMg0NlFbFg2/No39rs8FcREB1wxx4Hg7ZLGq+HBSZ6UbnPSt1xTw3YsTv3I27GXM=; z_c0=2|1:0|10:1752912935|4:z_c0|92:Mi4xemV3ZkR3QUFBQUFBOEJFN19uN0FHU1lBQUFCZ0FsVk5KNkpvYVFCQlUzLUlBR3dQNGcwQkhEOWNXcmsyZ0VFZnJB|55035f8a3b883e94b09b952267d56c00a1a59a98cc43712feb238eb4056739b8; q_c1=e3e3832501fe4a17ba8bf7b5b47f6e60|1752912935000|1752912935000; __zse_ck=004_9njDuYcKusVXiMuD5SZ7LomPNAudnA3idCp0Ig/GY0=5gYSDmi0TNqJ7FjyXoqYArffzF1BhUy=GuO4ecVqJEGHl8QUnfJi3U5WYI/Y1QFhwF7Gz7I7xqjnm05LC1vY2-1G/2qpHnazSH76s+360GqWHjozS9rp18hQPVk+DOgjdq/n5leUgxJ+237tPuguqC5x1a1EjhuQ/RyoAp0+8lSPskVcy16jac+kELW9lwJayh1jscDZfo7NsPnlZfJUWL; gdxidpyhxdE=tdTqBn8olmH5j1Mvzgb2xuBP1JV%5CEOlNCeWjTWLag7PU1kAgwZc0iYoJNXHP4pesZ9c6pt6sCy9XvWRvcCih4H3wlMve85vPDsuwZGH0niB0eBEbOdwyCMBakjZYqhkOUjVurq3zUjP5bbW9MM0av5%2Fc9lNsShTacGcfNJ14hrRJYUyE%3A1752924069740; tst=h; SESSIONID=g7XUl1IInUF9AXT8Qhzu67qCg6YIsGbsJhzvVkXxO1E; JOID=V1kQAE26VE5LfxtUC7zz1qk37Fgd2WcQGxAuGUTXBQx0O0AEN73oNiV4G1YISQCL874KJt7dAvWPk3H3dDUAq3I=; osd=W1kVBkq2VEtNeBdUDrr02qky6l8R2WIWHBwuHELQCQxxPUcIN7juMSl4HlAPRQCO9bkGJtvbBfmPlnfweDUFrXU=; Hm_lpvt_98beee57fd2ef70ccdd5ca52b9740c49=1752950198; BEC=5ee33e0856ed13c879689106c041a08d"
 
+
+def process_content_format(content_list: list) -> list:
+    """
+    通用函数，处理 _format 结尾的列表，并合并连续的同类型内容。
+    """
+    if not content_list:
+        return []
+
+    temp_list = []
+    for item in content_list:
+        item_type = item.get("type")
+        if item_type == "text":
+            content_value = item.get("content", "").strip()
+            if content_value:
+                temp_list.append({"type": "text", "value": content_value})
+        elif item_type == "image":
+            image_path = item.get("image_path", None)
+            if image_path:
+                temp_list.append({
+                    "type": "image",
+                    "image_name": image_path
+                })
+
+    if not temp_list:
+        return []
+
+    # 合并逻辑
+    # 从第一个元素开始
+    merged_list = [temp_list[0]]
+    for i in range(1, len(temp_list)):
+        current_item = temp_list[i]
+        last_item_in_merged = merged_list[-1]
+
+        # 检查当前项是否与合并列表中的最后一项类型相同
+        if current_item["type"] == last_item_in_merged["type"] and current_item["type"] == "text":
+            # 如果是连续的文本，则合并内容
+            last_item_in_merged["value"] += "\n\n" + current_item["value"]
+        else:
+            # 如果类型不同，或不是文本类型，直接添加
+            merged_list.append(current_item)
+
+    return merged_list
+
+
+def process_comments_nested(comments_data: list, upvote_threshold: int = 10) -> list:
+    """
+    处理评论列表，根据回复关系和时间戳构建嵌套结构，并过滤低赞评论。
+
+    Args:
+        comments_data (list): 原始评论数据列表。
+        upvote_threshold (int): 评论被包含所需的最低点赞数。
+    """
+    if not comments_data:
+        return []
+
+    # Pass 1: 创建所有评论的映射，并为作者建立时间戳索引
+    comment_map = {}
+    author_map = {}
+
+    # *** 新增：先过滤低赞评论 ***
+    # 只有点赞数达到阈值的评论才会被处理
+    filtered_comments_data = [
+        c for c in comments_data if c.get("vote_count", 0) >= upvote_threshold
+    ]
+
+    for i, comment_raw in enumerate(filtered_comments_data):
+        author_info = comment_raw.get("author", {}).get("member", {})
+        author_name = author_info.get("name", "匿名用户")
+        comment_id_str = f"{comment_raw.get('id')}"
+        created_time = comment_raw.get("created_time")
+
+        text_parts = [
+            part.get("content", "")
+            for part in comment_raw.get("content_format", []) if part.get("type") == "text"
+        ]
+        comment_text = "".join(text_parts).strip()
+        if not comment_text:
+            continue
+
+        processed_comment = {
+            "comment_id": comment_id_str,
+            "author": author_name,
+            "upvotes": comment_raw.get("vote_count", 0),
+            "text": comment_text,
+            "replies": [],
+            "_created_time": created_time,
+            "_is_child": False
+        }
+
+        reply_to = comment_raw.get("reply_to_author")
+        if reply_to and reply_to.get("member"):
+            processed_comment["reply_to_author"] = reply_to["member"].get("name", "未知用户")
+
+        comment_map[comment_id_str] = processed_comment
+
+        if author_name not in author_map:
+            author_map[author_name] = []
+        author_map[author_name].append({"id": comment_id_str, "time": created_time})
+
+    # Pass 2: 建立父子关系
+    for comment_id, comment in comment_map.items():
+        if "reply_to_author" in comment:
+            reply_to_name = comment["reply_to_author"]
+
+            if reply_to_name in author_map:
+                potential_parents = author_map[reply_to_name]
+                valid_parents = [
+                    p for p in potential_parents if p["time"] < comment["_created_time"]
+                ]
+
+                if valid_parents:
+                    parent = max(valid_parents, key=lambda p: p["time"])
+                    parent_comment = comment_map.get(parent["id"])
+                    # 确保父评论在过滤后仍然存在
+                    if parent_comment:
+                        parent_comment["replies"].append(comment)
+                        comment["_is_child"] = True
+
+    # Pass 3: 筛选顶级评论并按时间排序
+    root_comments = [
+        comment for comment in comment_map.values() if not comment["_is_child"]
+    ]
+    root_comments.sort(key=lambda c: c["_created_time"])
+
+    # Pass 4: 递归清理临时键并排序
+    def cleanup_and_sort_replies(comments_list):
+        for comment in comments_list:
+            if "_created_time" in comment:
+                del comment["_created_time"]
+            if "_is_child" in comment:
+                del comment["_is_child"]
+            if comment["replies"]:
+                comment["replies"].sort(key=lambda r: r.get("_created_time", 0))
+                cleanup_and_sort_replies(comment["replies"])
+
+    cleanup_and_sort_replies(root_comments)
+
+    return root_comments
+
+
+def transform_zhihu_to_video_script(
+        input_json_path: str,
+        comment_upvote_threshold: int = 10
+) -> dict:
+    """
+    将知乎问答JSON文件转换为视频文案脚本格式。
+
+    Args:
+        input_json_path (str): 输入的知乎JSON文件路径。
+        comment_upvote_threshold (int): 评论被包含所需的最低点赞数。
+    """
+    try:
+        with open(input_json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print(f"错误：文件未找到于 {input_json_path}")
+        return {}
+    except json.JSONDecodeError:
+        print(f"错误：文件 {input_json_path} 不是有效的JSON格式。")
+        return {}
+
+    question_data = data.get("question", {})
+    answers_data = data.get("answers", [])
+
+    output = {
+        "project_goal": "将知乎问答内容视频化，生成一段5-8分钟的视频文案。",
+        "question_title": question_data.get("title", "无标题"),
+        "question_description": process_content_format(question_data.get("detail_format", [])),
+        "tags": [topic.get("name") for topic in question_data.get("topics", []) if topic.get("name")],
+        "answers": []
+    }
+
+    for i, answer in enumerate(answers_data):
+        processed_answer = {
+            "answer_id": f"{answer.get('id', i + 1)}",
+            "author": answer.get("author", {}).get("name", "匿名用户"),
+            "upvotes": answer.get("voteupCount", 0),
+            "content": process_content_format(answer.get("content_format", [])),
+            "comments": process_comments_nested(
+                answer.get("comments", []),
+                upvote_threshold=comment_upvote_threshold
+            )
+        }
+        output["answers"].append(processed_answer)
+
+    return output
+
+
 def parse_zhihu_hot_list(html_content):
     """
     解析知乎热榜的HTML文件，并提取出问题、描述、图片、热度等信息。
@@ -327,6 +515,30 @@ def download_image(real_final_result):
                         item['image_path'] = base_name
     return real_final_result
 
+def add_image_desc(real_final_result):
+    """
+    为问题和回答中的图片添加描述信息。
+    目前仅为图片添加了占位符描述，实际应用中可以根据具体内容进行更详细的描述。
+    """
+    real_final_result_copy = real_final_result.copy()
+    # 去除real_final_result_copy中的answers在的comments
+    for answer in real_final_result_copy.get('answers', []):
+        answer.pop('comments', None)
+    question = real_final_result.get('question', {})
+    question_detail = question.get('detail_format', [])
+
+    for item in question_detail:
+        if item.get('type') == 'image':
+            item['description'] = "这是一个图片"
+
+    answers = real_final_result.get('answers', [])
+    for answer in answers:
+        content_format = answer.get('content_format', [])
+        for item in content_format:
+            if item.get('type') == 'image':
+                item['description'] = "这是一个回答中的图片"
+
+    return real_final_result
 
 
 # --- 同步获取问题回答并补充评论 ---
@@ -441,6 +653,12 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
     real_final_result = download_image(real_final_result)
     save_json(output_filename, real_final_result)
+    video_script_data = transform_zhihu_to_video_script(
+        output_filename,
+        comment_upvote_threshold=10
+    )
+    save_json(output_filename, video_script_data)
+
     print(f"最终结果已保存至文件: {output_filename}")
 
 
