@@ -1083,8 +1083,9 @@ def path_exists(path) -> bool:
     # 最终判断文件或目录是否存在
     return os.path.exists(stripped)
 
-def process_single_video(bvid, hudong_info, uid, commenter_map):
-    today = datetime.date.today().isoformat()
+def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
+    if not today:
+        today = datetime.date.today().isoformat()
     if hudong_info.get('last_processed_date') == today:
         print(f"今日已处理，跳过 BVID: {bvid}")
         return hudong_info
@@ -1260,11 +1261,11 @@ def init_config():
     config_map['1639172564'] = {"name": "mama", "SESSDATA": mama_SESSDATA, "BILI_JCT": mama_BILI_JCT,
                                 "total_cookie": mama_total_cookie}
 
-    ruru_SESSDATA = get_config("ruru_bilibili_sessdata_cookie")  # 可选。小姑姑账号的 SESSDATA cookie 值。
-    ruru_BILI_JCT = get_config("ruru_bilibili_csrf_token")
-    ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
-    config_map['1223805908'] = {"name": "ruru", "SESSDATA": ruru_SESSDATA, "BILI_JCT": ruru_BILI_JCT,
-                                "total_cookie": ruru_total_cookie}
+    # ruru_SESSDATA = get_config("ruru_bilibili_sessdata_cookie")  # 可选。小姑姑账号的 SESSDATA cookie 值。
+    # ruru_BILI_JCT = get_config("ruru_bilibili_csrf_token")
+    # ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
+    # config_map['1223805908'] = {"name": "ruru", "SESSDATA": ruru_SESSDATA, "BILI_JCT": ruru_BILI_JCT,
+    #                             "total_cookie": ruru_total_cookie}
 
     nana_SESSDATA = get_config("nana_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
     nana_BILI_JCT = get_config("nana_bilibili_csrf_token")
@@ -1285,8 +1286,12 @@ def init_config():
                                       "total_cookie": qiqi_total_cookie}
     return config_map
 
+stop_event = threading.Event()
+
 def fun():
     try:
+        stop_event.clear()  # 清除停止事件
+        today = datetime.date.today().isoformat()
         # 加载all_emote.json
         all_emote_list = load_processed_dict('all_emote.json')
         config_map = init_config()
@@ -1303,7 +1308,6 @@ def fun():
         interaction_data = load_processed_dict('../../LLM/TikTokDownloader/interaction_data.json')
         metadata_cache_with_uploads = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
         bvid_uid_map = {}
-        # all_found_videos = [{'bvid': 'BV1Qgg2ztE4T'}]
         all_found_videos = []
         for uid in config_map.keys():
             if uid == '443415885':
@@ -1313,20 +1317,10 @@ def fun():
             bvid_uid_map.update({video.get('bvid'): uid for video in temp_found_videos if 'bvid' in video})
             all_found_videos.extend(temp_found_videos)
 
-        # fix_metadata_cache_with_uploads(all_found_videos, metadata_cache_with_uploads)
-
-
         all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
-        # 只保留all_found_videos前100
         all_found_videos = all_found_videos[:200]
-        # all_found_videos = all_found_videos[:2]
         print(f"共找到 {len(all_found_videos)} 个视频。")
-        # # 遍历all_found_videos
-        # bvid_list = [bvid for video in all_found_videos if 'bvid' in video for bvid in [video.get('bvid')]]
-        # # 保存所有的bvid_list到文件
-        # save_json('../../LLM/TikTokDownloader/bvid_list.json', {'bvid_list': bvid_list})
         for video in all_found_videos:
-
             print(f"正在处理视频 BVID: {video.get('bvid', '未知')}...")
             start_time = time.time()
             bvid = video.get('bvid')
@@ -1336,17 +1330,31 @@ def fun():
                 print(f"无互动信息跳过{bvid}")
                 continue
 
-            hudong_info = process_single_video(bvid, hudong_info, uid, commenter_map)
+            hudong_info = process_single_video(bvid, hudong_info, uid, commenter_map, today)
             interaction_data[bvid] = {'hudong': hudong_info}
             save_json('../../LLM/TikTokDownloader/interaction_data.json', interaction_data)
             print(f"视频 {bvid} 的互动信息已生成并保存。耗时: {time.time() - start_time:.2f} 秒")
+            if stop_event.is_set():
+                print("检测到停止请求，退出当前任务...")
+                return  # 停止当前执行，退出
         print(f"所有视频处理完成，正在保存数据..当前时间: {datetime.datetime.now().isoformat()}")
     except Exception as e:
         traceback.print_exc()
-        return
+    finally:
+        stop_event.set()  # 标记任务结束
 
+def run_periodically():
+    while True:
+        stop_event.set()  # 每次开始时设定停止标志
+        fun_thread = threading.Thread(target=fun)
+        fun_thread.start()  # 启动一个新线程执行fun
+        fun_thread.join()  # 等待当前线程执行完毕
+        time.sleep(60 * 30)  # 等待30分钟
 
 if __name__ == '__main__':
+    # 启动定时任务线程
+    threading.Thread(target=run_periodically, daemon=True).start()
+
+    # 主线程可用于其他任务，或者继续保持程序运行
     while True:
-        fun()
-        time.sleep(60 * 30)
+        time.sleep(1)

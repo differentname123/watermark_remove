@@ -185,7 +185,6 @@ def transform_zhihu_to_video_script(
     answers_data = data.get("answers", [])
 
     output = {
-        "project_goal": "将知乎问答内容视频化，生成一段5-8分钟的视频文案。",
         "question_title": question_data.get("title", "无标题"),
         "question_description": process_content_format(question_data.get("detail_format", [])),
         "tags": [topic.get("name") for topic in question_data.get("topics", []) if topic.get("name")],
