@@ -3,6 +3,7 @@ import json
 import os
 import pathlib
 import random
+import re
 import time
 from bs4 import BeautifulSoup, Tag, NavigableString
 
@@ -198,7 +199,7 @@ def transform_zhihu_to_video_script(
         processed_answer = {
             "answer_id": f"{answer.get('id', i + 1)}",
             "author": answer.get("author", {}).get("name", "匿名用户"),
-            "upvotes": answer.get("voteupCount", 0),
+            "upvotes": answer.get("vote_count", 0),
             "content": process_content_format(answer.get("content_format", [])),
             "comments": process_comments_nested(
                 answer.get("comments", []),
@@ -526,18 +527,18 @@ MAX_IMAGE_BATCH_SIZE = 20
 MAX_RETRIES = 3
 BASE_PROMPT = """
             你是一位精通多模态分析和视频脚本策划的AI专家。你的任务是接收一个包含文本上下文的JSON文件和一系列对应的图片文件，为每一张图片生成一段深度结合其视觉内容与文本上下文的、可用于视频制作的结构化描述。
-        
+
             我将为你提供两部分核心输入：
             一个完整的JSON对象：其中包含了所有图文的排版结构和文字内容。
             一系列实际的图片文件：这些图片的文件名与JSON中的image_name一一对应。
-            
+
             你的分析必须同时基于这两部分输入进行。
             我将提供给你一个完整的JSON对象，该对象完整记录了一段知乎问答的所有内容，其结构如下：
             - 它包含`question_title`, `question_description`等顶层字段。
             - question_description和每个answer的content字段都是一个数组，由"type": "text"和"type": "image"的对象交错组成。这个顺序精准地反映了原文的图文排版。
-            
+
             **你的任务是：**
-            
+
             1.  **解析完整数据**：接收并理解我提供的整个JSON对象。
             2.  **自动定位与关联**：
                 * 先根据我上传的图片名称一一定位json数据中`type`为`image`的对象。
@@ -553,7 +554,7 @@ BASE_PROMPT = """
                 * 这个JSON对象的键 (key) 必须是图片的名称 (image_name)。
                 * 这个JSON对象的值 (value) 必须是按照上述规则为该图片生成的最终综合描述。
                 * 结果中需要包含所有在输入数据中找到的图片及其描述。
-            
+
             **下面是你需要处理的完整JSON数据：**
 """
 
@@ -617,10 +618,10 @@ def validate_image_analysis(base_name_list, image_analysis_result):
     如果不一致，返回 False 并打印出差异；一致则返回 True。
     """
     expected = set(base_name_list)
-    actual   = set(image_analysis_result.keys())
+    actual = set(image_analysis_result.keys())
 
     missing = expected - actual  # 在 expected 中但不在 actual 中
-    extra   = actual   - expected  # 在 actual 中但不在 expected 中
+    extra = actual - expected  # 在 actual 中但不在 expected 中
 
     if missing or extra:
         if missing:
@@ -631,12 +632,12 @@ def validate_image_analysis(base_name_list, image_analysis_result):
 
     return True
 
+
 def _process_answer_batch(batch_of_answers: list[dict], real_final_result: dict) -> dict:
     """
     处理单个包含多个回答的批次。
     """
     # 1. 收集批次内所有图片路径
-    base_name_list = []
     image_paths_for_api = []
     for question_info in real_final_result.get('question_description', []):
         if question_info['type'] == 'image':
@@ -726,10 +727,29 @@ def add_image_desc_by_answer_batching(real_final_result: dict) -> dict:
                 desc = all_image_descriptions.get(image_name)
                 if desc:
                     item['image_desc'] = desc
+    for question_info in updated_result.get('question_description', []):
+        if question_info['type'] == 'image':
+            image_name = question_info['image_name']
+            desc = all_image_descriptions.get(image_name)
+            if desc:
+                question_info['image_desc'] = desc
 
     print("--- 图片描述更新完成！ ---")
     return updated_result
 
+
+def gen_video_info(real_final_result):
+    """
+    根据回答的信息生成视频信息。主要包括使用的图片，和对应的文案
+    """
+    # 深度拷贝
+    video_info = copy.deepcopy(real_final_result)
+    # 获取question_description
+    question_description = video_info.get('question_description', [])
+    for desc_dict in question_description:
+        if desc_dict.get('type') == 'image':
+            desc_dict['image_name'] = desc_dict.get('image_path', '').split('/')[-1]
+            desc_dict['image_desc'] = desc_dict.get('content', '')
 
 # --- 同步获取问题回答并补充评论 ---
 def fetch_question_answers(question_id: str, output_filename: str, desired_answers: int = 5, max_no_increase: int = 3):
@@ -824,6 +844,23 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
             browser.close()
 
     print(f"\n--- 抓取完成，共捕获 {len(all_answers_data)} 条回答数据 ---")
+    # 补充voteup_count字段，如果不存在就尝试从'voteupCount'获取
+    for answer in all_answers_data:
+        if 'voteupCount' in answer:
+            answer['voteup_count'] = answer.pop('voteupCount')
+        else:
+            answer['voteup_count'] = 0
+
+        # 如果 voteup_count 是 0，尝试从 matrix_tips 中提取
+        if answer['voteup_count'] == 0 and 'matrix_tips' in answer:
+            tips = answer['matrix_tips']
+            match = re.search(r'(\d+)\s*赞同', tips)
+            if match:
+                answer['voteup_count'] = int(match.group(1))
+
+    # 按照'voteup_count'降序排序回答数据
+    all_answers_data.sort(key=lambda x: x.get('voteup_count', 0), reverse=True)
+
     final_data = all_answers_data[:desired_answers]
     real_final_result = {'question': questions, 'answers': final_data}
     save_json(output_filename, real_final_result)
@@ -856,7 +893,7 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
 
 if __name__ == "__main__":
-    question_id = "1929871927457080536"
+    question_id = "1930575884403827815"
     # fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=20)
 
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
