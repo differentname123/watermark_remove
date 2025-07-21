@@ -521,46 +521,23 @@ def download_image(real_final_result):
     return real_final_result
 
 
-def add_image_desc(real_final_result):
-    """
-    为问题和回答中的图片添加描述信息。
-    目前仅为图片添加了占位符描述，实际应用中可以根据具体内容进行更详细的描述。
-    """
-    image_info_list = []
-    real_final_result_copy = copy.deepcopy(real_final_result)
-    # 去除real_final_result_copy中的answers在的comments
-    for answer in real_final_result_copy.get('answers', []):
-        answer.pop('comments', None)
-    question_detail = real_final_result.get('question_description', {})
-
-    for item in question_detail:
-        if item.get('type') == 'image':
-            image_info_list.append(item['image_path'])
-
-    answers = real_final_result.get('answers', [])
-    for answer in answers:
-        content_format = answer.get('content', [])
-        for item in content_format:
-            if item.get('type') == 'image':
-                image_info_list.append(item['image_path'])
-
-    if not image_info_list:
-        return real_final_result
-
-    prompt = """
+# 1. 常量定义
+MAX_IMAGE_BATCH_SIZE = 20
+MAX_RETRIES = 3
+BASE_PROMPT = """
             你是一位精通多模态分析和视频脚本策划的AI专家。你的任务是接收一个包含文本上下文的JSON文件和一系列对应的图片文件，为每一张图片生成一段深度结合其视觉内容与文本上下文的、可用于视频制作的结构化描述。
-
+        
             我将为你提供两部分核心输入：
             一个完整的JSON对象：其中包含了所有图文的排版结构和文字内容。
             一系列实际的图片文件：这些图片的文件名与JSON中的image_name一一对应。
-
+            
             你的分析必须同时基于这两部分输入进行。
             我将提供给你一个完整的JSON对象，该对象完整记录了一段知乎问答的所有内容，其结构如下：
             - 它包含`question_title`, `question_description`等顶层字段。
             - question_description和每个answer的content字段都是一个数组，由"type": "text"和"type": "image"的对象交错组成。这个顺序精准地反映了原文的图文排版。
-
+            
             **你的任务是：**
-
+            
             1.  **解析完整数据**：接收并理解我提供的整个JSON对象。
             2.  **自动定位与关联**：
                 * 先根据我上传的图片名称一一定位json数据中`type`为`image`的对象。
@@ -576,49 +553,182 @@ def add_image_desc(real_final_result):
                 * 这个JSON对象的键 (key) 必须是图片的名称 (image_name)。
                 * 这个JSON对象的值 (value) 必须是按照上述规则为该图片生成的最终综合描述。
                 * 结果中需要包含所有在输入数据中找到的图片及其描述。
-
+            
             **下面是你需要处理的完整JSON数据：**
+"""
+
+
+def _create_answer_batches(real_final_result: dict) -> list[list[dict]]:
     """
-    prompt = f'{prompt}\n{real_final_result_copy}'
-    print("--- 开始分析图片内容 --- 图片数量:", len(image_info_list))
+    筛选出有图片的回答，并将它们打包成批次。
+    每个批次的图片总数不超过 MAX_IMAGE_BATCH_SIZE。
+    """
+    answers_with_image_info = []
 
-    MAX_RETRIES = 3
+    # 步骤1: 筛选有图片的回答，并收集信息
+    for i, answer in enumerate(real_final_result.get('answers', [])):
+        images_in_answer = []
+        for item in answer.get('content', []):
+            if item.get('type') == 'image':
+                images_in_answer.append({
+                    'image_path': item['image_path'],
+                    'image_name': item['image_name']
+                })
 
+        if images_in_answer:
+            answer_copy = copy.deepcopy(answer)
+            answer_copy.pop('comments', None)  # 移除不必要的字段
+            answers_with_image_info.append({
+                'data': answer_copy,
+                'images': images_in_answer,
+                'image_count': len(images_in_answer)
+            })
+
+    if not answers_with_image_info:
+        return []
+
+    # 步骤2: 将回答打包成批次
+    all_batches = []
+    current_batch = []
+    image_count_in_current_batch = 0
+
+    for answer_info in answers_with_image_info:
+        # 如果当前批次为空，或者加入新回答后图片总数不超过限制，则加入当前批次
+        # 特殊情况：如果一个回答自身的图片数就超过了限制，它也必须自成一个批次
+        if not current_batch or (image_count_in_current_batch + answer_info['image_count']) <= MAX_IMAGE_BATCH_SIZE:
+            current_batch.append(answer_info)
+            image_count_in_current_batch += answer_info['image_count']
+        else:
+            # 否则，当前批次已满，将其存入总列表，并用当前回答开启新批次
+            all_batches.append(current_batch)
+            current_batch = [answer_info]
+            image_count_in_current_batch = answer_info['image_count']
+
+    # 不要忘记将最后一个正在构建的批次加入总列表
+    if current_batch:
+        all_batches.append(current_batch)
+
+    return all_batches
+
+
+def validate_image_analysis(base_name_list, image_analysis_result):
+    """
+    检查 base_name_list 中的图片名称是否和 image_analysis_result 的键完全一致。
+    如果不一致，返回 False 并打印出差异；一致则返回 True。
+    """
+    expected = set(base_name_list)
+    actual   = set(image_analysis_result.keys())
+
+    missing = expected - actual  # 在 expected 中但不在 actual 中
+    extra   = actual   - expected  # 在 actual 中但不在 expected 中
+
+    if missing or extra:
+        if missing:
+            print(f"缺少分析结果的图片：{missing}")
+        if extra:
+            print(f"多余的分析结果键：{extra}")
+        return False
+
+    return True
+
+def _process_answer_batch(batch_of_answers: list[dict], real_final_result: dict) -> dict:
+    """
+    处理单个包含多个回答的批次。
+    """
+    # 1. 收集批次内所有图片路径
+    base_name_list = []
+    image_paths_for_api = []
+    for question_info in real_final_result.get('question_description', []):
+        if question_info['type'] == 'image':
+            image_paths_for_api.append(question_info['image_path'])
+
+    for answer_info in batch_of_answers:
+        for img in answer_info['images']:
+            image_paths_for_api.append(img['image_path'])
+
+    base_name_list = [os.path.basename(path) for path in image_paths_for_api]
+
+    # 2. 构建本次API请求的上下文JSON
+    context_data = {k: v for k, v in real_final_result.items() if k != 'answers'}
+    context_data['answers'] = [info['data'] for info in batch_of_answers]
+
+    # 3. 生成最终的Prompt
+    prompt = f"{BASE_PROMPT}\n{json.dumps(context_data, ensure_ascii=False, indent=2)}"
+
+    total_images = len(image_paths_for_api)
+    total_answers = len(batch_of_answers)
+    print(f"--- 开始处理批次，包含 {total_answers} 个回答和 {total_images} 张图片 ---")
+
+    # 4. 调用API并重试
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             raw = analyze_images_gemini(
                 prompt=prompt,
-                image_paths=image_info_list
+                image_paths=image_paths_for_api
             )
             image_analysis_result = string_to_object(raw)
 
-            if len(image_analysis_result) == len(image_info_list):
-                break  # 成功匹配，退出重试循环
+            # 确保base_name_list中的图片名称与分析结果的键一致
+            if validate_image_analysis(base_name_list, image_analysis_result):
+                print(f"批次处理成功 (尝试 {attempt}/{MAX_RETRIES})")
+                return image_analysis_result
             else:
-                print(f"[尝试 {attempt}] 分析结果数量与图片数量不一致，重试中...")
+                print(
+                    f"[警告][尝试 {attempt}] 分析结果数量({len(image_analysis_result)}) 图片数量({total_images})，重试中...{image_analysis_result}")
         except Exception as e:
-            print(f"[尝试 {attempt}] 出现异常：{e}，重试中...")
+            print(f"[错误][尝试 {attempt}] 调用API时出现异常：{e}，重试中...")
 
-    else:
-        raise ValueError("重试3次后仍无法获得正确数量的分析结果")
+    print(f"[严重错误] 批次处理失败 {MAX_RETRIES} 次，跳过此批次。")
+    return {}
 
+
+def add_image_desc_by_answer_batching(real_final_result: dict) -> dict:
+    """
+    为图片生成描述的最终优化版。
+    - 筛选出有图片的回答。
+    - 将这些回答打包成批次（每批图片总数<=20）。
+    - 为每个批次构建包含问题和当前批次回答的上下文。
+    - 汇总所有结果并更新到最终数据中。
+    """
+    # 1. 检查问题描述中是否有图片，单独处理 (这是一个简化，也可以融入批次)
+    # 为简化逻辑，我们假设主要处理目标在answers中，问题区的图片可单独或优先处理
+    # 此处我们主要关注answers的分批
+    question_images = []
     for item in real_final_result.get('question_description', []):
         if item.get('type') == 'image':
-            image_name = item['image_name']
-            desc = image_analysis_result.get(image_name, "")
-            if desc:
-                item['image_desc'] = desc
+            question_images.append(item)
 
-    # 更新 answers 中的 content
-    for answer in real_final_result.get('answers', []):
+    # 2. 创建基于回答的批次
+    answer_batches = _create_answer_batches(real_final_result)
+
+    if not answer_batches and not question_images:
+        print("--- 未发现任何图片，无需处理 ---")
+        return real_final_result
+
+    print(f"--- 发现有图片的回答，已创建 {len(answer_batches)} 个处理批次 ---")
+
+    all_image_descriptions = {}
+
+    for i, batch in enumerate(answer_batches):
+        print(f"\n>>> 处理批次 {i + 1}/{len(answer_batches)}")
+        batch_results = _process_answer_batch(batch, real_final_result)
+        if batch_results:
+            all_image_descriptions.update(batch_results)
+
+    print("\n--- 所有批次处理完成，开始更新最终结果 ---")
+
+    # 4. 将汇总后的描述更新回原始数据结构中
+    updated_result = copy.deepcopy(real_final_result)
+    for answer in updated_result.get('answers', []):
         for item in answer.get('content', []):
             if item.get('type') == 'image':
                 image_name = item['image_name']
-                desc = image_analysis_result.get(image_name, "")
+                desc = all_image_descriptions.get(image_name)
                 if desc:
                     item['image_desc'] = desc
 
-    return real_final_result
+    print("--- 图片描述更新完成！ ---")
+    return updated_result
 
 
 # --- 同步获取问题回答并补充评论 ---
@@ -740,20 +850,20 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
         output_filename,
         comment_upvote_threshold=10
     )
-    real_final_result = add_image_desc(video_script_data)
+    real_final_result = add_image_desc_by_answer_batching(video_script_data)
     save_json(output_filename, real_final_result)
     print(f"带图片描述结果保存至文件: {output_filename}")
 
 
 if __name__ == "__main__":
     question_id = "1929871927457080536"
-    fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=20)
+    # fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=20)
 
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
     # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:
     #     json.dump(hot_list_data, f, ensure_ascii=False, indent=4)
     # print("结果已保存到 zhihu_hot_list.json 文件中。")
 
-    # output_file = f"{question_id}/zhihu_answers_{question_id}.json"
-    # real_final_result = read_json(output_file)
-    # add_image_desc(real_final_result)
+    output_file = f"{question_id}/zhihu_answers_{question_id}.json"
+    real_final_result = read_json(output_file)
+    add_image_desc_by_answer_batching(real_final_result)

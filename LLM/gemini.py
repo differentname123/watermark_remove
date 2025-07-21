@@ -165,12 +165,16 @@ def analyze_images_gemini(api_key=API_KEY,prompt='每张图片的内容是什么
         genai_flash.configure(api_key=api_key)
 
         # 2. 准备模型输入内容 (prompt + images)
-        #    ↓↓↓ 此处已更正 ↓↓↓
-        #    genai_flash.GenerativeModel 可以直接处理 PIL.Image 对象
-        prompt_parts = [prompt]
+        prompt_parts = [
+            prompt,
+            "下面我将以'文件名:'的格式，在每个图片前提供其名称，请据此作答。"
+        ]
         for path in image_paths:
             if not os.path.exists(path):
                 return f"错误: 图片文件未找到 -> {path}"
+
+            filename_identifier = f"{os.path.basename(path)}:"
+            prompt_parts.append(filename_identifier)
 
             # 使用 PIL 打开图片，这是 genai_flash 模式下最兼容的方式
             img = Image.open(path)
@@ -189,7 +193,6 @@ def analyze_images_gemini(api_key=API_KEY,prompt='每张图片的内容是什么
     except Exception as e:
         # 提供更详细的错误信息
         return f"处理过程中发生未知错误: {e.__class__.__name__}: {e}"
-
 
 if __name__ == "__main__":
     print("[TEST] 正在测试 get_llm_content")
