@@ -199,7 +199,7 @@ def transform_zhihu_to_video_script(
         processed_answer = {
             "answer_id": f"{answer.get('id', i + 1)}",
             "author": answer.get("author", {}).get("name", "匿名用户"),
-            "upvotes": answer.get("vote_count", 0),
+            "upvotes": answer.get("voteup_count", 0),
             "content": process_content_format(answer.get("content_format", [])),
             "comments": process_comments_nested(
                 answer.get("comments", []),
@@ -893,14 +893,14 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
 
 if __name__ == "__main__":
-    question_id = "1930575884403827815"
-    # fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=20)
+    question_id = "1930699864796280471"
+    fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=20)
 
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
     # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:
     #     json.dump(hot_list_data, f, ensure_ascii=False, indent=4)
     # print("结果已保存到 zhihu_hot_list.json 文件中。")
 
-    output_file = f"{question_id}/zhihu_answers_{question_id}.json"
-    real_final_result = read_json(output_file)
-    add_image_desc_by_answer_batching(real_final_result)
+    # output_file = f"{question_id}/zhihu_answers_{question_id}.json"
+    # real_final_result = read_json(output_file)
+    # add_image_desc_by_answer_batching(real_final_result)

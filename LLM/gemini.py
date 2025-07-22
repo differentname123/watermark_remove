@@ -58,6 +58,7 @@ def get_llm_content_gemini_flash_video(
             [video_file, prompt],
             request_options={"timeout": 600}
         )
+        genai_flash.delete_file(video_file.name)
         return response.text
 
     except ga_exceptions.GoogleAPICallError as e:
