@@ -751,6 +751,40 @@ def gen_video_info(real_final_result):
             desc_dict['image_name'] = desc_dict.get('image_path', '').split('/')[-1]
             desc_dict['image_desc'] = desc_dict.get('content', '')
 
+
+def extract_image(real_final_result):
+    """
+    将图片专门抽取出来，并删除原始的图片描述
+    """
+    images = []
+
+    # 获取question_description
+    question_description = real_final_result.get('question_description', [])
+    for desc_dict in question_description[:]:
+        if desc_dict.get('type') == 'image':
+            images.append({
+                'image_name': desc_dict.get('image_name'),
+                'image_desc': desc_dict.get('image_desc', '')
+            })
+            question_description.remove(desc_dict)  # 删除已处理的desc_dict
+
+    # 获取answers中的图片
+    answers = real_final_result.get('answers', [])
+    for answer in answers:
+        content_format = answer.get('content', [])
+        for item in content_format[:]:
+            if item.get('type') == 'image':
+                images.append({
+                    'image_name': item.get('image_name'),
+                    'image_desc': item.get('image_desc', '')
+                })
+                content_format.remove(item)  # 删除已处理的item
+
+    # 添加到real_final_result中
+    real_final_result['image_lib'] = images
+    return real_final_result
+
+
 # --- 同步获取问题回答并补充评论 ---
 def fetch_question_answers(question_id: str, output_filename: str, desired_answers: int = 5, max_no_increase: int = 3):
     print(f"--- 目标问题ID: {question_id}, 期望获取 {desired_answers} 个回答 ---")
@@ -889,18 +923,23 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
     )
     real_final_result = add_image_desc_by_answer_batching(video_script_data)
     save_json(output_filename, real_final_result)
+    real_final_result = extract_image(real_final_result)
+    save_json(output_filename, real_final_result)
+
     print(f"带图片描述结果保存至文件: {output_filename}")
 
 
 if __name__ == "__main__":
     question_id = "1930699864796280471"
-    fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=20)
+    # fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=20)
 
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
     # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:
     #     json.dump(hot_list_data, f, ensure_ascii=False, indent=4)
     # print("结果已保存到 zhihu_hot_list.json 文件中。")
 
-    # output_file = f"{question_id}/zhihu_answers_{question_id}.json"
-    # real_final_result = read_json(output_file)
+    output_file = f"{question_id}/zhihu_answers_{question_id}.json"
+    real_final_result = read_json(output_file)
     # add_image_desc_by_answer_batching(real_final_result)
+    real_final_result = extract_image(real_final_result)
+    save_json(output_file, real_final_result)
