@@ -852,11 +852,18 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
             while len(all_answers_data) < desired_answers:
                 prev_count = len(all_answers_data)
-                page.evaluate("window.scrollTo({ top: document.body.scrollHeight * 0.9, behavior: 'smooth' })");
+                page.evaluate("window.scrollTo({ top: document.body.scrollHeight * 0.9, behavior: 'smooth' })")
                 time.sleep(random.uniform(1.5, 2.0))
 
-                page.evaluate("window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })");
+                page.evaluate("window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })")
                 time.sleep(random.uniform(1.5, 3.0))
+
+                page.keyboard.press("ArrowUp")
+                time.sleep(random.uniform(1.5, 2.5))
+
+                page.keyboard.press("ArrowDown")
+                time.sleep(random.uniform(1.5, 2.5))
+
                 curr_count = len(all_answers_data)
                 if curr_count > prev_count:
                     no_increase_count = 0
@@ -933,7 +940,7 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
 
 if __name__ == "__main__":
-    question_id = "1930187301834684022"
+    question_id = "1929927890734145793"
     fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=20)
 
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
