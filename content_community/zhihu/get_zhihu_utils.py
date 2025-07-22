@@ -852,8 +852,11 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
             while len(all_answers_data) < desired_answers:
                 prev_count = len(all_answers_data)
-                page.evaluate("window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })")
-                time.sleep(random.uniform(2.5, 4.0))
+                page.evaluate("window.scrollTo({ top: document.body.scrollHeight * 0.9, behavior: 'smooth' })");
+                time.sleep(random.uniform(1.5, 2.0))
+
+                page.evaluate("window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })");
+                time.sleep(random.uniform(1.5, 3.0))
                 curr_count = len(all_answers_data)
                 if curr_count > prev_count:
                     no_increase_count = 0
@@ -930,16 +933,16 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
 
 if __name__ == "__main__":
-    question_id = "1930699864796280471"
-    # fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=20)
+    question_id = "1930187301834684022"
+    fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=20)
 
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
     # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:
     #     json.dump(hot_list_data, f, ensure_ascii=False, indent=4)
     # print("结果已保存到 zhihu_hot_list.json 文件中。")
 
-    output_file = f"{question_id}/zhihu_answers_{question_id}.json"
-    real_final_result = read_json(output_file)
-    # add_image_desc_by_answer_batching(real_final_result)
-    real_final_result = extract_image(real_final_result)
-    save_json(output_file, real_final_result)
+    # output_file = f"{question_id}/zhihu_answers_{question_id}.json"
+    # real_final_result = read_json(output_file)
+    # # add_image_desc_by_answer_batching(real_final_result)
+    # real_final_result = extract_image(real_final_result)
+    # save_json(output_file, real_final_result)
