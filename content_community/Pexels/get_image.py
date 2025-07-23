@@ -175,7 +175,7 @@ def search_and_download(tasks: Dict[Tuple[str, ...], int]):
 
 def main():
     tasks = {
-        ('调查组', '会议', '专家', '政府工作组'): 5,  # <--- 尝试一个大于10的数字来测试分页
+        ('中年男子', '直播间', '严肃分析'): 5,  # <--- 尝试一个大于10的数字来测试分页
     }
     search_and_download(tasks)
 
