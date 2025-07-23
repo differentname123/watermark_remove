@@ -45,10 +45,10 @@ nana_BILI_JCT = get_config("nana_bilibili_csrf_token")
 nana_total_cookie = get_config("nana_bilibili_total_cookie")
 config_map['nana'] = (nana_SESSDATA, nana_BILI_JCT, nana_total_cookie)
 
-# jie_SESSDATA = get_config("jie_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
-# jie_BILI_JCT = get_config("jie_bilibili_csrf_token")
-# jie_total_cookie = get_config("jie_bilibili_total_cookie")
-# config_map['jie'] = (jie_SESSDATA, jie_BILI_JCT, jie_BILI_JCT)
+jie_SESSDATA = get_config("jie_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
+jie_BILI_JCT = get_config("jie_bilibili_csrf_token")
+jie_total_cookie = get_config("jie_bilibili_total_cookie")
+config_map['jie'] = (jie_SESSDATA, jie_BILI_JCT, jie_BILI_JCT)
 
 
 qiqi_SESSDATA = get_config("qiqi_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
