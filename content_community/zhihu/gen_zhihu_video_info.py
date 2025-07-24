@@ -303,6 +303,12 @@ def gen_zhihu_video_by_answer(real_final_result, output_path, max_retries=3, ret
             traceback.print_exc()
 
 
+def op_video_info(real_final_result, output_path, max_retries=3, retry_delay=2):
+    """
+    优化第一阶段生成的视频信息
+    """
+    pass
+
 
 if __name__ == "__main__":
     question_id = "1931474753606082969"
