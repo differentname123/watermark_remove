@@ -5,6 +5,9 @@ import pathlib
 import random
 import re
 import time
+
+from PIL import Image, UnidentifiedImageError
+
 from bs4 import BeautifulSoup, Tag, NavigableString
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
@@ -471,6 +474,65 @@ def parse_content(html_string: str):
     return results
 
 
+def ensure_file_is_jpg(file_path: str | pathlib.Path) -> bool:
+    """
+    确保指定路径的文件是一个真正的、标准的JPEG图片。
+
+    - 如果文件已经是标准JPEG (格式为JPEG, 模式为RGB)，则不执行任何操作。
+    - 如果文件不是JPEG格式或不是RGB模式 (例如，一个被重命名为.jpg的PNG文件)，
+      它将被转换为真正的JPEG并覆盖原始文件。
+    - 如果文件路径不存在或文件不是一个有效的图片，则会报告错误。
+
+    Args:
+        file_path (str | pathlib.Path): 指向声称为JPG的图片文件路径。
+
+    Returns:
+        bool: 如果操作成功或无需操作，返回 True。如果发生错误，返回 False。
+    """
+    # 1. 统一路径对象并检查文件是否存在
+    path = pathlib.Path(file_path)
+    if not path.is_file():
+        print(f"❌ 错误: 文件不存在 -> {path}")
+        return False
+
+    try:
+        # 2. 打开图片并检查其元信息
+        with Image.open(path) as img:
+            # 获取真实的格式和色彩模式
+            original_format = img.format
+            original_mode = img.mode
+
+            # 3. 判断是否需要转换
+            # 条件：真实格式不是'JPEG' 或者 色彩模式不是'RGB'
+            if original_format != 'JPEG' or original_mode != 'RGB':
+                # 为了安全地覆盖原文件，我们先将图片数据加载到内存
+                img.load()
+
+                # 关闭文件句柄后，进行转换和保存
+                # 确保转换为RGB模式
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+
+                # 使用临时文件进行保存，防止程序中断导致原文件损坏
+                temp_path = path.with_suffix(f"{path.suffix}.tmp")
+                img.save(temp_path, 'JPEG', quality=100)  # 使用高质量保存
+
+                # 用转换好的临时文件替换原始文件 (这是一个原子操作，更安全)
+                temp_path.replace(path)
+
+                print(f"✅ 成功: 文件已转换为真正的JPG并保存 -> {path}")
+            else:
+                pass
+
+        return True
+
+    except UnidentifiedImageError:
+        print(f"❌ 错误: 文件不是一个有效的图片格式 -> {path}")
+        return False
+    except Exception as e:
+        print(f"❌ 发生未知错误: {e} -> {path}")
+        return False
+
 def download_image(real_final_result):
     # 获取question的detail_format字段
     question = real_final_result.get('question', {})
@@ -493,7 +555,7 @@ def download_image(real_final_result):
                     print(f"文件已存在，跳过下载: {save_path}")
                 else:
                     download_public_image(image_url, save_path)
-                if os.path.exists(save_path):
+                if os.path.exists(save_path) and ensure_file_is_jpg(save_path):
                     item['image_abs_path'] = str(save_path.resolve())
                     item['image_path'] = base_name
 
@@ -516,7 +578,7 @@ def download_image(real_final_result):
                         print(f"文件已存在，跳过下载: {save_path}")
                     else:
                         download_public_image(image_url, save_path)
-                    if os.path.exists(save_path):
+                    if os.path.exists(save_path) and ensure_file_is_jpg(save_path):
                         item['image_abs_path'] = str(save_path.resolve())
                         item['image_path'] = base_name
     return real_final_result
@@ -940,7 +1002,7 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
 
 if __name__ == "__main__":
-    question_id = "1929882068982142479"
+    question_id = "1931474753606082969"
     fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
 
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)

@@ -146,7 +146,7 @@ def string_to_object(input_str: str):
                 preview = (cleaned_str[:150] + '...') if len(cleaned_str) > 150 else cleaned_str
                 raise ValueError(f"{error_msg}\n尝试解析的内容 (清理后): '''{preview}'''")
     except Exception as e:
-        raise(f"解析字符串时发生错误: {e} {input_str}")
+        raise ValueError(f"解析字符串时发生错误: {e} {input_str}")
 
 
 def get_frame_at_time_safe(video_path: str, time_str: str) -> np.ndarray | None:
