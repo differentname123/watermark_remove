@@ -1014,7 +1014,7 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads, all_emo
 
             raw_comments = gen_info.get('gen_comment', [])
             # 将字符串列表转为 (comment, weight, extra) 结构
-            comment_list = [(c, 1, "None") for c in raw_comments]
+            comment_list = [[c, 1, "None"] for c in raw_comments]
     except Exception as e:
         comment_list = []
 
@@ -1307,6 +1307,9 @@ def fun():
 
         interaction_data = load_processed_dict('../../LLM/TikTokDownloader/interaction_data.json')
         metadata_cache_with_uploads = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
+        metadata_cache_with_uploads_back = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads_250724.json')
+        metadata_cache_with_uploads.update(metadata_cache_with_uploads_back)
+
         bvid_uid_map = {}
         all_found_videos = []
         for uid in config_map.keys():
