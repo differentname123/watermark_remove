@@ -4,13 +4,14 @@ import base64
 # 假设 common_utils 是您本地的模块
 from common_utils.common_utils import get_config
 from PIL import Image
+import functools
 
 # 新增：用于识别图片文件类型
 import mimetypes
 
-# 设置代理环境变量
-os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
-os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
+# # 设置代理环境变量
+# os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
+# os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
 
 import google.genai as genai
 from google.genai import types
@@ -25,6 +26,30 @@ import google.generativeai as genai_flash
 from google.api_core import exceptions as ga_exceptions
 
 
+def with_proxy(func):
+    """
+    装饰器：为指定函数设置代理环境变量
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # 设置代理
+        os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
+        os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
+
+        try:
+            # 执行目标函数
+            return func(*args, **kwargs)
+        finally:
+            # 清除代理设置
+            if 'HTTP_PROXY' in os.environ:
+                del os.environ['HTTP_PROXY']
+            if 'HTTPS_PROXY' in os.environ:
+                del os.environ['HTTPS_PROXY']
+
+    return wrapper
+
+@with_proxy
 def get_llm_content_gemini_flash_video(
         api_key: str = API_KEY,
         prompt: str = '视频中的内容是什么',
@@ -118,7 +143,7 @@ def get_llm_content_sub(api_key: str = API_KEY,
     )
     return response.text
 
-
+@with_proxy
 def get_llm_content(api_key: str = API_KEY,
                     prompt: str = '你好，Gemini！请介绍一下你自己。') -> str | None:
     """
@@ -147,7 +172,7 @@ def get_llm_content(api_key: str = API_KEY,
 # ==============================================================================
 # ===               ↓↓↓  以下是本次新增的代码  ↓↓↓               ===
 # ==============================================================================
-
+@with_proxy
 def analyze_images_gemini(api_key=API_KEY,prompt='每张图片的内容是什么', image_paths=['a.jpg']) -> str:
     """
     使用 Gemini Vision 模型分析一个或多个图片内容并返回文本描述。
