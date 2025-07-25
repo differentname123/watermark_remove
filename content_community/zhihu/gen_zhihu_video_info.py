@@ -1,16 +1,564 @@
+import copy
 import time
 import traceback
 
 from LLM.gemini import get_llm_content
 from common_utils.common_utils import string_to_object, save_json, read_json
+bgms = [
+  {
+    "id": "3e0758d4ab8d5666f0c0e0f4c7f0c9a6.mp4",
+    "title": "Улетали птицами гордыми",
+    "artist": "NUANHAO/MINGYANG",
+    "具体描述": "这是一首节奏舒缓、带有忧郁和怀旧情绪的Lo-fi Hip Hop纯音乐。乐曲以慵懒的鼓点为基础，融合了柔和的电钢琴和合成器音色，营造出一种宁静、放松且略带伤感的氛围。",
+    "特点": "节奏舒缓、氛围感强、旋律简单重复、带有Lo-fi特有的复古和朦胧感。",
+    "应用范围": "适合用作学习、工作、放松或深夜驾驶时的背景音乐。也常用于Vlog、情感类短视频、或需要营造安静、内省氛围的影视片段中。"
+  },
+  {
+    "id": "6a16b2c0ffb12981709db7cd9dd23557.mp4",
+    "title": "Rise",
+    "artist": "Epic Music",
+    "具体描述": "这是一首情感丰富、极具戏剧性的史诗管弦乐。乐曲以轻柔的钢琴独奏开始，情感细腻而悲伤，随后弦乐和唱诗班的加入逐渐将情绪推向高潮，营造出一种在灾难和悲剧中透露着希望和力量的感觉。",
+    "特点": "情感递进、旋律优美、氛围宏大、具有电影配乐感、悲壮而充满希望。",
+    "应用范围": "广泛用于电影、电视剧中的感人或悲壮场景，尤其适合灾难、战争、历史等题材。也常用于游戏CG、纪录片、励志和致敬类的视频剪辑中，能强烈地烘托气氛，震撼人心。"
+  },
+  {
+    "id": "8dfb680196265fcafe4cc19ce6e75ffe.mp4",
+    "title": "Камин (Fireplace)",
+    "artist": "Unknown",
+    "具体描述": "一首充满情感爆发力的俄语流行歌曲。歌曲由男声演唱，旋律激昂，节奏感强。从一开始的娓娓道来到副歌部分的撕心裂肺，情感层层递进，表达了强烈的失落、痛苦和不甘的情绪。",
+    "特点": "情感浓烈、节奏感强、旋律抓耳、具有很强的叙事性和画面感。",
+    "应用范围": "常用于情感类、故事类的视频剪辑，尤其是在表达人物内心矛盾、分手、决裂等激烈情绪的场景中。在动漫混剪(AMV)、游戏剪辑等二次创作中也颇受欢迎。"
+  },
+  {
+    "id": "428eaba81088bd92cbc5a6a273dbf873.mp4",
+    "title": "Wake",
+    "artist": "Elzio",
+    "具体描述": "一首充满力量和史诗感的电子音乐。乐曲融合了管弦乐元素和强劲的电子节拍，节奏由慢到快，旋律激昂，充满了前进的动力和觉醒的力量感，给人带来振奋和鼓舞的感觉。",
+    "特点": "史诗感、节奏强劲、激昂、振奋人心、电子与管弦乐结合。",
+    "应用范围": "非常适合用于游戏集锦、体育赛事、极限运动等高燃场面。也常用于科幻、战争题材的预告片或视频剪辑，以及需要展现宏大场面和科技感的航拍视频中。"
+  },
+  {
+    "id": "86b4723373ab92747961ff027365dbca.mp4",
+    "title": "Immortal",
+    "artist": "Two Steps From Hell / Thomas Bergersen",
+    "具体描述": "这是一首典型的史诗级战争配乐，来自著名的音乐团体Two Steps From Hell。音乐气势磅礴，雄壮有力，以铜管乐和打击乐为主导，弦乐作为铺垫，营造出一种宏大、悲壮、充满史诗感的战争场面，展现了不屈不挠、视死如归的战斗精神。",
+    "特点": "气势磅礴、史诗感、战争场面感、悲壮、震撼人心。",
+    "应用范围": "主要应用于战争题材的电影、电视剧、游戏和纪录片中，尤其适合表现大规模战斗、冲锋、史诗对决等宏大场面，能够极大地增强画面的冲击力和感染力。"
+  },
+  {
+    "id": "0671d099e221faf1b77922fa08ade356.mp4",
+    "title": "Call of Silence",
+    "artist": "Unknown",
+    "具体描述": "一首极其悲伤和忧郁的纯音乐。乐曲主要由钢琴演奏，旋律缓慢而沉重，充满了无尽的遗憾、孤独和压抑感。背景中的人声吟唱和环境音效加深了这种悲凉的氛围，仿佛是对逝去之事的无声呐喊。",
+    "特点": "氛围忧郁、情感悲伤、旋律舒缓、充满遗憾和无力感。",
+    "应用范围": "常用于致郁、悲伤、反思等主题的视频中，尤其适合作为动漫《进击的巨人》相关剪辑的背景音乐。能够深刻地表达角色内心的痛苦、绝望和对命运的无奈。"
+  },
+  {
+    "id": "4f7ed367245a6ba525d07f21d4790a25.mp4",
+    "title": "Last Reunion",
+    "artist": "Peter Roe",
+    "具体描述": "这是一首空灵、唯美且充满希望的纯音乐。乐曲以钢琴和弦乐为主，旋律悠扬动听，情感细腻，从开始的平静舒缓，到后半段的逐渐激昂，描绘了一幅宏伟而又美好的画卷，给人一种豁然开朗、涤荡心灵的感觉。",
+    "特点": "空灵唯美、情感细腻、旋律悠扬、充满希望和治愈感。",
+    "应用范围": "适合用于风景、旅行、自然风光等视频的背景音乐。也常用于情感独白、励志故事、唯美动漫剪辑等场景，能够营造一种宁静、美好、感人至深的氛围。"
+  },
+  {
+    "id": "9d34a87ec50e5bf577f1405f1475ec7f.mp4",
+    "title": "Underground",
+    "artist": "Linds, Irling",
+    "具体描述": "这是一首节奏感极强、充满力量的Phonk（或Trap）风格电子音乐。乐曲以其标志性的牛铃声、重低音和快速的鼓点为特点，间奏中加入了小提琴旋律，形成一种独特又富有攻击性的听感，充满逆风翻盘的张力。",
+    "特点": "节奏感强、重低音突出、高能、富有攻击性、氛围紧张刺激。",
+    "应用范围": "广泛应用于汽车漂移、极限运动、游戏高能时刻、打斗场景等视频剪辑中。其强烈的节奏和“前奏一响，逆风登场”的属性，使其成为短视频平台中展现技术、力量和反转场面的热门BGM。"
+  },
+  {
+    "bgm_name": "Lifestyle - Qora",
+    "file_reference": "6891e8ab04a6a17e2a471017f1642a67.mp4",
+    "description": "这是一首充满活力的高能量电子舞曲（EDM）。它具有强烈的驱动节拍、合成器主导的旋律和脉动的低音，营造出一种激动人心和紧张的氛围。音乐的节奏快，结构上包含典型的EDM元素，如逐步增强的构建（build-ups）和激烈的高潮（drops）。",
+    "characteristics": [
+      "快节奏",
+      "强劲的贝斯",
+      "合成器主旋律",
+      "高能量感",
+      "适合驱动气氛",
+      "纯器乐"
+    ],
+    "application_range": "非常适合用于需要强烈动感和活力的视频内容，例如：游戏集锦（特别是射击或赛车类游戏）、极限运动视频、科技产品或大型活动的宣传片、健身训练背景音乐以及派对场景。"
+  },
+  {
+    "bgm_name": "Epic Trap Instrumental",
+    "file_reference": "3572fb71c23f80e2ce66bc7e4903789f.mp4",
+    "description": "这是一首融合了史诗感和现代感的Trap/Hip-Hop器乐。其特点是标志性的Trap鼓点（如快速的踩镲和深沉的808贝斯）与庄严、宏大的旋律相结合。整体情绪严肃、充满力量感，并带有一丝紧张的戏剧性。",
+    "characteristics": [
+      "中慢速节奏",
+      "沉重的808贝斯",
+      "复杂的踩镲节奏",
+      "史诗般的旋律",
+      "严肃而有冲击力"
+    ],
+    "application_range": "适用于需要营造戏剧性或史诗氛围的视频，例如：军事或重工业展示、电影预告片、具有深刻主题的纪录片、企业宣传片以及需要表现庄重或力量感的场景。"
+  },
+  {
+    "bgm_name": "Titan",
+    "file_reference": "60548e5322831f5b12dd5a00c04c1f7a.mp4",
+    "description": "一首宏伟的电影配乐风格的管弦乐。音乐中大量使用了弦乐、雄壮的铜管乐和雷鸣般的打击乐。整首曲子气势磅礴，逐步将情绪推向高潮，创造出一种壮丽、冒险和英雄主义的感觉。",
+    "characteristics": [
+      "管弦乐编制",
+      "戏剧性强",
+      "充满力量感",
+      "情绪层层递进",
+      "电影化、史诗感"
+    ],
+    "application_range": "理想的用途包括电影预告片（尤其是动作、奇幻或科幻类型）、游戏宣传视频、体育赛事精彩集锦、企业历史回顾以及任何旨在激发敬畏、英雄气概或宏大场面的视频内容。"
+  },
+  {
+    "bgm_name": "Groovin' King - Taqumi",
+    "file_reference": "1212a7cf29e09ef63e689cb23b1b6fed.mp4",
+    "description": "这是一首轻快、时髦的放克/爵士风格器乐。突出的萨克斯旋律、富有弹性的贝斯线条和活泼的鼓点共同营造出一种愉快、积极和有趣的氛围。音乐让人感觉轻松愉悦，充满动感。",
+    "characteristics": [
+      "节奏明快",
+      "摇摆的贝斯线",
+      "萨克斯主奏",
+      "爵士放克风味",
+      "积极、阳光的氛围"
+    ],
+    "application_range": "非常适合用于生活方式的Vlog、旅行记录、美食节目、轻松愉快的广告、产品发布会以及任何需要营造时髦、有趣、积极向上氛围的视频。"
+  },
+  {
+    "bgm_name": "MyWay (Lofi)",
+    "file_reference": "635687d4416ae6fbb400a09356454347.mp4",
+    "description": "一首典型的Lo-fi Hip-hop（低保真嘻哈）风格音乐。它的特点是舒缓、稳定的节拍，柔和的合成器音色，以及简单循环的旋律。整体情绪放松、怀旧，带有一点点忧郁感，非常适合营造一个平静、引人思考的氛围。",
+    "characteristics": [
+      "慢速、舒缓的节奏",
+      "低保真鼓点",
+      "氛围感强",
+      "带有怀旧、平静的情绪",
+      "旋律重复且不打扰"
+    ],
+    "application_range": "广泛用于学习、工作或放松时的背景音乐播放列表。也常用于Vlog的叙事或谈话片段、城市夜景或自然风光的延时摄影、动画循环背景以及任何追求“Chill”或放松感觉的内容。"
+  },
+  {
+    "id": "b72b5cf111b0bf0c02ef0cfd70f1843d.mp4",
+    "description": "一首充满力量且激昂的电子舞曲。该曲目节奏飞快，鼓点强劲有力，营造出一种紧张、刺激的氛围。通过层层递进的合成器音效和不断加速的节拍，在顶点迎来爆发，非常适合用于展现激烈对抗或追求极致速度的场景。",
+    "features": {
+      "genre": "电子舞曲 (EDM) / Hardstyle",
+      "mood": "激昂、高能、紧张、富有冲击力",
+      "tempo": "快板 (Allegro)",
+      "instruments": "合成器、电子鼓、贝斯"
+    },
+    "application": "适用于游戏高光时刻、赛车视频、极限运动、战斗场景或需要快节奏和强烈冲击感的商业广告。"
+  },
+  {
+    "id": "f6c1b5fca6a5e47ed52485aca4afd5fc.mp4",
+    "description": "这是一首带有怀旧和忧郁色彩的电子音乐。它以稳定的节拍和循环的旋律为基础，营造出一种沉静而引人入胜的氛围。虽然节奏平稳，但其中蕴含的情感使其不仅仅是单调的背景音，而是能引导观众情绪的音乐。",
+    "features": {
+      "genre": "电子音乐 / Lo-fi House",
+      "mood": "怀旧、忧郁、冷静、放松",
+      "tempo": "中板 (Moderato)",
+      "instruments": "电子鼓、合成器、键盘"
+    },
+    "application": "非常适合用作城市夜景、个人独白、情感故事讲述、咖啡馆或酒吧环境的背景音乐，以及需要营造特定情境氛围的Vlog。"
+  },
+  {
+    "id": "6660081394559d9a7f2a03c6b0c512ab.mp4",
+    "description": "一首典型的后摇滚风格音乐。乐曲从安静、简约的吉他旋律开始，逐步加入鼓、贝斯和其他乐器，音量和复杂性随之增加，最终形成宏大而富有感染力的音墙。整首曲子充满了情感的张力，从沉思到爆发，具有强烈的叙事感。",
+    "features": {
+      "genre": "后摇滚 (Post-Rock)",
+      "mood": "史诗感、大气、情感丰富、忧郁而充满希望",
+      "tempo": "慢板 (Adagio) 至 快板 (Allegro)",
+      "instruments": "电吉他、贝斯、架子鼓"
+    },
+    "application": "完美适用于电影预告片、纪录片、自然风光延时摄影、情感浓厚的短片以及需要营造史诗感和宏大叙事氛围的各种视频作品。"
+  },
+  {
+    "id": "4511342007fc8700b5f76e24c5955140.mp4",
+    "description": "这是流行歌曲《We Don't Talk Anymore》的8D环绕音效版本。通过特殊处理，音乐听起来像是在听者周围移动，创造出一种独特的空间感和沉浸感。歌曲本身是一首关于分手的流行情歌，旋律流畅，情感细腻。",
+    "features": {
+      "genre": "流行音乐 (Pop) / 8D Audio",
+      "mood": "沉浸式、伤感、浪漫、现代",
+      "tempo": "中板 (Moderato)",
+      "instruments": "人声、合成器、电子鼓"
+    },
+    "application": "主要为佩戴耳机个人聆听设计，以体验其独特的环绕效果。可用于需要营造梦幻、内省或情感氛围的视频中，如回忆Vlog或情感短片。"
+  },
+  {
+    "id": "d424af7c445e066e606d98ce0d1534cf.mp4",
+    "description": "这是一首具有攻击性和驾驶感的Phonk音乐。它融合了嘻哈的节奏、沉重的低音和独特的牛铃旋律，创造出一种黑暗、充满力量的街头感。节奏紧凑，充满动感，让人不由自主地跟着摇摆。",
+    "features": {
+      "genre": "Phonk / Trap",
+      "mood": "黑暗、攻击性、有节奏感、酷",
+      "tempo": "快板 (Allegro)",
+      "instruments": "808鼓、牛铃、合成器、采样人声"
+    },
+    "application": "非常适合汽车漂移、街头文化相关的视频、健身房训练、游戏剪辑以及需要营造前卫、 edgy风格的时尚或产品视频。"
+  },
+  {
+    "id": "dd7044ebed9454f08936edb33ae01788.mp4",
+    "description": "一首宏伟、鼓舞人心的管弦乐。它以宽广的弦乐和雄壮的铜管乐为主导，营造出一种史诗般的电影配乐感。音乐充满了积极向上的力量，能激发听众的敬畏感和对未知探索的渴望。",
+    "features": {
+      "genre": "电影配乐 (Film Score) / 史诗音乐 (Epic Music)",
+      "mood": "鼓舞人心、宏伟、大气、充满希望",
+      "tempo": "中板 (Moderato)",
+      "instruments": "弦乐团、铜管乐团、打击乐"
+    },
+    "application": "适用于电影预告片、壮丽的自然风光航拍、励志演讲、探险纪录片以及任何希望传达宏大、积极和激励人心信息的场合。"
+  },
+  {
+    "id": "db2f73a1b8d7eeb7c4ef70ba6611e463.mp4",
+    "description": "流行摇滚歌曲《Counting Stars》的电子混音版。这个版本加快了原曲的节奏，加入了强烈的电子鼓点和合成器效果，使其转变为一首充满活力的舞曲。歌词本身关于梦想和人生，搭配动感的节奏，充满了积极和励志的能量。",
+    "features": {
+      "genre": "电子舞曲 (EDM) / 流行舞曲 (Dance-Pop)",
+      "mood": "励志、充满活力、乐观、振奋人心",
+      "tempo": "快板 (Allegro)",
+      "instruments": "人声、合成器、电子鼓、钢琴"
+    },
+    "application": "非常适合用于派对场景、体育集锦、健身视频、旅行Vlog以及各种需要营造欢乐、积极向上和充满活力的氛围的场合。"
+  },
+  {
+    "id": "fb2ea8cb19bf45dbbcdb64a7f0b90d77.mp4",
+    "description": "一首带有复古未来感的合成器流行曲。音乐节奏较慢，以深沉的贝斯线条和梦幻般的合成器旋律为特点，营造出一种既忧郁又时尚的氛围。整体感觉很适合在夜晚的城市背景下聆听，带有一种反思和孤独感。",
+    "features": {
+      "genre": "合成器流行 (Synth-pop) / Dream Pop",
+      "mood": "忧郁、复古、梦幻、冷静",
+      "tempo": "慢板 (Adagio)",
+      "instruments": "合成器、电子鼓、贝斯"
+    },
+    "application": "适用于展现城市夜景、角色内心独白、复古风格的短片、时尚秀场背景音乐，或任何需要营造冷静、深沉且略带忧郁情绪的内容。"
+  }
+
+]
+
+speeches = [{
+  "control_info": {
+    "parameter_name": "rate",
+    "description": "语速是一个可控制的参数，并非声音的固定属性。您可以通过设置一个百分比字符串来全局调整任何声音的语速。",
+    "example_cli": "edge-tts --voice zh-CN-XiaoxiaoNeural --text \"你好世界\" --rate \"+20%\" --write-media hello.mp3",
+    "example_python": "communicate = edge_tts.Communicate(text, voice, rate='+20%')",
+    "recommended_range": "通常在 -50% 到 +150% 的范围内能获得比较自然的效果。"
+  },
+  "voices": [
+    {
+      "voice_name": "zh-CN-XiaoxiaoNeural",
+      "voice_id_cn": "晓晓",
+      "gender": "Female",
+      "locale": "zh-CN",
+      "style_list": [
+        "assistant", "chat", "customerservice", "newscast", "affectionate", "angry",
+        "calm", "cheerful", "disgruntled", "fearful", "gentle", "lyrical", "sad", "serious"
+      ],
+      "voice_description": {
+        "vocal_age_cn": "青年女声",
+        "timbre_description_cn": "清亮、圆润、字正腔圆、穿透力强。",
+        "summary_cn": "标准的AI助手音色，专业且通用。音色明亮清晰，适合各种场景，尤其在需要情感表达时，其丰富的风格库是巨大优势。"
+      },
+      "application_scenarios": "全能型场景，如新闻播报、智能助手、客服、有声书、广告配音、各类情感对话。",
+      "special_notes": "功能最全面的女声，支持多种情感和风格，适用性极广。",
+      "rate_info": { "default_rate_description_cn": "适中" }
+    },
+    {
+      "voice_name": "zh-CN-XiaoyiNeural",
+      "voice_id_cn": "晓伊",
+      "gender": "Female",
+      "locale": "zh-CN",
+      "style_list": [],
+      "voice_description": {
+        "vocal_age_cn": "儿童女声",
+        "timbre_description_cn": "天真、清脆、稚气、音调偏高。",
+        "summary_cn": "一个非常典型的童声，声音纯净无杂质，带有天真可爱的感觉，发音清晰。"
+      },
+      "application_scenarios": "儿童故事、少儿教育内容、卡通角色配音。",
+      "special_notes": "这是一个儿童声音，非常独特，不适用于常规成人内容。",
+      "rate_info": { "default_rate_description_cn": "适中" }
+    },
+    {
+      "voice_name": "zh-CN-YunjianNeural",
+      "voice_id_cn": "云健",
+      "gender": "Male",
+      "locale": "zh-CN",
+      "style_list": ["narration-professional", "newscast-casual", "sports-commentary"],
+      "voice_description": {
+        "vocal_age_cn": "中年男声",
+        "timbre_description_cn": "浑厚、磁性、共鸣感强、沉稳。",
+        "summary_cn": "经典的纪录片或广告旁白音色。声音厚实且富有磁性，给人一种权威、可靠和专业的信赖感。"
+      },
+      "application_scenarios": "纪录片解说、新闻朗读、企业宣传片、体育赛事评论、正式演讲。",
+      "special_notes": "专业的旁白型男声，特别适合正式和需要信赖感的场合。",
+      "rate_info": { "default_rate_description_cn": "适中偏慢" }
+    },
+    {
+      "voice_name": "zh-CN-YunxiNeural",
+      "voice_id_cn": "云希",
+      "gender": "Male",
+      "locale": "zh-CN",
+      "style_list": [
+        "narration-relaxed", "embarrassed", "fearful", "cheerful", "disgruntled",
+        "serious", "angry", "sad", "chat"
+      ],
+      "voice_description": {
+        "vocal_age_cn": "青年男声",
+        "timbre_description_cn": "清朗、阳光、略带磁性、有活力。",
+        "summary_cn": "年轻化的男声，充满活力和亲和力。音色比云健更明亮，比云扬更具情感色彩，适合社交和娱乐场景。"
+      },
+      "application_scenarios": "聊天机器人、短视频配音、青少年内容、品牌宣传、情感对话。",
+      "special_notes": "非常适合需要年轻、活泼感觉的场景，聊天风格自然。",
+      "rate_info": { "default_rate_description_cn": "适中偏快" }
+    },
+    {
+      "voice_name": "zh-CN-YunxiaNeural",
+      "voice_id_cn": "云霞",
+      "gender": "Female",
+      "locale": "zh-CN",
+      "style_list": [],
+      "voice_description": {
+        "vocal_age_cn": "青年女声（偏成熟）",
+        "timbre_description_cn": "沉稳、柔和、端庄、清晰。",
+        "summary_cn": "比晓晓更成熟、正式的播音女声。声音柔和但稳定，没有过多花哨的情感，传递出一种可靠、专业的播报员形象。"
+      },
+      "application_scenarios": "新闻摘要、专业解说、通知公告、在线教育。",
+      "special_notes": "情感风格较少，专注于标准播报场景。",
+      "rate_info": { "default_rate_description_cn": "适中" }
+    },
+    {
+      "voice_name": "zh-CN-YunyangNeural",
+      "voice_id_cn": "云扬",
+      "gender": "Male",
+      "locale": "zh-CN",
+      "style_list": ["customerservice", "narration-professional", "newscast-casual"],
+      "voice_description": {
+        "vocal_age_cn": "青年男声",
+        "timbre_description_cn": "洪亮、清晰、富有说服力、标准。",
+        "summary_cn": "标准的青年播音男声。音色介于云健的浑厚和云希的阳光之间，非常平衡，具有很强的通用性，听感专业且友好。"
+      },
+      "application_scenarios": "新闻播报、客服指南、在线课程、产品介绍。",
+      "special_notes": "一个通用的专业男声，比“云健”稍显年轻和亲切。",
+      "rate_info": { "default_rate_description_cn": "适中" }
+    },
+    {
+      "voice_name": "zh-CN-liaoning-XiaobeiNeural",
+      "voice_id_cn": "辽宁-晓北",
+      "gender": "Female",
+      "locale": "zh-CN-liaoning",
+      "style_list": [],
+      "voice_description": {
+        "vocal_age_cn": "青年女声",
+        "timbre_description_cn": "爽朗、直接、音调偏高、带有东北口音。",
+        "summary_cn": "带有鲜明东北（辽宁）方言特色的女声，语调直率、爽朗，富有生活气息和喜剧感。"
+      },
+      "application_scenarios": "地方特色内容、搞笑短视频、特定角色配音。",
+      "special_notes": "这是一个方言声音，非标准普通话，选择时需特别注意应用场景。",
+      "rate_info": { "default_rate_description_cn": "偏快" }
+    },
+    {
+      "voice_name": "zh-CN-shaanxi-XiaoniNeural",
+      "voice_id_cn": "陕西-晓妮",
+      "gender": "Female",
+      "locale": "zh-CN-shaanxi",
+      "style_list": [],
+      "voice_description": {
+        "vocal_age_cn": "青年女声",
+        "timbre_description_cn": "质朴、亲切、语调平缓、带有陕西口音。",
+        "summary_cn": "带有浓厚陕西（关中）方言特色的女声，音色质朴，语调温和，能唤起西北地区的地域风情。"
+      },
+      "application_scenarios": "地方文化宣传、特色旅游介绍、方言短剧配音。",
+      "special_notes": "这是一个方言声音，非标准普通话，具有很强的地域特色。",
+      "rate_info": { "default_rate_description_cn": "适中" }
+    }
+  ]
+}]
+
+video_info_op_prompt = """
+你是一位顶级的视频内容策略师，也是一位卓越的提示词工程师。你的核心使命是深度解析我提供的视频脚本JSON数据，并严格按照以下指令进行优化，最终以一个纯粹的、不含任何解释性文字的JSON对象作为唯一输出来响应。
+
+-----
+
+### **〇、字段释义 (内部预读)**
+
+在开始任务前，首先理解你将要处理的核心数据字段：
+
+  * `策略阐述`: 定义视频核心目标、人设、叙事结构和情感基调的最高纲领。
+  * `执行方案`: 包含目标观众、候选标题和`视频内容`的原始脚本。
+  * `视频内容`: 原始脚本的场景数组，每个对象包含`场景描述`、`节奏与能量`和`文案`。
+  * `image_lib`: 图像素材库，每个对象包含`image_name` (文件名) 和一个`image_info`对象，该对象内含有`image_desc`（人类可读的描述）与`semantic_tags`（结构化语义标签）。这是你进行配图的唯一来源。
+  * `音色库` & `bgm库`: 用于最终推荐的配音和背景音乐的素材库。
+  * `optimized_content`: 你最终需要生成的、经过优化和分镜处理后的新场景数组。
+
+-----
+
+### **第一阶段：全局指令与深度理解 (内部思考)**
+
+此阶段是所有后续工作的基础和最高准则，必须在开启任何任务前完成。
+
+**1.1. 全局指令 (最高优先级)**
+
+  * **最终输出格式**: 你的最终响应**必须且只能是**一个完整的、纯粹的JSON对象。**绝对禁止**在JSON代码块前后添加任何说明、注释或解释性文字。
+  * **文案纯净性**: `文案`字段是用于直接生成配音的核心内容。因此，该字段**绝对不能包含**任何非语音的描述性文字（如“画面快切”、“音效”等）。
+  * **图片使用原则**: 所有为场景匹配的`配图`，都**必须**来自`image_lib`中提供的图片列表。**绝对禁止**凭空捏造不存在的图片文件名。
+
+**1.2. 深度策略与素材分析**
+
+1.  **图像库预处理与索引构建 (Image Library Indexing)**
+
+      * **核心任务**: 遍历 `image_lib`，直接加载并理解其中预设的结构化语义标签。
+      * **执行动作**: 对于`image_lib`中的每一个对象，你无需再自行分析`image_desc`。你的任务是直接读取每个`image_info`对象中的`semantic_tags`，并在你的内部思考中，将这些预设好的标签集（包含`Subject`, `Scene_Action`, `Emotion_Atmosphere`, `Symbol_Concept`四个维度）与对应的`image_name`关联起来。
+      * **目标**: 基于这些高质量的、预处理好的标签，快速构建一个精准、高效、可供直接查询的“内部视觉数据库”。
+
+2.  **核心策略分析**:
+
+      * **核心洞见**: 这次内容的灵魂是什么？（例如：“三重绝望”、“中国式动员力”）
+      * **人设定位**: 我将以谁的口吻讲述？（例如：“温情故事家”）
+      * **目标观众**: 我在对谁说话？他们的共鸣点在哪？
+      * **叙事蓝图**: 分析视频的情感曲线和节奏变化（例如：从制造危机感 -> 展现宏大行动 -> 升华情感）。
+
+3.  **建立决策框架**: 基于对策略和图像库的全面理解，在内心形成一个判断标准——后续的每一个选择（BGM、音色、分镜、关键词等），都必须服务于核心策略，并与可用的视觉素材相匹配。
+
+-----
+
+### **第二阶段：内容重构与创意生成 (核心执行)**
+
+遍历`执行方案.视频内容`中的每一个原始场景对象，对每个对象应用以下“智能分镜”处理流程，生成最终的`optimized_content`列表。
+
+**2.1. 智能分镜：识别、拆分与处理**
+
+1.  **识别与判断**: 借助第一阶段对`image_lib`的预处理理解，分析当前场景的`文案`是否过长，并且其内容是否能明确对应到**多张**你已理解的图片。
+2.  **执行拆分 (若满足条件)**:
+      * 将长`文案`按照其内在的逻辑和句子结构，**拆分**成多个更短的文案片段。
+      * 为每个片段创建**全新的场景对象**。
+      * 新对象继承原始场景的`节奏与能量`。
+      * 对于 `场景描述` 字段，你必须根据这个片段的新`文案`重新生成一个高度概括、精准对应的场景描述。**禁止**直接继承原始的、笼统的场景描述。（例如，如果原始描述是“展现奋斗的全景”，拆分后的第一句文案是“科研人员在实验室里熬夜”，那么新场景描述应优化为“科研人员深夜攻关”，而不是沿用“展现奋斗的全景”）。
+      * 将这些新场景**作为一个集合**进入下一步(2.2)处理。
+3.  **保持原样 (若不满足条件)**: 将原始的场景对象**作为一个单独的集合**进入下一步(2.2)处理。
+
+**2.2. 场景字段生成：双轨制原则**
+
+对上一步（2.1）处理后得到的**每一个**场景对象，你必须遵循一个并行的“双轨制”原则来独立生成视觉相关字段，确保AI创意生成与存量素材匹配互不干扰。
+
+-----
+
+**2.2.1. 轨道一：创意生成 (Creative Track)**
+
+此轨道的目标是基于文本信息，为场景创作理想的、全新的视觉指令和点睛文案。此轨道负责生成 `配图提示词` 和 `简略文案`。
+
+1.  **`配图提示词` (AI绘画关键词) 生成:**
+**【⭐绝对红线：两大核心禁令 (Absolute Red Lines: The Two Core Prohibitions)】**
+**此为生成该字段的最高优先级规则，其重要性超过所有其他准则，必须无条件、最严格地遵守。**
+
+* **禁令①：绝对禁止任何文字与UI (Zero Tolerance for Text & UI)**
+    * **规则**: 提示词**绝对禁止**描述任何形式的**文字、数字、字母、标题、标语、水印、LOGO、UI按钮、输入框，或任何包含文本的界面元素**。画面必须是纯粹的视觉艺术，像一幅画或一张摄影作品，不包含任何后期添加的图文信息。
+    * **功能分工**: 请牢记，**文字内容**由`文案`或`简略文案`字段负责，`配图提示词`只负责生成**承载文字的背景画面**。两者功能绝对不能混淆。
+    * **针对性示例**:
+        * **错误示范 (在画面中描述了UI和提示文字)**: `画面中央出现一个拟物化的搜索框，框内有放大镜图标和灰色的提示文字“搜索：未来城市的无限可能”。`
+        * **正确示范 (只描述纯粹的视觉元素和氛围)**: `宏大的城市天际线背景，经过高斯模糊处理。画面正中央，是一个半透明的玻璃拟态风格（Glassmorphism）圆角矩形，矩形左侧有一个极简线条构成的放大镜图标，整体设计富有科技感和呼吸感，引导视觉焦点，无任何文字。`
+
+* **禁令②：绝对禁止动态描述 (Zero Tolerance for Dynamics)**
+    * **规则**: 严禁出现“镜头”、“推拉摇移”、“缓缓出现”、“正在”、“动画”等任何过程性、时间性的词语。
+    * **针对性示例**:
+        * **错误示范 (导演思维)**: `镜头在幽暗的地下雨水管道中穿行。`
+        * **正确示范 (画家/摄影师思维)**: `鱼眼镜头，从下水道水面仰视，幽暗潮湿的圆形管道内壁。`
 
 
-def gen_zhihu_video_by_answer(real_final_result, output_path, max_retries=3, retry_delay=2):
-    """
-    通过回答信息生成视频脚本
-    支持重试机制，最多重试 `max_retries` 次，重试间隔 `retry_delay` 秒
-    """
-    prompt = """
+---
+
+**【指导原则与格式】**
+在严格遵守上述两大禁令的前提下，遵循以下指导原则进行创作。
+
+* **核心准则：定格画面原则 (Frozen Frame Principle)**
+    * 你生成的描述必须是一个被冻结的时间瞬间、一个完全静止的画面。
+
+* **结构化公式：**
+    * 遵循 **“构图/视角 + 主体与细节 + 环境与氛围 + 艺术风格/画质”** 的组合逻辑。
+
+* **语言要求**:
+    * 尽量使用全中文。
+
+2.  **`简略文案` (画面叠加文字) 生成:**
+
+      * **目的**: 基于`文案`进行高度浓缩或情感升华，创作出可叠加于画面的点睛短句。
+      * **核心准则**: **极其精炼，冲击力强**，通常不超过15个字。
+
+-----
+
+**2.2.2. 轨道二：素材匹配 (Asset Matching Track)**
+
+此轨道的目标是在已有的`image_lib`中，为当前文案找到最精准的视觉素材和搜索标签。此轨道负责生成 `图片关键词` 和 `配图`。
+
+1.  **`图片关键词` (素材搜索关键词) 生成:**
+
+      * **目的**: 基于`文案`，提炼出用于未来在外部素材库进行搜索的、最具概念性和情感指向性的关键词。
+      * **黄金公式**: 遵循 **“主体 + 情绪/氛围 + 风格/构图”** 的组合逻辑，总数 **2到4个词**。
+      * **要求**: 必须包含至少一个明确的“主体”名词，避免纯粹抽象。
+
+2.  **`配图` (从image_lib精准匹配) 生成:**
+
+      * **执行一个严格的、三步走的算法来选择最佳配图：**
+      * **步骤A: 文案语义分析 (Text Semantic Analysis)**
+          * 针对当前场景的`文案`，在内部提取出该文案的 `主体`, `场景/动作`, `情绪/氛围`, `象征/概念` 四个维度的标签集。
+      * **步骤B: 加权匹配与计分 (Weighted Matching & Scoring)**
+          * 使用上一步从`文案`中提取的标签集，去匹配你在第一阶段加载好的`image_lib`索引库，计算每张图片的“关联度总分”：
+            1.  **主体匹配 (Subject Match)**: `文案`的`主体`标签集与图片的`主体`标签集存在交集，**每个匹配项得 +5分**。
+            2.  **概念匹配 (Concept Match)**: `文案`的`象征/概念`或`场景/动作`标签集与图片的对应标签集存在交集，**每个匹配项得 +3分**。
+            3.  **情绪匹配 (Emotion Match)**: `文案`的`情绪/氛围`标签集与图片的对应标签集存在交集，**每个匹配项得 +1分**。
+      * **步骤C: 最终决策 (Final Decision)**
+          * 选择**累计总分最高**的图片作为`配图`的`image_name`。
+          * **冲突解决规则**: 如果出现多张图片得分相同，则选择在更高权重类别（主体 > 概念 > 情绪）中匹配项更多的那张。
+          * **质量阈值**: 如果所有图片的最高总分依然低于 **5分**，则将此字段的值设为 `None`。
+
+-----
+
+### **第三阶段：全局策略推荐 (策略最终落地)**
+
+处理完所有视频内容后，在顶层生成一个`recommendations`对象。
+
+1.  **BGM推荐 (`bgm`)**:
+
+      * 基于**情感曲线**，从`bgm库`中选出**最匹配**的一首音乐。在`reason`中解释它如何服务于叙事节奏。
+
+2.  **配音推荐 (`voice`)**:
+
+      * 严格依据**人设定位**，从`音色库`中选择**最契合**的音色。在`reason`中解释理由，并推荐一个最合适的`style`。
+
+-----
+
+### **最终输出格式——至关重要**
+
+你的最终响应**必须且只能是**一个完整的、纯粹的JSON对象。结构必须如下，注意`optimized_content`数组中可能包含由分镜逻辑拆分出的多个对象：
+
+```json
+{
+  "optimized_content": [
+    {
+      "场景描述": "...",
+      "节奏与能量": "...",
+      "文案": "（拆分后的第一段文案）",
+      "配图": "image_name_1.jpg",
+      "图片关键词": "（优化后的关键词）",
+      "配图提示词": "（新增的AI绘画提示词）",
+      "简略文案": "（新增的画面叠加文字）"
+    },
+    {
+      "场景描述": "...",
+      "节奏与能量": "...",
+      "文案": "（拆分后的第二段文案）",
+      "配图": "image_name_2.jpg",
+      "图片关键词": "...",
+      "配图提示词": "...",
+      "简略文案": "..."
+    }
+  ],
+  "recommendations": {
+    "bgm": {
+      "id": "...",
+      "reason": "..."
+    },
+    "voice": {
+      "voice_name": "...",
+      "reason": "..."
+    }
+  }
+}
+```
+视频脚本JSON数据如下：
+        """
+
+
+video_info_prompt = """
 # **第一部分：核心使命与角色定位**
 
 你是一个顶级内容创作大师，擅长通过宏大叙事来引发情感共鸣。在创作过程中，保持自然流畅的表达风格，尤其是在讨论政府政策、政治或社会治理时，你的目标是通过赞美、歌颂的语言，展现政府或政策的正面价值，激发观众的积极情感，提升他们的信任感和认同感。对于其他话题，保持客观、公正的态度，不必刻意展示歌颂。
@@ -275,10 +823,17 @@ def gen_zhihu_video_by_answer(real_final_result, output_path, max_retries=3, ret
 
     """
 
-    prompt = f"{prompt}\n{real_final_result}"
-    real_final_result['answers'] = real_final_result['answers'][:20]
-    real_final_result['image_lib'] = real_final_result['image_lib'][:20]
 
+def gen_zhihu_video_by_answer(real_final_result, output_path, max_retries=3, retry_delay=2):
+    """
+    通过回答信息生成视频脚本
+    支持重试机制，最多重试 `max_retries` 次，重试间隔 `retry_delay` 秒
+    """
+    prompt = video_info_prompt
+
+    real_final_result['answers'] = real_final_result['answers'][:20]
+    real_final_result['image_lib'] = real_final_result['image_lib'][:50]
+    prompt = f"{prompt}\n{real_final_result}"
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
@@ -301,13 +856,46 @@ def gen_zhihu_video_by_answer(real_final_result, output_path, max_retries=3, ret
                 print("[ERROR] 达到最大重试次数，失败.")
                 return None  # 达到最大重试次数后返回 None
             traceback.print_exc()
+    return None
 
 
-def op_video_info(real_final_result, output_path, max_retries=3, retry_delay=2):
+def op_video_info(video_info, real_final_result, output_path, max_retries=3, retry_delay=2):
     """
     优化第一阶段生成的视频信息
     """
-    pass
+    final_video_info = copy.copy(video_info)
+    prompt = video_info_op_prompt
+    video_info['image_lib'] = real_final_result['image_lib']
+    video_info['音色库'] = speeches
+    video_info['bgm库'] = bgms
+
+
+    prompt = f"{prompt}\n{video_info}"
+
+    raw = ""
+    for attempt in range(1, max_retries + 1):
+        try:
+            raw = get_llm_content(prompt=prompt)
+            video_info = string_to_object(raw)
+            # 获取 视频内容 的所有 文案 字段
+            video_content = video_info.get('执行方案', {}).get('视频内容', [])
+            all_text = [text_info['文案'] for text_info in video_content if '文案' in text_info]
+            all_text_str = ".".join(all_text)
+            print(f"[INFO] 生成的视频内容文案: {len(all_text_str)}")
+            final_video_info.update(video_content)
+
+            save_json(output_path, final_video_info)
+            return final_video_info  # 成功时返回生成的视频信息
+        except Exception as e:
+            print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
+            if attempt < max_retries:
+                print(f"[INFO] 正在重试... (等待 {retry_delay} 秒)")
+                time.sleep(retry_delay)  # 等待一段时间后再重试
+            else:
+                print("[ERROR] 达到最大重试次数，失败.")
+                return None  # 达到最大重试次数后返回 None
+            traceback.print_exc()
+    return None
 
 
 if __name__ == "__main__":
@@ -315,4 +903,8 @@ if __name__ == "__main__":
     output_file = f"{question_id}/zhihu_answers_{question_id}.json"
     real_final_result = read_json(output_file)
     video_output_file = output_file.replace(".json", "_video_info.json")
-    gen_zhihu_video_by_answer(real_final_result, video_output_file)
+    # video_info = gen_zhihu_video_by_answer(real_final_result, video_output_file)
+
+    video_info = read_json(video_output_file)
+    video_op_output_file = video_output_file.replace(".json", "_op.json")
+    op_video_info(video_info, real_final_result, video_op_output_file)
