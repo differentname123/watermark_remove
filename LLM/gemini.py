@@ -17,7 +17,13 @@ import google.genai as genai
 from google.genai import types
 
 # 获取 API 密钥
-API_KEY = get_config("gemini_api_key_jie")
+API_KEY_BASE = get_config("gemini_api_key")
+API_KEY_JIE = get_config("gemini_api_key_jie")
+
+API_KEY_MAP = {
+    'base':API_KEY_BASE,
+    'jie':API_KEY_JIE}
+API_KEY = API_KEY_MAP['jie']
 print(f"[INFO] 正在使用 Gemini API 密钥: {API_KEY}")
 
 # === 新增：视频内容分析函数（使用 google.generativeai） ===
