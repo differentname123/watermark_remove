@@ -17,7 +17,7 @@ import google.genai as genai
 from google.genai import types
 
 # 获取 API 密钥
-API_KEY = get_config("gemini_api_key")
+API_KEY = get_config("gemini_api_key_jie")
 print(f"[INFO] 正在使用 Gemini API 密钥: {API_KEY}")
 
 # === 新增：视频内容分析函数（使用 google.generativeai） ===
@@ -155,7 +155,7 @@ def get_llm_content(api_key: str = API_KEY,
         except Exception as e1:
             print(f"[WARN] 主模型失败: {e1}")
             try:
-                return get_llm_content_sub(api_key, prompt, "gemini-2.5-flash-preview-04-17")
+                return get_llm_content_sub(api_key, prompt, "gemini-2.5-flash-lite")
             except Exception as e2:
                 print(f"[WARN] 备用模型失败: {e2}")
                 return get_llm_content_gemini2flash(api_key, prompt)
