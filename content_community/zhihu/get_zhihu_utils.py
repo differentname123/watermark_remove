@@ -16,6 +16,7 @@ from typing import List, Dict
 
 from LLM.gemini import analyze_images_gemini
 from common_utils.common_utils import save_json, download_public_image, read_json, string_to_object
+from content_community.zhihu.gen_zhihu_video_info import gen_video_final_info
 
 # --- 配置区域 ---
 AUTH_FILE = "zhihu_auth_state.json"
@@ -1039,8 +1040,9 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
 
 if __name__ == "__main__":
-    question_id = "1931936620032034393"
+    question_id = "1932019404943618219"
     fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
+    gen_video_final_info(question_id)
 
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
     # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:

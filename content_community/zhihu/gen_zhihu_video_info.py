@@ -498,7 +498,7 @@ video_info_op_prompt = """
       * **步骤C: 最终决策 (Final Decision)**
           * 选择**累计总分最高**的图片作为`配图`的`image_name`。
           * **冲突解决规则**: 如果出现多张图片得分相同，则选择在更高权重类别（主体 > 概念 > 情绪）中匹配项更多的那张。
-          * **质量阈值**: 如果所有图片的最高总分依然低于 **5分**，则将此字段的值设为 `None`。
+          * **质量阈值**: 如果所有图片的最高总分依然低于 **3分**，则将此字段的值设为 `None`。
 
 -----
 
@@ -831,8 +831,8 @@ def gen_zhihu_video_by_answer(real_final_result, output_path, max_retries=3, ret
     """
     prompt = video_info_prompt
 
-    real_final_result['answers'] = real_final_result['answers'][:20]
-    real_final_result['image_lib'] = real_final_result['image_lib'][:50]
+    real_final_result['answers'] = real_final_result['answers'][:50]
+    real_final_result['image_lib'] = real_final_result['image_lib']
     prompt = f"{prompt}\n{real_final_result}"
     raw = ""
     for attempt in range(1, max_retries + 1):
@@ -878,12 +878,12 @@ def op_video_info(video_info, real_final_result, output_path, max_retries=3, ret
             raw = get_llm_content(prompt=prompt)
             video_info = string_to_object(raw)
             # 获取 视频内容 的所有 文案 字段
-            video_content = video_info.get('执行方案', {}).get('视频内容', [])
+            video_content = video_info.get('optimized_content', {})
             all_text = [text_info['文案'] for text_info in video_content if '文案' in text_info]
             all_text_str = ".".join(all_text)
             print(f"[INFO] 生成的视频内容文案: {len(all_text_str)}")
-            final_video_info.update(video_content)
-
+            for key, item in video_info.items():
+              final_video_info[key] = item
             save_json(output_path, final_video_info)
             return final_video_info  # 成功时返回生成的视频信息
         except Exception as e:
@@ -897,14 +897,24 @@ def op_video_info(video_info, real_final_result, output_path, max_retries=3, ret
             traceback.print_exc()
     return None
 
+def gen_video_final_info(question_id):
+  output_file = f"{question_id}/zhihu_answers_{question_id}.json"
+  real_final_result = read_json(output_file)
+  video_output_file = output_file.replace(".json", "_video_info.json")
+  video_info = gen_zhihu_video_by_answer(real_final_result, video_output_file)
+
+  # video_info = read_json(video_output_file)
+  video_op_output_file = video_output_file.replace(".json", "_op.json")
+  final_video_info = op_video_info(video_info, real_final_result, video_op_output_file)
+  return final_video_info
 
 if __name__ == "__main__":
     question_id = "1931936620032034393"
     output_file = f"{question_id}/zhihu_answers_{question_id}.json"
     real_final_result = read_json(output_file)
     video_output_file = output_file.replace(".json", "_video_info.json")
-    # video_info = gen_zhihu_video_by_answer(real_final_result, video_output_file)
+    video_info = gen_zhihu_video_by_answer(real_final_result, video_output_file)
 
-    video_info = read_json(video_output_file)
+    # video_info = read_json(video_output_file)
     video_op_output_file = video_output_file.replace(".json", "_op.json")
     op_video_info(video_info, real_final_result, video_op_output_file)
