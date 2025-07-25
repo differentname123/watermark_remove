@@ -1039,7 +1039,7 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
 
 if __name__ == "__main__":
-    question_id = "1931751046901920035"
+    question_id = "1931936620032034393"
     fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
 
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
