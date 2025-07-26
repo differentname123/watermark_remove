@@ -1,6 +1,8 @@
 import os
 import time
 import base64
+import traceback
+
 # 假设 common_utils 是您本地的模块
 from common_utils.common_utils import get_config
 from PIL import Image
@@ -243,9 +245,9 @@ def get_llm_content_sub(prompt: str = '你好，Gemini！请介绍一下你自�
             response = client.models.generate_content(model=model_name, contents=contents, config=config)
 
             return response.text
-        except (ga_exceptions.PermissionDenied, ga_exceptions.ResourceExhausted, ga_exceptions.GoogleAPICallError) as e:
+        except Exception as e:
             last_error = e
-            print(f"[WARN] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 正在尝试下一个...")
+            traceback.print_exc()
             continue
     raise last_error if last_error else Exception(f"所有 API Key 均尝试失败且未记录特定错误。")
 
