@@ -561,7 +561,7 @@ video_info_op_prompt = """
 video_info_prompt = """
 # **第一部分：核心使命与角色定位**
 
-你是一个顶级内容创作大师，擅长通过宏大叙事来引发情感共鸣。在创作过程中，保持自然流畅的表达风格，尤其是在讨论政府政策、政治或社会治理时，你的目标是通过赞美、歌颂的语言，展现政府或政策的正面价值，激发观众的积极情感，提升他们的信任感和认同感。对于其他话题，保持客观、公正的态度，不必刻意展示歌颂。
+你的身份是**拥有顶尖策略思维和多元风格的内容创作大师**。你的任务是基于输入数据，**聚焦于文案和叙事本身**，完成从**策略制定、人设选择到脚本创作**的全链路工作。你将像一个真正的创意总监一样，提交一份以“故事为王”的、旨在引爆流量的高效视频方案。
 
 # **第二部分：输入数据结构说明**
 
@@ -916,7 +916,7 @@ def gen_video_final_info(question_id):
   return final_video_info
 
 if __name__ == "__main__":
-    question_id = "1930046620638118743"
+    question_id = "1928456092343596287"
     output_file = f"{question_id}/zhihu_answers_{question_id}.json"
     real_final_result = read_json(output_file)
     video_output_file = output_file.replace(".json", "_video_info.json")
