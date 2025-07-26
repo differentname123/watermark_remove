@@ -1255,6 +1255,14 @@ def init_config():
     # config_map['3546909677455941'] = {"name": "base", "SESSDATA": base_SESSDATA, "BILI_JCT": base_BILI_JCT,
     #                                   "total_cookie": base_total_cookie}
 
+
+    tao_base_SESSDATA = get_config("tao_bilibili_sessdata_cookie")  # 必需。你的B站登录会话 SESSDATA cookie 值。
+    tao_base_BILI_JCT = get_config("tao_bilibili_csrf_token")
+    tao_base_total_cookie = get_config("tao_bilibili_total_cookie")
+
+    config_map['35891943'] = {"name": "base", "SESSDATA": tao_base_SESSDATA, "BILI_JCT": tao_base_BILI_JCT,
+                                      "total_cookie": tao_base_total_cookie}
+
     mama_SESSDATA = get_config("mama_bilibili_sessdata_cookie")  # 可选。妈妈账号的 SESSDATA cookie 值。
     mama_BILI_JCT = get_config("mama_bilibili_csrf_token")
     mama_total_cookie = get_config("mama_bilibili_total_cookie")

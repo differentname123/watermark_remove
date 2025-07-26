@@ -35,6 +35,12 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 # mama_total_cookie = get_config("mama_bilibili_total_cookie")
 # config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT, mama_total_cookie)
 
+
+tao_SESSDATA = get_config("tao_bilibili_sessdata_cookie")  # 可选。妈妈账号的 SESSDATA cookie 值。
+tao_BILI_JCT = get_config("tao_bilibili_csrf_token")
+tao_total_cookie = get_config("tao_bilibili_total_cookie")
+config_map['TAO'] = (tao_SESSDATA, tao_BILI_JCT, tao_total_cookie)
+
 ruru_SESSDATA = get_config("ruru_bilibili_sessdata_cookie")  # 可选。Ruru账号的 SESSDATA cookie 值。
 ruru_BILI_JCT = get_config("ruru_bilibili_csrf_token")
 ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
