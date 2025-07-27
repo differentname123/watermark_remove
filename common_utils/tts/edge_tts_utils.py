@@ -131,7 +131,7 @@ def generate_audio_and_get_duration_sync(
 
         # 1. 生成原始音频
         async def _generate_task():
-            communicate = edge_tts.Communicate(text, voice_name, volume='+100%')
+            communicate = edge_tts.Communicate(text, voice_name, volume='+100%', rate='+20%')
             await communicate.save(str(raw_mp3))
 
         try:

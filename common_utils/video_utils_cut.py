@@ -240,6 +240,7 @@ def create_video_from_image_auto_select(
         return
     # 随机设置use_background_fill
     use_background_fill = random.choice([True, False])  # 随机选择是否使用背景填充
+    zoom_factor = random.choice([1, 1.1, 1])
     try:
         with Image.open(image_path) as img:
             img_width, img_height = img.size

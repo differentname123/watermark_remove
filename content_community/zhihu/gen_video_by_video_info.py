@@ -4,6 +4,7 @@ import os
 import pathlib
 import random
 import re
+import shutil
 import time
 
 from PIL import Image, UnidentifiedImageError
@@ -122,21 +123,24 @@ def gen_part_video(image_path, audio_path, output_video_path, duration, text_to_
         bottom_margin=60
     )
 
-
-    # 增加简略文案
-    subtitle_data = [{
-        'startTime': ms_to_time(duration * 800),
-        'endTime': ms_to_time(duration * 1000),
-        'optimizedText': short_text_to_speak
-    }]
-    add_subtitles_to_video(
-        video_path=subtitle_data_video_path,
-        subtitles_info=subtitle_data,
-        output_path=output_video_path,
-        font_color='#FFD700',
-        font_size=80,
-        bottom_margin=1000
-    )
+    if len(text_to_speak) > 30:
+        # 增加简略文案
+        subtitle_data = [{
+            'startTime': ms_to_time(duration * 500),
+            'endTime': ms_to_time(duration * 1000),
+            'optimizedText': short_text_to_speak
+        }]
+        add_subtitles_to_video(
+            video_path=subtitle_data_video_path,
+            subtitles_info=subtitle_data,
+            output_path=output_video_path,
+            font_color='#FFD700',
+            font_size=80,
+            bottom_margin=1000
+        )
+    else:
+        # 将subtitle_data_video_path复制到output_video_path
+        shutil.copy(subtitle_data_video_path, output_video_path)
     print(f"生成视频片段：{output_video_path}")
 
 def prepare_video(video_info, output_video_path_dir):
