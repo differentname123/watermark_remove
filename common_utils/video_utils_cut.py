@@ -1,3 +1,4 @@
+import random
 import subprocess
 import os
 from PIL import Image
@@ -237,7 +238,8 @@ def create_video_from_image_auto_select(
     if not os.path.exists(image_path):
         print(f"错误：找不到输入图片 '{image_path}'")
         return
-
+    # 随机设置use_background_fill
+    use_background_fill = random.choice([True, False])  # 随机选择是否使用背景填充
     try:
         with Image.open(image_path) as img:
             img_width, img_height = img.size

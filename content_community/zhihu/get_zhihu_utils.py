@@ -1040,7 +1040,7 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
 
 if __name__ == "__main__":
-    question_id = "1932743902152058610"
+    question_id = "1932895368695210694"
     fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=10)
     gen_video_final_info(question_id)
 

@@ -78,7 +78,7 @@ def prepare_all_image(content_list, origin_image_path_dir, output_image_path_dir
 
 
 
-def gen_part_video(image_path, audio_path, output_video_path, duration, text_to_speak):
+def gen_part_video(image_path, audio_path, output_video_path, duration, text_to_speak, short_text_to_speak):
     """
     生成单个视频片段
     """
@@ -113,13 +113,29 @@ def gen_part_video(image_path, audio_path, output_video_path, duration, text_to_
         'endTime': ms_to_time(duration * 1000),
         'optimizedText': text_to_speak
     }]
-
+    subtitle_data_video_path = audio_output_video_path.replace(".mp4", "_subtitles.mp4")
     add_subtitles_to_video(
         video_path=audio_output_video_path,
         subtitles_info=subtitle_data,
-        output_path=output_video_path,
+        output_path=subtitle_data_video_path,
         font_size=52,
         bottom_margin=60
+    )
+
+
+    # 增加简略文案
+    subtitle_data = [{
+        'startTime': ms_to_time(duration * 800),
+        'endTime': ms_to_time(duration * 1000),
+        'optimizedText': short_text_to_speak
+    }]
+    add_subtitles_to_video(
+        video_path=subtitle_data_video_path,
+        subtitles_info=subtitle_data,
+        output_path=output_video_path,
+        font_color='#FFD700',
+        font_size=80,
+        bottom_margin=1000
     )
     print(f"生成视频片段：{output_video_path}")
 
@@ -134,6 +150,7 @@ def prepare_video(video_info, output_video_path_dir):
         audio_path = value.get("audio_path", "")
         duration = value.get("duration", 0)
         text_to_speak = value.get("text_to_speak", "")
+        short_text_to_speak = value.get("short_text_to_speak", "")
         if not os.path.exists(audio_path):
             print(f"错误：音频文件 {audio_path} 不存在，无法生成视频片段。")
             continue
@@ -148,6 +165,7 @@ def prepare_video(video_info, output_video_path_dir):
             image_path=image_path,
             audio_path=audio_path,
             text_to_speak=text_to_speak,
+            short_text_to_speak=short_text_to_speak,
             output_video_path=str(output_video_path),
             duration=duration
         )
@@ -156,6 +174,7 @@ def prepare_video(video_info, output_video_path_dir):
             "image_path": image_path,
             "audio_path": audio_path,
             "text_to_speak": text_to_speak,
+            "short_text_to_speak": short_text_to_speak,
             "duration": duration,
             "video_path": str(output_video_path.resolve())
         }
@@ -166,6 +185,7 @@ def prepare_all_audio(content_list,voice_name, audio_path_dir):
     for i, content in enumerate(content_list):
         audio_file_path = audio_path_dir / f"{i}.mp3"
         text_to_speak = content.get("文案", "")
+        short_text_to_speak = content.get("简略文案", "")
         audio_length = generate_audio_and_get_duration_sync(
             text=text_to_speak,
             output_filename=str(audio_file_path),
@@ -176,6 +196,7 @@ def prepare_all_audio(content_list,voice_name, audio_path_dir):
             "id": i,
             "audio_path": abs_audio_path,
             "text_to_speak": text_to_speak,
+            "short_text_to_speak": short_text_to_speak,
             "duration": audio_length
         }
     return audio_info
@@ -245,8 +266,8 @@ def gen_video_by_video_info(video_info_file, bgm_library_path=r"W:\project\pytho
 
 
     merged_video_path = output_path_dir / "merged_video.mp4"
-    # if not merged_video_path.exists():
-    merge_all_videos(gen_video_info['video_part_info'], output_path=str(merged_video_path))
+    if not merged_video_path.exists():
+        merge_all_videos(gen_video_info['video_part_info'], output_path=str(merged_video_path))
     print(f"最终视频合成完成,开始添加背景音乐...")
 
     final_video_path = output_path_dir / "final_video.mp4"
