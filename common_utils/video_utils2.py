@@ -135,10 +135,7 @@ def add_bgm_to_video(video_path: str, bgm_path: str, output_path: str, volume_pe
 
     if video_has_audio:
         # 混合原声和BGM
-        filter_complex = (
-            f"[1:a]volume={volume_factor}[bgm];"
-            f"[0:a][bgm]amix=inputs=2:duration=first[a_out]"
-        )
+        filter_complex = f"[0:a]volume=1.0[orig_a]; [1:a]volume={volume_factor}[bgm]; [orig_a][bgm]amix=inputs=2:duration=first:normalize=0[a_out]"
         map_audio = "[a_out]"
     else:
         # 视频无原声，仅处理BGM

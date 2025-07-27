@@ -1315,21 +1315,12 @@ def probe_video_new(path):
     w, h = info["width"], info["height"]
     return w, h, fps, sar
 
-def merge_videos_ffmpeg(video_paths, output_path="merged_video.mp4"):
+
+def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.mp4"):
     """
-    将多个视频按第一个视频的参数拼接合并：
-    - 第一个视频保留原始分辨率、帧率、纵横比。
-    - 后续视频按第一个视频的参数做 scale/pad 补边。
-    - 音频直接 passthrough，以原声音长度补时长。
-
-    Args:
-        video_paths (list of str): 按顺序待合并的视频文件路径列表（至少一个）。
-        output_path (str): 合并后输出文件路径。
-
-    Raises:
-        ValueError: 当 video_paths 为空。
-        FileNotFoundError: 当任一路视频不存在。
-        subprocess.CalledProcessError: FFmpeg 执行失败时抛出。
+    将多个视频按第一个视频的参数拼接合并。
+    - 视频处理与原版相同。
+    - 音频在重新编码时，使用 volume=1 滤镜来尽力维持原始音量。
     """
     # 输入验证
     if not video_paths:
@@ -1342,53 +1333,51 @@ def merge_videos_ffmpeg(video_paths, output_path="merged_video.mp4"):
     ref_w, ref_h, ref_fps, ref_sar = probe_video_new(video_paths[0])
     print(f"[INFO] 参考视频参数: {ref_w}×{ref_h}, fps={ref_fps:.2f}, SAR={ref_sar}")
 
-    # 构建 inputs 列表和 filter_complex 不同段
-    inputs = []          # ffmpeg -i 列表
-    vf_filters = []      # 各路视频、音频滤镜链
-    audio_labels = []    # 存放 [a{i}] 标签
+    inputs = []
+    vf_filters = []
+    audio_labels = []
 
     for idx, path in enumerate(video_paths):
         inputs += ["-i", path]
-        # 视频流处理
+        # 视频流处理 (不变)
         if idx == 0:
-            # 仅 setsar 保持原样
             vf_filters.append(f"[0:v]setsar=1[v0]")
         else:
             vf_filters.append(
                 f"[{idx}:v]"
-                f"scale={ref_w}:{ref_h}:force_original_aspect_ratio=decrease,"  # 等比缩放
-                f"pad={ref_w}:{ref_h}:(ow-iw)/2:(oh-ih)/2,"              # 黑边居中
+                f"scale={ref_w}:{ref_h}:force_original_aspect_ratio=decrease,"
+                f"pad={ref_w}:{ref_h}:(ow-iw)/2:(oh-ih)/2,"
                 f"setsar=1[v{idx}]"
             )
-        # 音频流处理：空滤镜打标签
-        vf_filters.append(f"[{idx}:a]anull[a{idx}]")
+
+        # 音频流处理：将 anull 替换为 volume=1
+        # 这就是关键的修改！
+        vf_filters.append(f"[{idx}:a]volume=1[a{idx}]")  # 或者 "volume=0dB"
         audio_labels.append(f"[a{idx}]")
 
-    # 拼接视频和音频标签
+    # 拼接部分 (不变)
     concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(video_paths)))
     concat_part = f"{concat_inputs}concat=n={len(video_paths)}:v=1:a=1[outv][outa]"
     vf_filters.append(concat_part)
 
     filter_complex = "; ".join(vf_filters)
 
-    # 构造 ffmpeg 命令
+    # 构造 ffmpeg 命令 (不变)
     cmd = [
         "ffmpeg", "-y",
-        "-loglevel", "error",       # 只显示错误
+        "-loglevel", "error",
         *inputs,
         "-filter_complex", filter_complex,
-        "-map", "[outv]",  # 映射合并后视频流
-        "-map", "[outa]",  # 映射合并后音频流
+        "-map", "[outv]",
+        "-map", "[outa]",
         "-r", f"{ref_fps:.2f}",
-        # 重新编码输出
         "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-        "-c:a", "aac",
+        "-c:a", "aac", "-b:a", "192k",  # 建议为aac指定一个比特率
         output_path
     ]
 
-    print("[INFO] 开始执行合并命令:")
+    print("[INFO] 开始执行合并命令 (使用 volume=1 保持音量):")
     print(" ".join(cmd))
-    # 调用 ffmpeg
     subprocess.run(cmd, check=True)
     print(f"[SUCCESS] 合并完成，输出文件：{output_path}")
 

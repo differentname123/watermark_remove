@@ -245,8 +245,8 @@ def gen_video_by_video_info(video_info_file, bgm_library_path=r"W:\project\pytho
 
 
     merged_video_path = output_path_dir / "merged_video.mp4"
-    if not merged_video_path.exists():
-        merge_all_videos(gen_video_info['video_part_info'], output_path=str(merged_video_path))
+    # if not merged_video_path.exists():
+    merge_all_videos(gen_video_info['video_part_info'], output_path=str(merged_video_path))
     print(f"最终视频合成完成,开始添加背景音乐...")
 
     final_video_path = output_path_dir / "final_video.mp4"

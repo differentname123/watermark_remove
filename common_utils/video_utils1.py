@@ -109,7 +109,7 @@ def redub_video_with_ffmpeg(video_path: str,
                 "-filter_complex", f"[0:v]setpts={speed_multiplier:.4f}*PTS[v]",
                 "-map", "[v]", "-map", "1:a",
                 "-c:v", "libx264", "-preset", "veryfast",
-                "-c:a", "aac", "-ar", "44100", "-ac", "2",
+                "-c:a", "aac", "-b:a", "256k", "-ar", "44100", "-ac", "2",
                 "-shortest", temp_output_path
             ]
 
