@@ -16,6 +16,7 @@ from typing import List, Dict
 
 from LLM.gemini import analyze_images_gemini
 from common_utils.common_utils import save_json, download_public_image, read_json, string_to_object
+from content_community.zhihu.gen_video_by_video_info import gen_video_by_video_info
 from content_community.zhihu.gen_zhihu_video_info import gen_video_final_info
 
 # --- 配置区域 ---
@@ -1039,10 +1040,17 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
     print(f"带图片描述结果保存至文件: {output_filename}")
 
 
+def gen_video(question_id):
+    fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
+    final_video_info = gen_video_final_info(question_id)
+    final_video_path = gen_video_by_video_info(final_video_info)
+    return final_video_path, final_video_info
+
 if __name__ == "__main__":
-    question_id = "1932895368695210694"
-    fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=10)
-    gen_video_final_info(question_id)
+    question_id = "9221922257"
+    fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
+    final_video_info = gen_video_final_info(question_id)
+    gen_video_by_video_info(final_video_info)
 
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
     # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:
