@@ -1043,11 +1043,11 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 def gen_video(question_id):
     fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
     final_video_info = gen_video_final_info(question_id)
-    final_video_path = gen_video_by_video_info(final_video_info)
+    final_video_path = gen_video_by_video_info( f"{question_id}/zhihu_answers_{question_id}_video_info_op.json")
     return final_video_path, final_video_info
 
 if __name__ == "__main__":
-    question_id = "9221922257"
+    question_id = "1932208725441097907"
     fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
     final_video_info = gen_video_final_info(question_id)
     gen_video_by_video_info(final_video_info)

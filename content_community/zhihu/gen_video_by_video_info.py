@@ -223,11 +223,11 @@ def merge_all_videos(video_part_info, output_path):
     else:
         print("没有可用的视频片段，无法合并。")
 
-def gen_video_by_video_info(video_info, bgm_library_path=r"W:\project\python_project\watermark_remove\content_community\app\bgm_audio"):
+def gen_video_by_video_info(video_info_file, bgm_library_path=r"W:\project\python_project\watermark_remove\content_community\app\bgm_audio"):
     """
     通过视频文案脚本生成最终的完整视频
     """
-    # video_info = read_json(video_info_file)
+    video_info = read_json(video_info_file)
     bgm_id = video_info.get("recommendations", {}).get("bgm", {}).get("id", "").replace(".mp4", ".wav")
     bgm_path = f"{bgm_library_path}/{bgm_id}"
     if not os.path.exists(bgm_path):
