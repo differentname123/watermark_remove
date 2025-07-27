@@ -26,30 +26,56 @@ from content_community.zhihu.gen_zhihu_video_info import gen_video_final_info
 
 def prepare_all_image(content_list, origin_image_path_dir, output_image_path_dir):
     """
-    准备好所有需要的图片
+    准备好所有需要的图片，每个条目不存在或报错时使用上一张。
     """
     image_info = {}
-    if not os.path.exists(output_image_path_dir):
-        os.makedirs(output_image_path_dir, exist_ok=True)
+    # 创建输出目录
+    os.makedirs(output_image_path_dir, exist_ok=True)
+
+    last_image_path = None
     for i, content in enumerate(content_list):
         image_name = content.get("配图", "")
-        output_image_path = f"{output_image_path_dir}/{i}.jpg"
-        # 如果origin_image_path_dir在origin_image_path_dir，则复制一份到output_image_path
-        origin_image_path = f"{origin_image_path_dir}/{image_name}"
-        if os.path.exists(origin_image_path):
+        origin_image_path = pathlib.Path(origin_image_path_dir) / image_name
+        output_image_path = pathlib.Path(output_image_path_dir) / f"{i}.jpg"
+
+        used_image_path = None
+        # 尝试使用当前图片
+        if origin_image_path.exists():
             try:
-                # 复制图片
-                Image.open(origin_image_path).save(output_image_path)
-                output_image_path = pathlib.Path(output_image_path)
+                img = Image.open(origin_image_path)
+                img.save(output_image_path)
+                used_image_path = output_image_path
                 print(f"已复制图片 {origin_image_path} 到 {output_image_path}")
-                image_info[f"{i}"] = {
-                    "image_path": str(output_image_path.resolve())
-                }
             except UnidentifiedImageError:
-                print(f"错误：无法识别图片 {origin_image_path}，请检查文件格式。")
+                print(f"错误：无法识别图片 {origin_image_path}，将使用上一张图片。")
         else:
-            print(f"错误：原始图片文件 {origin_image_path} 不存在。")
+            print(f"错误：原始图片文件 {origin_image_path} 不存在，将使用上一张图片。")
+
+        # 如果当前图片不合格且有上一张，复用上一张
+        if used_image_path is None:
+            if last_image_path is not None and last_image_path.exists():
+                try:
+                    img = Image.open(last_image_path)
+                    img.save(output_image_path)
+                    used_image_path = output_image_path
+                    print(f"已复用上一张图片 {last_image_path} 到 {output_image_path}")
+                except Exception as e:
+                    print(f"错误：复用上一张图片失败 ({e})。输出路径: {output_image_path}")
+            else:
+                print(f"警告：没有可用的上一张图片，条目 {i} 未设置图片。")
+
+        # 记录使用的图片路径
+        if used_image_path is not None:
+            image_info[str(i)] = {"image_path": str(output_image_path.resolve())}
+        else:
+            image_info[str(i)] = {"image_path": None}
+
+        # 更新上一张图片路径
+        if used_image_path is not None:
+            last_image_path = used_image_path
+
     return image_info
+
 
 
 def gen_part_video(image_path, audio_path, output_video_path, duration, text_to_speak):
@@ -228,7 +254,7 @@ def gen_video_by_video_info(video_info_file, bgm_library_path=r"W:\project\pytho
 
 
 if __name__ == '__main__':
-    question_id = "1932541949576967587"
+    question_id = "1932773484544647868"
 
     video_info_file = f"{question_id}/zhihu_answers_{question_id}_video_info_op.json"
 

@@ -1,13 +1,12 @@
 import asyncio
-import edge_tts
 import os
-import subprocess
 import re
+import subprocess
 import shlex
-import os
 import tempfile
+from pathlib import Path
 
-# --- 新增依赖：使用 librosa 和 soundfile 进行音频处理 ---
+# --- 依赖：librosa, soundfile, numpy, edge_tts ---
 try:
     import librosa
     import soundfile as sf
@@ -16,22 +15,10 @@ try:
     LIBROSA_AVAILABLE = True
 except ImportError:
     LIBROSA_AVAILABLE = False
-    print("⚠️ 警告: `librosa` 或 `soundfile` 未安装。静音切除功能 (`trim_silence=True`) 将不可用。")
-    print("   请运行 `pip install librosa soundfile`。")
-
-
-import os
-import asyncio
+    print("⚠️ 警告: `librosa` 或 `soundfile` 未安装。静音切除功能将不可用。")
+    print("   请运行 `pip install librosa soundfile numpy`。")
 
 import edge_tts
-import soundfile as sf
-
-# 如果可选安装了 librosa
-try:
-    import librosa
-    LIBROSA_AVAILABLE = True
-except ImportError:
-    LIBROSA_AVAILABLE = False
 
 def _get_volume_info(file_path: str) -> dict:
     """
@@ -62,156 +49,157 @@ def _get_volume_info(file_path: str) -> dict:
 
     return {"mean_volume": mean_v, "max_volume": max_v}
 
+# --- 核心音频处理函数 (使用 loudnorm) ---
 
-def maximize_volume(input_path: str, output_path: str = "output_maximized.wav") -> None:
-    before = _get_volume_info(input_path)
-    print(f"处理前: mean={before['mean_volume']:.2f} dB, max={before['max_volume']:.2f} dB")
+def process_audio_with_loudnorm(
+        input_path: str,
+        output_path: str,
+        target_loudness: int = -16
+) -> bool:
+    """
+    使用 ffmpeg 的 loudnorm 滤镜对音频进行专业响度归一化。
+    这是实现洪亮、饱满且音量一致的推荐方法。
 
-    # 准备一个中间文件
-    temp_fd, temp_file = tempfile.mkstemp(suffix='.wav')
-    os.close(temp_fd)
+    Args:
+        input_path (str): 输入音频文件路径。
+        output_path (str): 输出音频文件路径。
+        target_loudness (int): 目标响度，单位为 LUFS。-16 是播客/流媒体的常用值。
+
+    Returns:
+        bool: 成功返回 True，失败返回 False。
+    """
+    if not Path(input_path).exists():
+        print(f"❌ 错误: 输入文件 '{input_path}' 不存在。")
+        return False
+
+    # loudnorm 滤镜有两个阶段，但我们可以用一条命令让 ffmpeg 自动处理
+    # I: Integrated Loudness (目标综合响度)
+    # LRA: Loudness Range (响度范围)
+    # TP: True Peak (真实峰值，防止削波)
+    cmd = (
+        f'ffmpeg -y -hide_banner -i "{input_path}" '
+        f'-af "loudnorm=I={target_loudness}:LRA=7:TP=-1.5" '
+        f'"{output_path}"'
+    )
 
     try:
-        # 1. 强力压缩 + 峰值限制
-        comp_lim = (
-            "acompressor=threshold=-30dB:ratio=10:attack=5:release=200,"
-            "alimiter=limit=-0.1dB"
+        # 使用 DEVNULL 来隐藏 ffmpeg 的大量输出，只在出错时打印
+        result = subprocess.run(
+            shlex.split(cmd),
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding='utf-8'
         )
-        subprocess.run(
-            shlex.split(
-                f'ffmpeg -y -hide_banner -nostats -i "{input_path}" -af "{comp_lim}" "{temp_file}"'
-            ),
-            check=True, capture_output=True
-        )
+        return True
+    except subprocess.CalledProcessError as e:
+        print("❌ ffmpeg 处理失败！")
+        print(f"   命令: {e.cmd}")
+        print(f"   错误输出:\n{e.stderr}")
+        return False
 
-        mid1 = _get_volume_info(temp_file)
-        print(f"压缩+限制后: mean={mid1['mean_volume']:.2f} dB, max={mid1['max_volume']:.2f} dB")
 
-        # 2. 智能动态归一化
-        dyn_norm = "dynaudnorm=p=1.0"
-        subprocess.run(
-            shlex.split(
-                f'ffmpeg -y -hide_banner -nostats -i "{temp_file}" -af "{dyn_norm}" "{temp_file}.norm.wav"'
-            ),
-            check=True, capture_output=True
-        )
-        norm_file = f"{temp_file}.norm.wav"
-
-        mid2 = _get_volume_info(norm_file)
-        print(f"动态归一化后: mean={mid2['mean_volume']:.2f} dB, max={mid2['max_volume']:.2f} dB")
-
-        # 3. 峰值归一化 —— 把 max 推到 0 dB
-        gain_db = 0.0 - mid2['max_volume']
-        print(f"第三步：应用峰值增益 volume={gain_db:.2f} dB")
-        subprocess.run(
-            shlex.split(
-                f'ffmpeg -y -hide_banner -nostats -i "{norm_file}" '
-                f'-af "volume={gain_db:.2f}dB" "{output_path}"'
-            ),
-            check=True, capture_output=True
-        )
-
-    finally:
-        # 清理临时文件
-        for f in (temp_file, norm_file):
-            if os.path.exists(f):
-                os.remove(f)
-
-    final = _get_volume_info(output_path)
-    print(f"处理后: mean={final['mean_volume']:.2f} dB, max={final['max_volume']:.2f} dB")
-    print(f"已保存到: {output_path}")
+# --- 重构后的主生成函数 ---
 
 def generate_audio_and_get_duration_sync(
         text: str,
         output_filename: str,
         voice_name: str = "zh-CN-XiaoxiaoNeural",
-        trim_silence: bool = True
+        trim_silence: bool = True,
+        target_loudness: int = -14
 ) -> float | None:
     """
-    【同步版本】使用指定文本和语音合成音频，保存后返回该音频的时长。
-    此版本使用 Librosa 进行静音切除，并兼容多种音频格式（如 .mp3, .wav）。
+    【重构版本】生成、处理并保存高质量音频。
 
-    Args:
-        text (str): 需要转换为语音的文本。
-        output_filename (str): 保存音频文件的路径和名称。
-        voice_name (str, optional): 使用的语音名称。默认为 "zh-CN-XiaoxiaoNeural"。
-        trim_silence (bool, optional): 如果为 True，则使用 librosa 切除音频的首尾静音部分。
-                                      默认为 False。
-    Returns:
-        float | None: 成功则返回音频时长（秒），否则返回 None。
+    流程:
+    1. 使用 edge-tts 生成原始 MP3。
+    2. 使用 librosa 加载并切除首尾静音（如果启用）。
+    3. 将处理后的音频保存为临时的 WAV 文件（无损格式，适合处理）。
+    4. 使用 ffmpeg 的 loudnorm 对 WAV 文件进行响度归一化。
+    5. 返回最终音频的时长。
     """
     if trim_silence and not LIBROSA_AVAILABLE:
-        print("❌ 错误: 请求了静音切除 (`trim_silence=True`)，但 `librosa` 或 `soundfile` 不可用。")
-        print("--- 任务失败 ---\n")
-        return 0.0
+        print("❌ 错误: 请求了静音切除，但 `librosa` 不可用。任务中止。")
+        return None
 
-    temp_mp3_filename = os.path.splitext(output_filename)[0] + ".temp.mp3"
+    output_path = Path(output_filename)
+    # 使用临时文件来处理中间步骤，避免格式混乱
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_dir = Path(temp_dir)
+        raw_mp3 = temp_dir / "raw.mp3"
+        trimmed_wav = temp_dir / "trimmed.wav"
 
-    async def _generate_task():
-        communicate = edge_tts.Communicate(text, voice_name)
-        await communicate.save(temp_mp3_filename)
+        # 1. 生成原始音频
+        async def _generate_task():
+            communicate = edge_tts.Communicate(text, voice_name, volume='+100%')
+            await communicate.save(str(raw_mp3))
 
-    try:
-        # 1. 生成原始 mp3
-        asyncio.run(_generate_task())
+        try:
+            asyncio.run(_generate_task())
 
-        # 2. 读入音频
-        y, sr = librosa.load(temp_mp3_filename, sr=None)
+            # 2. 加载音频并进行静音切除
+            y, sr = librosa.load(str(raw_mp3), sr=None)
 
-        if trim_silence:
-            # 3. 切除首尾静音
-            y_trimmed, index = librosa.effects.trim(y, top_db=25)
-            original_duration = librosa.get_duration(y=y, sr=sr)
-            trimmed_duration = librosa.get_duration(y=y_trimmed, sr=sr)
+            if trim_silence:
+                y_trimmed, index = librosa.effects.trim(y, top_db=25)
+                if len(y) - len(y_trimmed) > sr * 0.1:  # 如果切除超过0.1秒
+                    y = y_trimmed
+                else:
+                    print("ⓘ 未检测到明显静音，跳过切除。")
 
-            if original_duration - trimmed_duration > 0.1:
-                print(f"  - 成功: 静音已切除。原时长 {original_duration:.2f}s -> 新时长 {trimmed_duration:.2f}s")
-                y = y_trimmed
+            # 在结尾增加一点静音缓冲，防止声音戛然而止
+            pad_samples = int(sr * 0.2)
+            y = np.concatenate([y, np.zeros(pad_samples)])
 
-                # 4. 在结尾增加 0.1s 的静音缓冲
-                pad_length = int(sr * 0.2)  # 0.1 秒对应的样本数
-                y = np.concatenate([y, np.zeros(pad_length)])
-                print(f"  - 信息: 在末尾追加 0.1s 缓冲静音。")
+            # 3. 保存为临时的 WAV 文件
+            sf.write(str(trimmed_wav), y, sr)
+            # 4. 进行响度归一化
+            # 确保输出目录存在
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            success = process_audio_with_loudnorm(str(trimmed_wav), str(output_path), target_loudness)
+            print(_get_volume_info(output_path), text)
+
+            if success:
+                # 重新加载最终文件以获取准确时长
+                y_final, sr_final = librosa.load(str(output_path), sr=None)
+                return librosa.get_duration(y=y_final, sr=sr_final)
             else:
-                print("  - 信息: 未检测到明显的首尾静音，无需切除。")
+                return None
 
-        # 5. 写出最终文件
-        sf.write(output_filename, y, sr)
-        maximize_volume(output_filename, output_filename)
-        final_duration = librosa.get_duration(y=y, sr=sr)
-        return final_duration
-
-    except Exception as e:
-        print(f"❌ 在处理过程中发生错误: {e}")
-        import traceback
-        traceback.print_exc()
-        print("--- 任务失败 ---\n")
-        return 0.0
-
-    finally:
-        # 清理临时文件
-        if os.path.exists(temp_mp3_filename):
-            os.remove(temp_mp3_filename)
-
+        except Exception as e:
+            import traceback
+            print(f"❌ 在主流程中发生严重错误: {e}")
+            traceback.print_exc()
+            return None
 
 
 # ================================================================
-# 下面的演示代码无需任何修改，可以直接运行
+# 演示代码
 # ================================================================
 if __name__ == "__main__":
+    print("🚀 演示使用专业响度归一化 (`loudnorm`) 生成高质量语音。\n")
 
-    print("演示如何直接调用一个标准的同步函数，无需 async/await。\n")
+    text_list = [
+        "你好，这是一个测试。",
+        "现在我们来听听，经过专业处理后，声音是不是非常洪亮，而且不同句子之间的音量保持了一致？",
+        "即使是比较轻柔的句子，听起来也很有力。",
+    ]
 
-    text_with_silence = "我们再次测试，这次换一个稳重的男声，并且直接调用函数。"
-    filename_no_trim = "test_librosa_no_trim2.mp3"
-    filename_trimmed = "test_librosa_trimmed.mp3"
+    for i, text in enumerate(text_list):
+        output_file = f"output_processed_{i + 1}.mp3"
+        print(f"--- 正在生成第 {i + 1}/{len(text_list)} 个文件: {output_file} ---")
 
-    print("--- 首先，生成一个带有人为静音但不切除的版本 ---")
-    duration_no_trim = generate_audio_and_get_duration_sync(
-        text=text_with_silence,
-        output_filename=filename_no_trim,
-        voice_name= "zh-CN-YunxiNeural",
-        trim_silence=True
-    )
-    if duration_no_trim is not None:
-        print(f"✅ 结果: '{filename_no_trim}' (未切除) 的时长是 {duration_no_trim:.2f} 秒。")
+        duration = generate_audio_and_get_duration_sync(
+            text=text,
+            output_filename=output_file,
+            voice_name="zh-CN-XiaoxiaoNeural",  # 可以换成你喜欢的语音
+            trim_silence=True,
+            target_loudness=-14  # 这是关键参数，可以调整，-14更响，-18更轻
+        )
+
+        if duration:
+            print(f"🎉 文件 '{output_file}' 生成成功，时长: {duration:.2f} 秒。\n")
+        else:
+            print(f"🔥 文件 '{output_file}' 生成失败。\n")
+
+    print("所有文件生成完毕。请试听 `output_processed_*.mp3` 文件，对比效果。")
