@@ -1555,8 +1555,8 @@ def remake_video_robust(
 
 if __name__ == '__main__':
     video_path = r"W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\2025-07-14 11.36.47-视频-餐饮小诸葛-外卖乱战，谁是受害者？ #餐饮 #外卖战 #餐饮外卖 #餐饮人 @抖音小助手.mp4"
-    # remake_video_robust(video_path)
-    remake_video_op(video_path)
+    remake_video_robust(video_path)
+    # remake_video_op(video_path)
 
 
 

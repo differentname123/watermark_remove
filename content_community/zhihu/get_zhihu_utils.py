@@ -539,7 +539,7 @@ def download_image(real_final_result):
     question = real_final_result.get('question', {})
     question_detail = question.get('detail_format', [])
     question_id = question.get('id', 'unknown')
-    image_dir = question_id
+    image_dir = f'{question_id}/images'
     if not os.path.exists(image_dir):
         os.makedirs(image_dir)
     count = 0
@@ -1040,7 +1040,7 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
 
 if __name__ == "__main__":
-    question_id = "35876370"
+    question_id = "1932541949576967587"
     fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
     gen_video_final_info(question_id)
 

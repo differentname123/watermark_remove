@@ -8,12 +8,12 @@ def create_video_from_image_smooth(
         output_path: str,
         duration: int = 5,
         resolution: tuple = (1920, 1080),
-        fps: int = 25,
+        fps: int = 30,
         zoom_factor: float = 1.1
 ):
     """
-    【优化版】使用 FFmpeg 将单张图片转换为带有平滑动态效果的视频。
-    此版本使用 scale+crop 替代 zoompan 以解决抖动问题。
+    【优化版 V2】使用 FFmpeg 将单张图片转换为带有平滑动态效果的视频。
+    此版本使用 scale+crop 替代 zoompan 并且修复了背景处理逻辑以支持任意宽高比的图片。
 
     参数:
     - image_path (str): 输入图片的路径。
@@ -30,50 +30,49 @@ def create_video_from_image_smooth(
     width, height = resolution
 
     # --- 构建 FFmpeg 滤镜链 (filter_complex) ---
-    # [前半部分与之前相同：创建模糊背景并叠加前景]
-    filter_complex_base = (
-        "[0:v]split=2[bg][fg];"
-        f"[bg]scale={width}:-1,gblur=sigma=20,crop={width}:{height}[bg_pp];"
+
+    # 【核心修正】创建模糊背景的逻辑
+    # 旧逻辑 `scale={width}:-1` 在处理宽图时会失败。
+    # 新逻辑 `scale='if(gte(iw/ih,{width}/{height}),-1,{height})':'if(gte(iw/ih,{width}/{height}),{width},-1)'`
+    # 会智能地缩放图片，使其刚好填满整个画面，然后再进行裁剪。
+    # 这确保了无论输入图片是高是宽，crop之前的流尺寸都足够大。
+    background_filter = (
+        f"[bg]scale=w='if(gte(iw/ih,{width}/{height}),-1,{width})':h='if(gte(iw/ih,{width}/{height}),{height},-1)',"
+        f"gblur=sigma=20,"
+        f"crop={width}:{height}[bg_pp];"
+    )
+
+    # 前景和叠加逻辑保持不变
+    foreground_and_overlay_filter = (
         f"[fg]scale=w='if(gte(iw/ih,{width}/{height}),{width},-1)':h='if(gte(iw/ih,{width}/{height}),-1,{height})'[fg_pp];"
         "[bg_pp][fg_pp]overlay=(W-w)/2:(H-h)/2[overlay_out];"
     )
 
-    # --- 【核心优化】使用 scale 和 crop 实现平滑缩放 ---
-    # 定义一个基于时间't'的缩放表达式，实现线性放大
-    # 从 1 倍 (t=0) 线性增长到 zoom_factor 倍 (t=duration)
+    filter_complex_base = background_filter + foreground_and_overlay_filter
+
+    # 动画滤镜部分保持不变
     zoom_expr = f"1+({zoom_factor}-1)*t/{duration}"
-
-    # 构建动画滤镜部分
     filter_complex_animation = (
-        # 1. scale: 基于上面的表达式，动态放大整个画布
-        #    w='iw*({zoom_expr})':h='ih*({zoom_expr})' -> 将输入宽度(iw)和高度(ih)乘以当前的缩放系数
-        #    eval=frame -> 确保每一帧都重新计算表达式
         f"[overlay_out]scale=w='iw*({zoom_expr})':h='ih*({zoom_expr})':eval=frame,"
-
-        # 2. crop: 将放大的画布从中心裁切回目标分辨率
-        #    w={width}:h={height} -> 裁切后的尺寸是我们的目标视频尺寸
-        #    x='(iw-{width})/2':y='(ih-{height})/2' -> 裁切的起始点，确保中心对齐
         f"crop=w={width}:h={height}:x='(iw-{width})/2':y='(ih-{height})/2',"
-
-        # 3. format: 设置像素格式，确保最佳兼容性
         "format=yuv420p"
     )
 
-    # 组合完整的滤镜链
     final_filter_complex = filter_complex_base + filter_complex_animation
 
     # --- 构建完整的 FFmpeg 命令 ---
     command = [
-        'ffmpeg',
-        '-y',
-        '-loop', '1',  # 让图片作为无限循环的输入流
+        'ffmpeg', '-y',
+        '-loglevel', 'error',  # <<< 新增：设置日志级别为 error，隐藏非错误输出
+
+        '-loop', '1',
         '-i', image_path,
         '-filter_complex', final_filter_complex,
         '-c:v', 'libx264',
-        '-preset', 'slow',  # 使用稍慢的预设可以获得更好的压缩质量
-        '-crf', '18',  # 恒定质量因子，数值越低质量越好，18是很好的平衡点
+        '-preset', 'slow',
+        '-crf', '18',
         '-t', str(duration),
-        '-r', str(fps),  # 明确指定输出帧率
+        '-r', str(fps),
         output_path
     ]
 
@@ -82,11 +81,13 @@ def create_video_from_image_smooth(
     print(f"执行的 FFmpeg 命令: {' '.join(command)}")
 
     try:
-        result = subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8')
-        print(f"\n视频 '{output_path}' 生成成功！动画效果应该非常平滑。")
+        # 使用 subprocess.PIPE 来更好地捕获输出
+        process = subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8')
+        print(f"\n视频 '{output_path}' 生成成功！")
     except subprocess.CalledProcessError as e:
         print("\n视频生成失败！")
         print("FFmpeg 错误信息:")
+        # 打印 stderr，这是 ffmpeg 错误日志的主要输出位置
         print(e.stderr)
 
 
@@ -157,6 +158,7 @@ def scroll_image_vertically(
     cmd = [
         "ffmpeg",
         "-y",  # 覆盖已存在的文件
+        '-loglevel', 'error',  # <<< 新增：设置日志级别为 error，隐藏非错误输出
         "-loop", "1",  # 无限循环输入图片
         "-t", str(final_duration),  # 【修改点】使用最终计算出的时长
         "-i", image_path,
@@ -184,29 +186,74 @@ def scroll_image_vertically(
         print("\n错误: 未找到 ffmpeg 命令。请确保 FFmpeg 已安装并配置在系统路径中。")
 
 
+def create_video_from_image_auto_select(
+        image_path: str,
+        output_path: str,
+        duration: int = 5,
+        resolution: tuple = (1920, 1080),
+        fps: int = 30,
+        zoom_factor: float = 1.1,
+        scroll_speed: int = 60
+):
+    """
+    自动根据图片的宽高比选择合适的视频生成方式。
+
+    - 如果图片高度 > 2 * 宽度, 则调用 `scroll_image_vertically` (垂直滚动)。
+    - 否则, 调用 `create_video_from_image_smooth` (平滑缩放)。
+
+    参数:
+    - image_path (str): 输入图片的路径。
+    - output_path (str): 输出视频的保存路径。
+    - duration (int): 期望的视频时长（秒）。对两种模式都有效。
+    - resolution (tuple): 视频分辨率 (宽, 高)。
+    - fps (int): 视频帧率。
+    - zoom_factor (float): [仅用于平滑缩放模式] 最终缩放倍数。
+    - scroll_speed (int): [仅用于垂直滚动模式] 滚动的视觉速度（像素/秒）。
+    """
+    if not os.path.exists(image_path):
+        print(f"错误：找不到输入图片 '{image_path}'")
+        return
+
+    # 1. 获取图片尺寸以做决策
+    try:
+        with Image.open(image_path) as img:
+            img_width, img_height = img.size
+    except Exception as e:
+        print(f"错误: 无法读取图片 '{image_path}'。 错误信息: {e}")
+        return
+
+    # 2. 根据宽高比决策
+    # 规则：当高度超过宽度的2倍时，采用滚动模式
+    if img_height > 2 * img_width:
+        print(f"检测到图片为高图 (尺寸: {img_width}x{img_height})。将使用【垂直滚动】模式。")
+        output_width, output_height = resolution
+        scroll_image_vertically(
+            image_path=image_path,
+            output_path=output_path,
+            scroll_speed=scroll_speed,
+            output_width=output_width,
+            output_height=output_height,
+            fps=fps,
+            target_duration=duration  # 将统一的 duration 参数传给 target_duration
+        )
+    else:
+        print(f"检测到图片为常规图 (尺寸: {img_width}x{img_height})。将使用【平滑缩放】模式。")
+        create_video_from_image_smooth(
+            image_path=image_path,
+            output_path=output_path,
+            duration=duration,
+            resolution=resolution,
+            fps=fps,
+            zoom_factor=zoom_factor
+        )
+
 # --- 如何使用 ---
 if __name__ == '__main__':
     test_image_path = 'test5.jpg'
-    # --- 场景 1: 不设置 target_duration, 自动计算时长 (约78.4秒) ---
-    print("\n--- 场景 1: 自动计算时长 ---")
-    scroll_image_vertically(
-        image_path=test_image_path,
-        output_path="output_auto_duration.mp4",
-        target_duration=None
-    )
+    create_video_from_image_auto_select(image_path=test_image_path, output_path=f"{test_image_path.replace('.jpg', '_image.mp4')}")
 
-    # --- 场景 2: 设置 target_duration < 自动时长，视频被截断 ---
-    print("\n--- 场景 2: 截断为10秒 ---")
-    scroll_image_vertically(
-        image_path=test_image_path,
-        output_path="output_truncated_10s.mp4",
-        target_duration=2  # 视频总长只有10秒
-    )
+    test_image_path = 'test4.jpg'
+    create_video_from_image_auto_select(image_path=test_image_path, output_path=f"{test_image_path.replace('.jpg', '_image.mp4')}")
 
-    # --- 场景 3: 设置 target_duration > 自动时长，保持最后一帧 ---
-    print("\n--- 场景 3: 延长到90秒（滚动结束后保持最后一帧） ---")
-    scroll_image_vertically(
-        image_path=test_image_path,
-        output_path="output_extended_90s.mp4",
-        target_duration=10 # 视频总长90秒
-    )
+    test_image_path = 'test3.jpg'
+    create_video_from_image_auto_select(image_path=test_image_path, output_path=f"{test_image_path.replace('.jpg', '_image.mp4')}")

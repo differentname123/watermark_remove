@@ -739,6 +739,7 @@ def time_to_ms(time_input: str | float | int) -> int:
 
 def ms_to_time(ms: int) -> str:
     """将毫秒转换为'HH:MM:SS.ms'格式的时间字符串。"""
+    ms = int(ms)  # 确保输入是整数
     if ms < 0: ms = 0
     s, ms_rem = divmod(ms, 1000)
     m, s = divmod(s, 60)

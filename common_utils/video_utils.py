@@ -563,16 +563,17 @@ def cover_video_area_blur(
             print(f"[INFO] Cleaning up temporary file: {temp_patch_file}")
             os.remove(temp_patch_file)
 
+
 def add_subtitles_to_video(
         video_path: str,
         subtitles_info: list,
         output_path: str,
-        font_path: str,
         font_size: int = 48,
+        font_path='C:/Windows/Fonts/msyhbd.ttc',
         font_color: str = 'white',
         box_color: str = 'black@0.5',
         bottom_margin: int = 50,
-        fixed_rect: list = [[180, 641], [1099, 699]]  # [[x1, y1], [x2, y2]]
+        fixed_rect = None
 ) -> None:
     """
     将字幕信息“烧录”到视频中，并自动分割过长的字幕行，
@@ -586,21 +587,25 @@ def add_subtitles_to_video(
     :param font_color: 字体颜色，默认白色。
     :param box_color: 半透明背景色，默认黑@0.5。
     :param bottom_margin: 距离底部的像素偏移，默认 50。
-    :param fixed_rect: 固定矩形区域 [[x1,y1],[x2,y2]]，示例 [[180,641],[1099,699]]。
+    :param fixed_rect: 固定矩形区域 [[x1,y1],[x2,y2]]。如果为 None，则自动计算。
     """
     if not os.path.exists(font_path):
         raise FileNotFoundError(f"字体文件未找到: {font_path}")
 
     # ------------------- [ 核心修改开始 ] -------------------
 
-    # 1. 获取视频宽度以计算最大字幕宽度
+    # 1. 获取视频尺寸以计算最大字幕宽度和矩形位置
     try:
-        video_width, _ = get_video_dimensions(video_path)
+        # [调整] 同时获取视频宽度和高度
+        video_width, video_height = get_video_dimensions(video_path)
         max_subtitle_width = video_width * 0.9
-        print(f"视频宽度: {video_width}px, 字幕最大允许宽度: {max_subtitle_width:.0f}px")
+        print(f"视频尺寸: {video_width}x{video_height}px, 字幕最大允许宽度: {max_subtitle_width:.0f}px")
     except (ValueError, FileNotFoundError) as e:
-        print(f"警告: 无法获取视频尺寸，将不执行字幕分割。错误: {e}")
+        print(f"警告: 无法获取视频尺寸，将不执行字幕分割和矩形自动计算。错误: {e}")
         processed_subtitles = subtitles_info
+        # 如果无法获取尺寸且需要自动计算，则必须报错退出
+        if fixed_rect is None:
+            raise ValueError("无法获取视频尺寸，无法自动计算矩形区域。请手动提供 'fixed_rect' 参数。") from e
     else:
         # 2. 加载字体用于计算文本宽度
         try:
@@ -617,6 +622,47 @@ def add_subtitles_to_video(
         )
         print(f"字幕预处理完成。原始字幕数: {len(subtitles_info)}, 处理后字幕数: {len(processed_subtitles)}")
 
+        # [调整] 如果 fixed_rect 未指定，则在此处自动计算
+        if fixed_rect is None:
+            print("fixed_rect 未提供，开始自动计算矩形区域...")
+            if not processed_subtitles:
+                print("警告：没有字幕信息，无法计算矩形。将不绘制背景。")
+                fixed_rect = [[0, 0], [0, 0]]  # 创建一个0尺寸的矩形，避免后续代码出错
+            else:
+                max_text_w, max_text_h = 0, 0
+                for sub in processed_subtitles:
+                    # 使用 getbbox 获取包含多行文本的精确边界框
+                    bbox = font.getbbox(sub['optimizedText'])
+                    text_w = bbox[2] - bbox[0]
+                    text_h = bbox[3] - bbox[1]
+                    if text_w > max_text_w:
+                        max_text_w = text_w
+                    if text_h > max_text_h:
+                        max_text_h = text_h
+
+                print(f"计算出的最大字幕尺寸: {max_text_w:.0f}x{max_text_h:.0f}px")
+
+                # 为矩形添加一些内边距（padding）
+                padding_x = font_size  # 水平方向使用一个字体大小作为边距
+                padding_y = font_size // 2  # 垂直方向使用半个字体大小作为边距
+
+                rect_w = max_text_w + padding_x
+                rect_h = max_text_h + padding_y
+
+                # 计算矩形坐标
+                # 水平居中
+                rect_x1 = (video_width - rect_w) / 2
+                # 垂直位置与字幕文本对齐
+                # 字幕文本的y位置是 y=h-text_h-bottom_margin
+                # 所以矩形的y1也应基于此计算
+                rect_y1 = video_height - bottom_margin - max_text_h - (padding_y / 2)
+
+                rect_x2 = rect_x1 + rect_w
+                rect_y2 = rect_y1 + rect_h
+
+                fixed_rect = [[int(rect_x1), int(rect_y1)], [int(rect_x2), int(rect_y2)]]
+                print(f"自动计算的矩形区域为: {fixed_rect}")
+
     # ------------------- [ 核心修改结束 ] -------------------
 
     # 为 ffmpeg 的滤镜语法格式化字体路径
@@ -624,29 +670,35 @@ def add_subtitles_to_video(
     if os.name == 'nt':
         formatted_font_path = formatted_font_path.replace(':', '\\:')
 
-    # 计算固定矩形的位置和尺寸
+    # 计算固定矩形的位置和尺寸 (现在 fixed_rect 必定有值)
     x1, y1 = fixed_rect[0]
     x2, y2 = fixed_rect[1]
     rect_w = x2 - x1
     rect_h = y2 - y1
 
     filters = []
+    # 只有当矩形有实际大小时才添加绘制指令
+    if rect_w > 0 and rect_h > 0:
+        for sub in processed_subtitles:
+            start_time = _parse_subtitle_time(sub['startTime'])
+            end_time = _parse_subtitle_time(sub['endTime'])
+
+            # 1) 先画固定大小的矩形
+            drawbox = (
+                f"drawbox="
+                f"x={x1}:y={y1}:w={rect_w}:h={rect_h}:"
+                f"color={box_color}:t=fill:"
+                f"enable='between(t,{start_time},{end_time})'"
+            )
+            filters.append(drawbox)
+
+    # 总是绘制字幕文本
     for sub in processed_subtitles:
-        # 解析时间和文本
         start_time = _parse_subtitle_time(sub['startTime'])
-        end_time   = _parse_subtitle_time(sub['endTime'])
-        text       = _escape_ffmpeg_text(sub['optimizedText'])
+        end_time = _parse_subtitle_time(sub['endTime'])
+        text = _escape_ffmpeg_text(sub['optimizedText'])
 
-        # 1) 先画固定大小的矩形
-        drawbox = (
-            f"drawbox="
-            f"x={x1}:y={y1}:w={rect_w}:h={rect_h}:"
-            f"color={box_color}:t=fill:"
-            f"enable='between(t,{start_time},{end_time})'"
-        )
-        filters.append(drawbox)
-
-        # 2) 再画字幕文字（关闭内置的 box）
+        # 2) 再画字幕文字
         drawtext = (
             f"drawtext="
             f"fontfile='{formatted_font_path}':"
@@ -668,26 +720,16 @@ def add_subtitles_to_video(
 
     vf_arg = ",".join(filters)
 
-    if not vf_arg:
-        print("没有可烧录的字幕，将直接复制视频。")
-        import shutil
-        shutil.copy(video_path, output_path)
-        return
-
-    # 使用临时文件来保存滤镜链，避免命令行过长
-    # tempfile.NamedTemporaryFile 在 with 块结束时会自动删除
+    # ... 后续的 ffmpeg 调用代码保持不变 ...
     with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix=".txt", encoding='utf-8') as temp_filter_file:
         temp_filter_file.write(vf_arg)
         filter_script_path = temp_filter_file.name
 
-    # 注意：在Windows上，临时文件路径可能包含反斜杠，需要处理
     formatted_filter_path = filter_script_path.replace('\\', '/')
 
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", video_path,
-        # 使用 -filter_complex_script 或 -vf_script
-        # -filter_complex_script 更通用，推荐使用
         "-filter_complex_script", formatted_filter_path,
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         "-c:a", "copy",
@@ -695,8 +737,7 @@ def add_subtitles_to_video(
     ]
 
     try:
-        print("正在为视频添加字幕和固定矩形...")
-        # 注意：这里 cmd 列表里不再包含那个超长的 vf_arg
+        print("正在为视频添加字幕和矩形背景...")
         subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
         print(f"成功！已将带字幕的视频保存至: {output_path}")
     except FileNotFoundError:
@@ -705,12 +746,9 @@ def add_subtitles_to_video(
     except subprocess.CalledProcessError as e:
         print(f"[错误] ffmpeg 执行失败。返回码: {e.returncode}")
         print(f"FFMPEG 错误输出:\n{e.stderr}")
-        # 可以在这里打印命令，帮助调试，但不要打印 vf_arg
-        # print(f"执行的命令（不含滤镜内容）: {' '.join(cmd)}")
-        print(f"滤镜脚本内容保存在: {filter_script_path}") # 告知用户可以检查这个文件
+        print(f"滤镜脚本内容保存在: {filter_script_path}")
         raise
     finally:
-        # 确保临时文件在任何情况下都被删除
         if os.path.exists(filter_script_path):
             os.remove(filter_script_path)
 
@@ -1258,6 +1296,76 @@ def get_duration_seconds(start_str, end_str):
 
     return end_seconds - start_seconds
 
+
+def merge_videos_ffmpeg(video_paths, output_path="merged_video.mp4"):
+    """
+    使用 FFmpeg 将多个视频文件合并成一个。
+
+    该函数通过重新编码所有输入视频来确保兼容性，
+    可以处理分辨率、帧率或编码格式不同的视频。
+
+    Args:
+        video_paths (list): 包含要合并的视频文件路径的列表。
+        output_path (str, optional): 输出的合并视频文件路径。
+                                     默认为 "merged_video.mp4"。
+    """
+    # 1. 输入验证
+    if not video_paths:
+        print("[ERROR] 视频路径列表为空，操作中止。")
+        return
+
+    # 检查所有文件是否存在
+    for path in video_paths:
+        if not os.path.exists(path):
+            print(f"[ERROR] 视频文件未找到: {path}")
+            return
+
+    # 使用临时目录来存放文件列表，程序结束后会自动清理
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # 2. 创建一个文本文件，列出所有要拼接的视频
+        concat_list_path = os.path.join(temp_dir, "file_list.txt")
+        print("[INFO] 正在创建待合并的视频文件列表...")
+        with open(concat_list_path, 'w', encoding='utf-8') as f:
+            for path in video_paths:
+                # 转换为绝对路径并处理斜杠，确保 FFmpeg 能正确识别
+                safe_path = os.path.abspath(path).replace('\\', '/')
+                f.write(f"file '{safe_path}'\n")
+                print(f"  - 已添加: {os.path.basename(path)}")
+
+        # 3. 构建并执行 FFmpeg 命令
+        # 使用 concat demuxer 并重新编码，以获得最佳兼容性
+        cmd_merge = [
+            "ffmpeg",
+            "-y",  # 覆盖已存在的输出文件
+            "-f", "concat",  # 使用 concat demuxer
+            "-safe", "0",  # 允许使用绝对路径
+            "-i", concat_list_path,  # 输入文件为我们创建的列表
+            "-c:v", "libx264",  # 重新编码视频为 H.264
+            "-c:a", "aac",  # 重新编码音频为 AAC
+            "-preset", "fast",  # 编码速度与质量的平衡点
+            "-crf", "22",  # 控制视频质量 (数字越小质量越高)
+            output_path  # 输出文件路径
+        ]
+
+        print("\n[INFO] 开始合并视频...")
+        print(f"[DEBUG] 执行命令: {' '.join(cmd_merge)}")
+
+        try:
+            # 运行命令，并捕获输出用于调试
+            result = subprocess.run(
+                cmd_merge,
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding='utf-8'
+            )
+            print(f"\n[SUCCESS] 视频已成功合并并保存至: {output_path}")
+
+        except subprocess.CalledProcessError as e:
+            # 如果 FFmpeg 执行失败，打印详细的错误信息
+            print(f"\n[FATAL] 视频合并失败 (返回码 {e.returncode})。")
+            if e.stderr:
+                print(f"--- FFmpeg 错误信息 ---\n{e.stderr.strip()}\n--------------------")
 
 def re_edit_video_ffmpeg(video_path, time_segments, output_path="output_video_ffmpeg.mp4"):
     """
