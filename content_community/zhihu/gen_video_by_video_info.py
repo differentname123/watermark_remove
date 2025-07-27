@@ -35,21 +35,20 @@ def prepare_all_image(content_list, origin_image_path_dir, output_image_path_dir
         image_name = content.get("配图", "")
         output_image_path = f"{output_image_path_dir}/{i}.jpg"
         # 如果origin_image_path_dir在origin_image_path_dir，则复制一份到output_image_path
-        if not os.path.exists(output_image_path):
-            origin_image_path = f"{origin_image_path_dir}/{image_name}"
-            if os.path.exists(origin_image_path):
-                try:
-                    # 复制图片
-                    Image.open(origin_image_path).save(output_image_path)
-                    output_image_path = pathlib.Path(output_image_path)
-                    print(f"已复制图片 {origin_image_path} 到 {output_image_path}")
-                    image_info[f"{i}"] = {
-                        "image_path": str(output_image_path.resolve())
-                    }
-                except UnidentifiedImageError:
-                    print(f"错误：无法识别图片 {origin_image_path}，请检查文件格式。")
-            else:
-                print(f"错误：原始图片文件 {origin_image_path} 不存在。")
+        origin_image_path = f"{origin_image_path_dir}/{image_name}"
+        if os.path.exists(origin_image_path):
+            try:
+                # 复制图片
+                Image.open(origin_image_path).save(output_image_path)
+                output_image_path = pathlib.Path(output_image_path)
+                print(f"已复制图片 {origin_image_path} 到 {output_image_path}")
+                image_info[f"{i}"] = {
+                    "image_path": str(output_image_path.resolve())
+                }
+            except UnidentifiedImageError:
+                print(f"错误：无法识别图片 {origin_image_path}，请检查文件格式。")
+        else:
+            print(f"错误：原始图片文件 {origin_image_path} 不存在。")
     return image_info
 
 
@@ -119,14 +118,13 @@ def prepare_video(video_info, output_video_path_dir):
             continue
 
         output_video_path = output_video_path_dir / f"{k}.mp4"
-        if not output_video_path_dir.exists():
-            gen_part_video(
-                image_path=image_path,
-                audio_path=audio_path,
-                text_to_speak=text_to_speak,
-                output_video_path=str(output_video_path),
-                duration=duration
-            )
+        gen_part_video(
+            image_path=image_path,
+            audio_path=audio_path,
+            text_to_speak=text_to_speak,
+            output_video_path=str(output_video_path),
+            duration=duration
+        )
         video_part_info[k] = {
             "id": k,
             "image_path": image_path,
@@ -142,19 +140,19 @@ def prepare_all_audio(content_list,voice_name, audio_path_dir):
     for i, content in enumerate(content_list):
         audio_file_path = audio_path_dir / f"{i}.mp3"
         text_to_speak = content.get("文案", "")
-        if not audio_file_path.exists() and text_to_speak:
-            audio_length = generate_audio_and_get_duration_sync(
-                text=text_to_speak,
-                output_filename=str(audio_file_path),
-                voice_name=voice_name
-            )
-            abs_audio_path = str(audio_file_path.resolve())
-            audio_info[f'{i}'] = {
-                "id": i,
-                "audio_path": abs_audio_path,
-                "text_to_speak": text_to_speak,
-                "duration": audio_length
-            }
+        audio_length = generate_audio_and_get_duration_sync(
+            text=text_to_speak,
+            output_filename=str(audio_file_path),
+            voice_name=voice_name
+        )
+        abs_audio_path = str(audio_file_path.resolve())
+        audio_info[f'{i}'] = {
+            "id": i,
+            "audio_path": abs_audio_path,
+            "text_to_speak": text_to_speak,
+            "duration": audio_length
+        }
+    return audio_info
 
 def merge_all_videos(video_part_info, output_path):
     """
@@ -230,7 +228,7 @@ def gen_video_by_video_info(video_info_file, bgm_library_path=r"W:\project\pytho
 
 
 if __name__ == '__main__':
-    question_id = "1931716245331337551"
+    question_id = "1932541949576967587"
 
     video_info_file = f"{question_id}/zhihu_answers_{question_id}_video_info_op.json"
 
