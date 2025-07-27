@@ -19,7 +19,8 @@ import time
 import traceback
 
 from common_utils.common_utils import get_config, format_seconds_to_mmss
-from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover
+from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover, \
+    merge_videos_ffmpeg
 from content_community.app.remake_video import remake_video_robust
 
 config_map = {}
@@ -299,6 +300,23 @@ def auto_upload():
         except Exception as e:
             print(f"⚠️  尾部插图失败，继续使用原视频：{e}")
 
+        temp_video_path = video_path.replace('.mp4', '_temp.mp4')
+        try:
+            if generation_options.get('add_epilogue', False):
+                print(f"🔄 添加结尾视频片段到 {video_path}... userName: {userName}")
+                copyright_video_path = f'{userName}_final.mp4'
+                if not os.path.exists(copyright_video_path):
+                    copyright_video_path = 'final.mp4'
+                    print(f"⚠️ 版权视频文件 {copyright_video_path} 不存在，使用默认视频。")
+                video_path_list = [video_path, copyright_video_path]
+                merge_videos_ffmpeg(video_path_list, output_path=temp_video_path)
+                if os.path.exists(temp_video_path):
+                    video_path = temp_video_path
+                    print(f"✅ 合并视频成功，保存为 {temp_video_path}")
+        except Exception as e:
+            print(f"⚠️ 合并视频失败：{e}")
+
+
         try:
             # ---------- 准备投稿参数 ----------
             cover_path = (
@@ -402,6 +420,8 @@ def auto_upload():
                     os.remove(video_path)
                 if new_video_path and os.path.exists(new_video_path):
                     os.remove(new_video_path)
+                if temp_video_path and os.path.exists(temp_video_path):
+                    os.remove(temp_video_path)
             except Exception as e:
                 print(f"⚠️ 删除视频文件失败：{e}")
 

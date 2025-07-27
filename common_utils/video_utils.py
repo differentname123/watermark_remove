@@ -1297,75 +1297,100 @@ def get_duration_seconds(start_str, end_str):
     return end_seconds - start_seconds
 
 
+def probe_video_new(path):
+    """用 ffprobe 获取视频的宽、高、帧率和 SAR。"""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,r_frame_rate,sample_aspect_ratio",
+        "-of", "json",
+        path
+    ]
+    proc = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    info = json.loads(proc.stdout)["streams"][0]
+    # 解析帧率，比如 "30000/1001" -> float
+    num, den = map(int, info["r_frame_rate"].split("/"))
+    fps = num / den
+    sar = info.get("sample_aspect_ratio", "1:1")
+    w, h = info["width"], info["height"]
+    return w, h, fps, sar
+
 def merge_videos_ffmpeg(video_paths, output_path="merged_video.mp4"):
     """
-    使用 FFmpeg 将多个视频文件合并成一个。
-
-    该函数通过重新编码所有输入视频来确保兼容性，
-    可以处理分辨率、帧率或编码格式不同的视频。
+    将多个视频按第一个视频的参数拼接合并：
+    - 第一个视频保留原始分辨率、帧率、纵横比。
+    - 后续视频按第一个视频的参数做 scale/pad 补边。
+    - 音频直接 passthrough，以原声音长度补时长。
 
     Args:
-        video_paths (list): 包含要合并的视频文件路径的列表。
-        output_path (str, optional): 输出的合并视频文件路径。
-                                     默认为 "merged_video.mp4"。
+        video_paths (list of str): 按顺序待合并的视频文件路径列表（至少一个）。
+        output_path (str): 合并后输出文件路径。
+
+    Raises:
+        ValueError: 当 video_paths 为空。
+        FileNotFoundError: 当任一路视频不存在。
+        subprocess.CalledProcessError: FFmpeg 执行失败时抛出。
     """
-    # 1. 输入验证
+    # 输入验证
     if not video_paths:
-        print("[ERROR] 视频路径列表为空，操作中止。")
-        return
+        raise ValueError("视频路径列表不能为空")
+    for p in video_paths:
+        if not os.path.exists(p):
+            raise FileNotFoundError(f"未找到文件: {p}")
 
-    # 检查所有文件是否存在
-    for path in video_paths:
-        if not os.path.exists(path):
-            print(f"[ERROR] 视频文件未找到: {path}")
-            return
+    # 探测第一个视频参数
+    ref_w, ref_h, ref_fps, ref_sar = probe_video_new(video_paths[0])
+    print(f"[INFO] 参考视频参数: {ref_w}×{ref_h}, fps={ref_fps:.2f}, SAR={ref_sar}")
 
-    # 使用临时目录来存放文件列表，程序结束后会自动清理
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # 2. 创建一个文本文件，列出所有要拼接的视频
-        concat_list_path = os.path.join(temp_dir, "file_list.txt")
-        print("[INFO] 正在创建待合并的视频文件列表...")
-        with open(concat_list_path, 'w', encoding='utf-8') as f:
-            for path in video_paths:
-                # 转换为绝对路径并处理斜杠，确保 FFmpeg 能正确识别
-                safe_path = os.path.abspath(path).replace('\\', '/')
-                f.write(f"file '{safe_path}'\n")
-                print(f"  - 已添加: {os.path.basename(path)}")
+    # 构建 inputs 列表和 filter_complex 不同段
+    inputs = []          # ffmpeg -i 列表
+    vf_filters = []      # 各路视频、音频滤镜链
+    audio_labels = []    # 存放 [a{i}] 标签
 
-        # 3. 构建并执行 FFmpeg 命令
-        # 使用 concat demuxer 并重新编码，以获得最佳兼容性
-        cmd_merge = [
-            "ffmpeg",
-            "-y",  # 覆盖已存在的输出文件
-            "-f", "concat",  # 使用 concat demuxer
-            "-safe", "0",  # 允许使用绝对路径
-            "-i", concat_list_path,  # 输入文件为我们创建的列表
-            "-c:v", "libx264",  # 重新编码视频为 H.264
-            "-c:a", "aac",  # 重新编码音频为 AAC
-            "-preset", "fast",  # 编码速度与质量的平衡点
-            "-crf", "22",  # 控制视频质量 (数字越小质量越高)
-            output_path  # 输出文件路径
-        ]
-
-        print("\n[INFO] 开始合并视频...")
-        print(f"[DEBUG] 执行命令: {' '.join(cmd_merge)}")
-
-        try:
-            # 运行命令，并捕获输出用于调试
-            result = subprocess.run(
-                cmd_merge,
-                check=True,
-                capture_output=True,
-                text=True,
-                encoding='utf-8'
+    for idx, path in enumerate(video_paths):
+        inputs += ["-i", path]
+        # 视频流处理
+        if idx == 0:
+            # 仅 setsar 保持原样
+            vf_filters.append(f"[0:v]setsar=1[v0]")
+        else:
+            vf_filters.append(
+                f"[{idx}:v]"
+                f"scale={ref_w}:{ref_h}:force_original_aspect_ratio=decrease,"  # 等比缩放
+                f"pad={ref_w}:{ref_h}:(ow-iw)/2:(oh-ih)/2,"              # 黑边居中
+                f"setsar=1[v{idx}]"
             )
-            print(f"\n[SUCCESS] 视频已成功合并并保存至: {output_path}")
+        # 音频流处理：空滤镜打标签
+        vf_filters.append(f"[{idx}:a]anull[a{idx}]")
+        audio_labels.append(f"[a{idx}]")
 
-        except subprocess.CalledProcessError as e:
-            # 如果 FFmpeg 执行失败，打印详细的错误信息
-            print(f"\n[FATAL] 视频合并失败 (返回码 {e.returncode})。")
-            if e.stderr:
-                print(f"--- FFmpeg 错误信息 ---\n{e.stderr.strip()}\n--------------------")
+    # 拼接视频和音频标签
+    concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(video_paths)))
+    concat_part = f"{concat_inputs}concat=n={len(video_paths)}:v=1:a=1[outv][outa]"
+    vf_filters.append(concat_part)
+
+    filter_complex = "; ".join(vf_filters)
+
+    # 构造 ffmpeg 命令
+    cmd = [
+        "ffmpeg", "-y",
+        "-loglevel", "error",       # 只显示错误
+        *inputs,
+        "-filter_complex", filter_complex,
+        "-map", "[outv]",  # 映射合并后视频流
+        "-map", "[outa]",  # 映射合并后音频流
+        "-r", f"{ref_fps:.2f}",
+        # 重新编码输出
+        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-c:a", "aac",
+        output_path
+    ]
+
+    print("[INFO] 开始执行合并命令:")
+    print(" ".join(cmd))
+    # 调用 ffmpeg
+    subprocess.run(cmd, check=True)
+    print(f"[SUCCESS] 合并完成，输出文件：{output_path}")
 
 def re_edit_video_ffmpeg(video_path, time_segments, output_path="output_video_ffmpeg.mp4"):
     """
