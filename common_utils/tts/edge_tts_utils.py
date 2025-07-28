@@ -106,7 +106,9 @@ def generate_audio_and_get_duration_sync(
         output_filename: str,
         voice_name: str = "zh-CN-XiaoxiaoNeural",
         trim_silence: bool = True,
-        target_loudness: int = -14
+        target_loudness: int = -14,
+        rate: str = "+10%",
+        pitch: str = '+10Hz',
 ) -> float | None:
     """
     【重构版本】生成、处理并保存高质量音频。
@@ -131,7 +133,7 @@ def generate_audio_and_get_duration_sync(
 
         # 1. 生成原始音频
         async def _generate_task():
-            communicate = edge_tts.Communicate(text, voice_name, volume='+100%', rate='+10%', pitch='+10Hz')
+            communicate = edge_tts.Communicate(text, voice_name, volume='+100%', rate=rate, pitch=pitch)
             await communicate.save(str(raw_mp3))
 
         try:
@@ -147,9 +149,9 @@ def generate_audio_and_get_duration_sync(
                 else:
                     print("ⓘ 未检测到明显静音，跳过切除。")
 
-            # 在结尾增加一点静音缓冲，防止声音戛然而止
-            pad_samples = int(sr * 0.2)
-            y = np.concatenate([y, np.zeros(pad_samples)])
+                # 在结尾增加一点静音缓冲，防止声音戛然而止
+                pad_samples = int(sr * 0.2)
+                y = np.concatenate([y, np.zeros(pad_samples)])
 
             # 3. 保存为临时的 WAV 文件
             sf.write(str(trimmed_wav), y, sr)

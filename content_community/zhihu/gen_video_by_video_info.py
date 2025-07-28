@@ -119,8 +119,8 @@ def gen_part_video(image_path, audio_path, output_video_path, duration, text_to_
         video_path=audio_output_video_path,
         subtitles_info=subtitle_data,
         output_path=subtitle_data_video_path,
-        font_size=52,
-        bottom_margin=60
+        font_size=70,
+        bottom_margin=30
     )
 
     if len(text_to_speak) > 30:
@@ -193,7 +193,10 @@ def prepare_all_audio(content_list,voice_name, audio_path_dir):
         audio_length = generate_audio_and_get_duration_sync(
             text=text_to_speak,
             output_filename=str(audio_file_path),
-            voice_name=voice_name
+            voice_name=voice_name,
+            trim_silence=False,
+            rate="+20%",
+            pitch='+20Hz',
         )
         abs_audio_path = str(audio_file_path.resolve())
         audio_info[f'{i}'] = {
@@ -280,7 +283,7 @@ def gen_video_by_video_info(video_info_file, bgm_library_path=r"W:\project\pytho
 
 
 if __name__ == '__main__':
-    question_id = "1932895368695210694"
+    question_id = "1932494683264779826"
 
     video_info_file = f"{question_id}/zhihu_answers_{question_id}_video_info_op.json"
 
