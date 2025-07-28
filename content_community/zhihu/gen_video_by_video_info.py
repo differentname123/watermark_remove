@@ -195,8 +195,8 @@ def prepare_all_audio(content_list,voice_name, audio_path_dir):
             output_filename=str(audio_file_path),
             voice_name=voice_name,
             trim_silence=False,
-            rate="+20%",
-            pitch='+20Hz',
+            rate="+15%",
+            pitch='+10Hz',
         )
         abs_audio_path = str(audio_file_path.resolve())
         audio_info[f'{i}'] = {
@@ -283,7 +283,7 @@ def gen_video_by_video_info(video_info_file, bgm_library_path=r"W:\project\pytho
 
 
 if __name__ == '__main__':
-    question_id = "1932494683264779826"
+    question_id = "1931716245331337551"
 
     video_info_file = f"{question_id}/zhihu_answers_{question_id}_video_info_op.json"
 
