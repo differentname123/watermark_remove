@@ -180,11 +180,14 @@ def get_llm_content_gemini_flash_video(
         except (ga_exceptions.PermissionDenied,
                 ga_exceptions.ResourceExhausted,
                 ga_exceptions.GoogleAPICallError) as e:
+            # traceback.print_exc()
+
             last_error = e
-            print(f"[WARN] Key “{key_name}” 调用失败：{e.__class__.__name__}，切换下一个…")
+            print(f"[WARN] Key “{key_name}” 调用失败：{e}，切换下一个…")
             # 继续到下一个 key
 
         except Exception as e:
+            # traceback.print_exc()
             # 未知错误直接返回，或者根据需求也可以继续尝试下一个
             return f"处理过程中发生未知错误: {e}"
 
@@ -247,7 +250,7 @@ def get_llm_content_sub(prompt: str = '你好，Gemini！请介绍一下你自�
             return response.text
         except Exception as e:
             last_error = e
-            traceback.print_exc()
+            # traceback.print_exc()
             continue
     raise last_error if last_error else Exception(f"所有 API Key 均尝试失败且未记录特定错误。")
 
