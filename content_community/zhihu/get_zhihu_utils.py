@@ -1047,10 +1047,10 @@ def gen_video(question_id):
     return final_video_path, final_video_info
 
 if __name__ == "__main__":
-    question_id = "1932776847508214307"
+    question_id = "1932941878493421578"
     fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
     final_video_info = gen_video_final_info(question_id)
-    # gen_video_by_video_info( f"{question_id}/zhihu_answers_{question_id}_video_info_op.json")
+    gen_video_by_video_info( f"{question_id}/zhihu_answers_{question_id}_video_info_op.json")
 
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
     # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:
