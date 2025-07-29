@@ -1,5 +1,6 @@
 import copy
 import json
+import multiprocessing
 import os
 import pathlib
 import random
@@ -786,15 +787,13 @@ def _process_answer_batch(batch_of_answers: list[dict], real_final_result: dict)
 
 def add_image_desc_by_answer_batching(real_final_result: dict) -> dict:
     """
-    为图片生成描述的最终优化版。
+    为图片生成描述的最终优化版（多进程版）。
     - 筛选出有图片的回答。
-    - 将这些回答打包成批次（每批图片总数<=20）。
-    - 为每个批次构建包含问题和当前批次回答的上下文。
+    - 将这些回答打包成批次。
+    - 使用多进程池并行处理每个批次。
     - 汇总所有结果并更新到最终数据中。
     """
-    # 1. 检查问题描述中是否有图片，单独处理 (这是一个简化，也可以融入批次)
-    # 为简化逻辑，我们假设主要处理目标在answers中，问题区的图片可单独或优先处理
-    # 此处我们主要关注answers的分批
+    # 1. 此处逻辑保持不变
     question_images = []
     for item in real_final_result.get('question_description', []):
         if item.get('type') == 'image':
@@ -807,20 +806,23 @@ def add_image_desc_by_answer_batching(real_final_result: dict) -> dict:
         print("--- 未发现任何图片，无需处理 ---")
         return real_final_result
 
-    print(f"--- 发现有图片的回答，已创建 {len(answer_batches)} 个处理批次 ---")
+    print(f"--- 发现有图片的回答，已创建 {len(answer_batches)} 个处理批次，准备启动多进程处理 ---")
 
     all_image_descriptions = {}
 
-    for i, batch in enumerate(answer_batches):
-        print(f"\n>>> 处理批次 {i + 1}/{len(answer_batches)}")
-        batch_results = _process_answer_batch(batch, real_final_result)
+    tasks = [(batch, real_final_result) for batch in answer_batches]
+    with multiprocessing.Pool() as pool:
+        list_of_results = pool.starmap(_process_answer_batch, tasks)
+
+    print("\n--- 所有并行批次处理完成，开始汇总结果 ---")
+
+    # 将所有进程返回的结果字典合并到一个大字典中
+    for batch_results in list_of_results:
         if batch_results:
             all_image_descriptions.update(batch_results)
-
-    print("\n--- 所有批次处理完成，开始更新最终结果 ---")
-
-    # 4. 将汇总后的描述更新回原始数据结构中
+    print("--- 开始更新最终结果 ---")
     updated_result = copy.deepcopy(real_final_result)
+    # 更新回答中的图片描述
     for answer in updated_result.get('answers', []):
         for item in answer.get('content', []):
             if item.get('type') == 'image':
@@ -828,6 +830,7 @@ def add_image_desc_by_answer_batching(real_final_result: dict) -> dict:
                 desc = all_image_descriptions.get(image_name)
                 if desc:
                     item['image_desc'] = desc
+    # 更新问题中的图片描述
     for question_info in updated_result.get('question_description', []):
         if question_info['type'] == 'image':
             image_name = question_info['image_name']
@@ -1047,7 +1050,7 @@ def gen_video(question_id):
     return final_video_path, final_video_info
 
 if __name__ == "__main__":
-    question_id = "1930236739949139563"
+    question_id = "1896269793218242192"
     fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
     final_video_info = gen_video_final_info(question_id)
     gen_video_by_video_info( f"{question_id}/zhihu_answers_{question_id}_video_info_op.json")
