@@ -18,7 +18,31 @@ import aiohttp
 import requests
 
 
-def download_video(url: str, output_path: str, retries: int = 3, chunk_size: int = 1024 * 1024) -> bool:
+def find_key_values(data, target_key) -> list:
+    """
+    在嵌套的 dict 或 list 中查找所有匹配 target_key 的值。
+
+    :param data: 输入的嵌套结构（dict 或 list）
+    :param target_key: 目标键
+    :return: 所有找到的值（列表）
+    """
+    results = []
+
+    def _search(obj: Any):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if key == target_key:
+                    results.append(value)
+                _search(value)
+        elif isinstance(obj, list):
+            for item in obj:
+                _search(item)
+        # 非结构体类型不处理
+
+    _search(data)
+    return results
+
+def download_public_video(url: str, output_path: str, retries: int = 3, chunk_size: int = 1024 * 1024) -> bool:
     """
     下载视频文件到指定路径。
 

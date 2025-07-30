@@ -16,7 +16,8 @@ import requests
 from typing import List, Dict
 
 from LLM.gemini import analyze_images_gemini
-from common_utils.common_utils import save_json, download_public_image, read_json, string_to_object
+from common_utils.common_utils import save_json, download_public_image, read_json, string_to_object, find_key_values, \
+    download_public_video
 from content_community.zhihu.gen_video_by_video_info import gen_video_by_video_info
 from content_community.zhihu.gen_zhihu_video_info import gen_video_final_info
 
@@ -193,12 +194,13 @@ def transform_zhihu_to_video_script(
 
     question_data = data.get("question", {})
     answers_data = data.get("answers", [])
-
+    video_lib = data.get("video_lib", [])
     output = {
         "question_title": question_data.get("title", "无标题"),
         "question_description": process_content_format(question_data.get("detail_format", [])),
         "tags": [topic.get("name") for topic in question_data.get("topics", []) if topic.get("name")],
-        "answers": []
+        "answers": [],
+        "video_lib": video_lib
     }
 
     for i, answer in enumerate(answers_data):
@@ -917,11 +919,49 @@ def extract_image(real_final_result):
     real_final_result['image_lib'] = images
     return real_final_result
 
+def download_video(real_final_result):
+    """
+    统一下载相应的视频
+    """
+    question = real_final_result.get('question', {})
+    question_id = question.get('id', 'unknown')
+    video_dir = f'{question_id}/videos'
+    if not os.path.exists(video_dir):
+        os.makedirs(video_dir)
+    video_info_list = []
+
+    play_info_list = real_final_result.get('play_info_list', [])
+    for play_info in play_info_list:
+        video_id = find_key_values(play_info, "id")[0]
+        video_url_list = find_key_values(play_info, "url")
+        if video_url_list:
+            for video_url in video_url_list[0]:
+                base_name = f'video_{video_id}.mp4'
+                save_path = os.path.join(video_dir, base_name)
+                save_path = pathlib.Path(save_path)
+                if not save_path.exists():
+                    print(f"开始下载视频: {video_url} 到 {save_path}")
+                    download_public_video(video_url, save_path)
+                else:
+                    print(f"视频已存在，跳过下载: {save_path}")
+                if save_path.exists():
+                    item = {
+                        'video_name': base_name
+                    }
+                    video_info_list.append(item)
+                    break
+    # 将视频信息添加到 real_final_result 中
+    if video_info_list:
+        real_final_result['video_lib'] = video_info_list
+    return real_final_result
+
+
 
 # --- 同步获取问题回答并补充评论 ---
 def fetch_question_answers(question_id: str, output_filename: str, desired_answers: int = 5, max_no_increase: int = 3):
     print(f"--- 目标问题ID: {question_id}, 期望获取 {desired_answers} 个回答 ---")
     all_answers_data = []
+    play_info_list = []  # 用于保存 play_info 接口返回
     no_increase_count = 0
 
     with sync_playwright() as p:
@@ -948,7 +988,8 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
         page = context.new_page()
 
         def handle_response(response):
-            if "/api/v4/questions/" in response.url and "/feeds" in response.url:
+            url = response.url
+            if "/api/v4/questions/" in url and "/feeds" in url:
                 try:
                     data = response.json()
                     new_answers = data.get('data', [])
@@ -956,7 +997,14 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
                     for new_answer in new_answers:
                         all_answers_data.append(new_answer.get('target', {}))
                 except Exception as e:
-                    print(f"解析API响应失败: {e}, URL: {response.url}")
+                    print(f"解析API响应失败: {e}, URL: {url}")
+            # 监控 play_info 请求
+            if "/api/v4/video/play_info" in url:
+                try:
+                    info = response.json()
+                    play_info_list.append(info)
+                except Exception as e:
+                    print(f"解析 play_info 响应失败: {e}, URL: {url}")
 
         page.on("response", handle_response)
 
@@ -968,6 +1016,7 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
             page.wait_for_selector('h1.QuestionHeader-title', timeout=15000)
             print(">>> 页面加载成功，问题标题已出现。")
 
+            # 初始数据提取
             script_tag = page.query_selector('#js-initialData')
             if script_tag:
                 json_data_str = script_tag.inner_text()
@@ -983,6 +1032,7 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
             else:
                 print("警告: 页面加载后未找到 #js-initialData 标签，可能无法获取第一页回答。")
 
+            # 滚动加载更多回答
             while len(all_answers_data) < desired_answers:
                 prev_count = len(all_answers_data)
                 page.evaluate("window.scrollTo({ top: document.body.scrollHeight * 0.9, behavior: 'smooth' })")
@@ -1020,29 +1070,32 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
             page.remove_listener("response", handle_response)
             browser.close()
 
-    print(f"\n--- 抓取完成，共捕获 {len(all_answers_data)} 条回答数据 ---")
-    # 补充voteup_count字段，如果不存在就尝试从'voteupCount'获取
+    # 后处理回答数据
     for answer in all_answers_data:
         if 'voteupCount' in answer:
             answer['voteup_count'] = answer.pop('voteupCount')
         else:
             answer['voteup_count'] = 0
 
-        # 如果 voteup_count 是 0，尝试从 matrix_tips 中提取
         if answer['voteup_count'] == 0 and 'matrix_tips' in answer:
             tips = answer['matrix_tips']
             match = re.search(r'(\d+)\s*赞同', tips)
             if match:
                 answer['voteup_count'] = int(match.group(1))
 
-    # 按照'voteup_count'降序排序回答数据
     all_answers_data.sort(key=lambda x: x.get('voteup_count', 0), reverse=True)
-
     final_data = all_answers_data[:desired_answers]
-    real_final_result = {'question': questions, 'answers': final_data}
-    save_json(output_filename, real_final_result)
-    print(f"原始API响应数据已保存至文件: {output_filename}")
 
+    # 初次保存结果并加入 play_info_list
+    real_final_result = {
+        'question': questions,
+        'answers': final_data,
+        'play_info_list': play_info_list
+    }
+    save_json(output_filename, real_final_result)
+    print(f"原始API响应数据及 play_info_list 已保存至文件: {output_filename}")
+
+    # 补充评论及后续处理
     print(f"\n--- 开始补充评论信息获取 ---")
     for answer in final_data:
         answer_id = answer.get("id")
@@ -1053,13 +1106,18 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
         answer['content_format'] = parse_content(answer.get('content', ''))
         answer["comments"] = comments
         print(f"回答ID {answer_id} 的评论数量: {len(comments)}")
-    real_final_result = {'question': questions, 'answers': final_data}
+    real_final_result = {'question': questions, 'answers': final_data, 'play_info_list': play_info_list}
     save_json(output_filename, real_final_result)
     print(f"回答评论数据已保存至文件: {output_filename}")
 
     real_final_result = download_image(real_final_result)
     save_json(output_filename, real_final_result)
     print(f"图片已下载并更新至文件: {output_filename}")
+
+    real_final_result = download_video(real_final_result)
+    save_json(output_filename, real_final_result)
+    print(f"视频已下载并更新至文件: {output_filename}")
+
     video_script_data = transform_zhihu_to_video_script(
         output_filename,
         comment_upvote_threshold=10
@@ -1072,6 +1130,7 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
     print(f"带图片描述结果保存至文件: {output_filename}")
 
 
+
 def gen_video(question_id):
     fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
     final_video_info = gen_video_final_info(question_id)
@@ -1080,7 +1139,7 @@ def gen_video(question_id):
 
 if __name__ == "__main__":
     question_id = "1933799561345855869"
-    fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
+    fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=10)
     final_video_info = gen_video_final_info(question_id)
     gen_video_by_video_info( f"{question_id}/zhihu_answers_{question_id}_video_info_op.json")
 
@@ -1089,8 +1148,24 @@ if __name__ == "__main__":
     #     json.dump(hot_list_data, f, ensure_ascii=False, indent=4)
     # print("结果已保存到 zhihu_hot_list.json 文件中。")
 
-    # output_file = f"{question_id}/zhihu_answers_{question_id}.json"
-    # real_final_result = read_json(output_file)
+    # output_filename = f"{question_id}/zhihu_answers_{question_id}.json"
+    # real_final_result = read_json(output_filename)
     # # add_image_desc_by_answer_batching(real_final_result)
     # real_final_result = extract_image(real_final_result)
     # save_json(output_file, real_final_result)
+
+
+    # real_final_result = download_video(real_final_result)
+    # save_json(output_filename, real_final_result)
+    # print(f"视频已下载并更新至文件: {output_filename}")
+    #
+    # video_script_data = transform_zhihu_to_video_script(
+    #     output_filename,
+    #     comment_upvote_threshold=10
+    # )
+    # real_final_result = add_image_desc_by_answer_batching(video_script_data)
+    # save_json(output_filename, real_final_result)
+    # real_final_result = extract_image(real_final_result)
+    # save_json(output_filename, real_final_result)
+    #
+    # print(f"带图片描述结果保存至文件: {output_filename}")
