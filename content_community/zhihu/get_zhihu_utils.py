@@ -418,25 +418,22 @@ def fetch_zhihu_answer_comments(answer_id: str, limit: int = 100) -> List[Dict]:
 def parse_content(html_string: str):
     """
     解析包含文本、媒体或纯文本的字符串，按顺序提取内容。
-    V2版本特性:
+    V3版本特性:
+    - (新) 能够识别特定 class 的 <a> 标签作为视频元素，并提取标题、封面和链接。
+    - (新) 能够处理标准的 <video> 标签。
     - 正确处理 <br> 标签，将其转换成换行符。
     - 能够处理不含任何HTML标签的纯文本输入。
     - 更加健壮，能处理标签与纯文本混合的情况。
     """
-    # 如果输入为空或仅包含空白，直接返回空列表
     if not html_string or not html_string.strip():
         return []
 
     soup = BeautifulSoup(html_string, 'html.parser')
     results = []
 
-    # 遍历所有顶层子元素，可能是标签(Tag)也可能是纯文本(NavigableString)
     for element in soup.children:
-        # --- 情况1: 元素是一个HTML标签 ---
         if isinstance(element, Tag):
-            # --- 处理文本段落 <p> ---
             if element.name == 'p':
-                # 使用 separator='\n' 来保留 <br> 带来的换行
                 text = element.get_text(separator='\n', strip=True)
                 if text:
                     results.append({
@@ -444,28 +441,60 @@ def parse_content(html_string: str):
                         'content': text
                     })
 
-            # --- 处理媒体 <figure> ---
             elif element.name == 'figure':
                 img_tag = element.find('img')
                 if img_tag:
                     url = img_tag.get('data-original') or img_tag.get('data-actualsrc') or img_tag.get('src')
-                    if url and 'data:image/svg+xml' not in url:  # 过滤掉占位符SVG
+                    if url and 'data:image/svg+xml' not in url:
                         media_type = 'gif' if url.lower().endswith('.gif') else 'image'
                         results.append({
                             'type': media_type,
                             'url': url
                         })
+
+            # --- MODIFIED: 修改对 <a> 标签的处理逻辑 ---
             elif element.name == 'a':
-                text = element.get_text(strip=True)
-                href = element.get('href')
-                if text and href:
+                # 首先检查它是否是一个视频链接 (根据class判断)
+                if 'video-box' in element.get('class', []):
+                    video_title_tag = element.find('span', class_='title')
+                    video_title = video_title_tag.get_text(strip=True) if video_title_tag else ''
+
+                    video_thumb_tag = element.find('img', class_='thumbnail')
+                    video_thumb_url = video_thumb_tag.get('src') if video_thumb_tag else ''
+
+                    video_page_url = element.get('href')
+
+                    if video_page_url:
+                        results.append({
+                            'type': 'video',
+                            'title': video_title,
+                            'thumbnail_url': video_thumb_url,
+                            'url': video_page_url
+                        })
+                # 如果不是视频链接，则按原来的方式处理为普通链接
+                else:
+                    text = element.get_text(strip=True)
+                    href = element.get('href')
+                    if text and href:
+                        results.append({
+                            'type': 'link',
+                            'content': text,
+                            'url': href
+                        })
+
+            # --- NEW: 新增对标准 <video> 标签的处理 ---
+            elif element.name == 'video':
+                video_url = element.get('src')
+                # poster 属性通常用于存放视频封面图
+                poster_url = element.get('poster')
+                if video_url:
                     results.append({
-                        'type': 'link',
-                        'content': text,
-                        'url': href
+                        'type': 'video',
+                        'title': element.get('title', ''),  # 尝试获取title属性作为标题
+                        'thumbnail_url': poster_url or '',
+                        'url': video_url
                     })
 
-        # --- 情况2: 元素是纯文本字符串 ---
         elif isinstance(element, NavigableString):
             text = str(element).strip()
             if text:

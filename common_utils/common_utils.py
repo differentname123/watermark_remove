@@ -3,6 +3,7 @@ import copy
 import json
 import os
 import re
+import time
 
 import cv2
 import numpy as np
@@ -14,6 +15,49 @@ import pathlib
 
 import aiofiles
 import aiohttp
+import requests
+
+
+def download_video(url: str, output_path: str, retries: int = 3, chunk_size: int = 1024 * 1024) -> bool:
+    """
+    下载视频文件到指定路径。
+
+    参数:
+        url (str): 视频的直链地址
+        output_path (str): 下载后保存的文件路径
+        retries (int): 出现网络错误时重试次数
+        chunk_size (int): 每次读取的块大小（默认1MB）
+
+    返回:
+        bool: 下载是否成功
+    """
+    output_path = pathlib.Path(output_path)
+    temp_path = output_path.with_suffix('.part')  # 下载中间文件
+
+    for attempt in range(retries):
+        try:
+            with requests.get(url, stream=True, timeout=15) as r:
+                r.raise_for_status()  # 若状态码非 200，将抛出异常
+                total_size = int(r.headers.get("Content-Length", 0))
+                downloaded = 0
+
+                with open(temp_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=chunk_size):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            print(f"\r下载中：{downloaded / total_size:.2%}", end='', flush=True)
+
+            temp_path.rename(output_path)
+            print(f"\n✅ 下载完成：{output_path}")
+            return True
+
+        except requests.exceptions.RequestException as e:
+            print(f"\n⚠️ 第 {attempt + 1} 次下载失败：{e}")
+            time.sleep(2)
+
+    print(f"❌ 多次重试失败，未能下载：{url}")
+    return False
 
 async def download_cover_minimal(url: str, save_path) -> bool:
     """
