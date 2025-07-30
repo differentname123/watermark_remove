@@ -1554,7 +1554,7 @@ def remake_video_robust(
 
 
 if __name__ == '__main__':
-    video_path = r"W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\2025-07-14 11.36.47-视频-餐饮小诸葛-外卖乱战，谁是受害者？ #餐饮 #外卖战 #餐饮外卖 #餐饮人 @抖音小助手.mp4"
+    video_path = r"W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\2025-07-05 17.47.06-视频-BTime-杜兰特声称自己最佳一次奥运之旅！人主义带队夺金#杜兰特 #美国男篮.mp4"
     remake_video_robust(video_path)
     # remake_video_op(video_path)
 

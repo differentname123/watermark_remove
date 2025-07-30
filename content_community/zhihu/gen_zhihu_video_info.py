@@ -666,8 +666,8 @@ video_info_prompt = """
 
   * **铁律三：【“情境之桥”原则 (The Context-Bridge Principle)】**
 
-      * **这是解决“观众看不懂”问题的关键。** 在你用“要害”开场（铁律二）成功抓住观众的注意力后，你的**下一个、且必须紧随其后**的任务，就是用1-2句话快速搭建一座“情境之桥”。
-      * 这座桥的作用是：**用最精炼的语言，遵循5W原则，补全观众理解“要害”所必需的核心背景（Who, What, When, Where）。** 目标不是完整介绍，而是让观众“知其所以然”，能够顺利地跟上你接下来的节奏。
+      * **这是解决“观众看不懂”问题的关键。** 在你用“要害”开场（铁律二）成功抓住观众的注意力后，你的**下一个、且必须紧随其后**的任务，就是用几句话句话快速搭建一座“情境之桥”。
+      * 这座桥的作用是：**用语言，遵循5W原则，补全观众理解“要害”所必需的核心背景（Who, What, When, Where）。** 目标是完整介绍，让观众“知其所以然”，能够顺利地跟上你接下来的节奏。
       * **执行示范：**
           * **话题：** 90万男性色情群组新闻
           * **要害开场 (铁律二):** “兄弟们，咱们可能又被人一篇文章就开除了‘国籍’，或者说直接打成了‘罪犯’。”
@@ -848,7 +848,7 @@ def gen_video_final_info(question_id):
   return final_video_info
 
 if __name__ == "__main__":
-    question_id = "1932776847508214307"
+    question_id = "1933690399068787181"
     output_file = f"{question_id}/zhihu_answers_{question_id}.json"
     real_final_result = read_json(output_file)
     video_output_file = output_file.replace(".json", "_video_info.json")
