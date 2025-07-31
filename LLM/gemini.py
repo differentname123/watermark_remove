@@ -137,6 +137,99 @@ def with_proxy(func):
 
     return wrapper
 
+@with_proxy
+def analyze_videos_gemini(
+    prompt: str = '视频中的内容是什么',
+    video_paths: list[str] = [],
+    timeout: int = 600
+) -> str:
+    """
+    针对一组视频文件，调用 Gemini-2.5-Pro 分析其内容并返回合并后的文本回复。
+
+    参数：
+    - prompt: 你希望模型在视频内容上回答的问题。
+    - video_paths: 本地视频文件路径列表。
+    - timeout: 单次请求的超时时间（秒）。
+    """
+    if video_paths is None:
+        video_paths = []
+
+    last_error = None
+    ordered_keys = api_key_manager.get_ordered_keys()
+
+    for key_name in ordered_keys:
+        api_key = API_KEY_MAP.get(key_name)
+        if not api_key:
+            continue
+
+        genai_flash.configure(api_key=api_key)
+        uploaded = []  # 存储 (原始文件名, 上传后的 video_file 对象)
+
+        try:
+            # 1. 上传并等待所有视频处理完成
+            for path in video_paths:
+                if not os.path.exists(path):
+                    return f"错误: 视频文件未找到 -> {path}"
+                basename = os.path.basename(path)
+                print(f"[INFO] 使用 API Key “{key_name}” 上传视频 {basename} …")
+                video_file = genai_flash.upload_file(path=path)
+                # 等待处理完成
+                while video_file.state.name == "PROCESSING":
+                    print(f"[INFO] 视频 {basename} 正在处理…")
+                    time.sleep(5)
+                    video_file = genai_flash.get_file(video_file.name)
+                if video_file.state.name == "FAILED":
+                    raise RuntimeError(f"视频处理失败：{basename}")
+                uploaded.append((basename, video_file))
+
+            # 2. 构造 prompt_parts，包含“文件名:”提示
+            prompt_parts = [
+                prompt,
+                "下面我将以 '文件名:' 的格式，在每个视频前提供其名称，请据此作答。"
+            ]
+            for basename, vf in uploaded:
+                prompt_parts.append(f"{basename}:")  # 使用本地原始文件名
+                prompt_parts.append(vf)             # 插入视频对象
+
+            # 3. 调用 Gemini-2.5-Pro 生成内容
+            print(f"[INFO] 使用 API Key “{key_name}” 调用 Gemini 模型生成内容…")
+            model = genai_flash.GenerativeModel(model_name="gemini-2.5-pro")
+            response = model.generate_content(
+                prompt_parts,
+                request_options={"timeout": timeout}
+            )
+
+            # 4. 记录成功并清理上传文件
+            api_key_manager.record_success(key_name)
+            for _, vf in uploaded:
+                try:
+                    print(f"[INFO] 删除临时文件 {vf.name} …")
+                    genai_flash.delete_file(vf.name)
+                except Exception as de:
+                    print(f"[WARN] 删除视频文件 {vf.name} 失败：{de}")
+
+            return response.text
+
+        except (ga_exceptions.PermissionDenied,
+                ga_exceptions.ResourceExhausted,
+                ga_exceptions.GoogleAPICallError) as e:
+            # 某些 Key 遇到配额或权限问题，切换到下一个
+            last_error = e
+            print(f"[WARN] API Key “{key_name}” 调用失败：{e}，尝试下一个…")
+            # 删除已上传的文件，避免残留
+            for _, vf in uploaded:
+                try:
+                    genai_flash.delete_file(vf.name)
+                except:
+                    pass
+            continue
+
+        except Exception as e:
+            # 未知错误，直接返回
+            return f"处理过程中发生未知错误: {e.__class__.__name__}: {e}"
+
+    return f"所有 API Key 均尝试失败。最后一次错误：{last_error}"
+
 
 @with_proxy
 def get_llm_content_gemini_flash_video(

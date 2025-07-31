@@ -15,7 +15,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 import requests
 from typing import List, Dict
 
-from LLM.gemini import analyze_images_gemini
+from LLM.gemini import analyze_images_gemini, analyze_videos_gemini
 from common_utils.common_utils import save_json, download_public_image, read_json, string_to_object, find_key_values, \
     download_public_video
 from content_community.zhihu.gen_video_by_video_info import gen_video_by_video_info
@@ -621,6 +621,143 @@ def download_image(real_final_result):
 # 1. 常量定义
 MAX_IMAGE_BATCH_SIZE = 20
 MAX_RETRIES = 3
+
+VIDEO_BASE_PROMPT = """
+#### **1. 角色与目标 (Role & Goal)**
+
+你是一位顶尖的多模态分析专家和视频脚本策划AI。你的核心目标是接收一个**话题背景**和**一系列视频文件**，为每一个视频生成一段深度结构化的分析JSON。这份JSON必须精准、高效，最终服务于**“将视频素材与文案进行智能匹配”**的终极需求。
+
+#### **2. 核心输入 (Core Inputs)**
+
+1.  **`topic_context` (话题背景)**: 一个字符串，描述这批视频共同的主题或应用场景（例如：“展现城市科技创新”、“描绘家庭温馨瞬间”）。你必须将此背景作为核心“滤镜”来指导你的分析。
+2.  **`video_files` (视频文件)**: 一批需要处理的视频文件。
+
+#### **3. 核心任务与分析框架 (Core Task & Framework)**
+
+你需要为**每一个**输入的视频，严格按照下面定义的**【精炼实用版视频分析框架】**，生成一个完整的JSON分析对象。
+
+**分析框架定义如下：**
+
+```json
+{
+  "video_filename.mp4": {
+    "video_level_analysis": {
+      "desc": "...",
+      "semantic_tags": {
+        "Subject": ["..."],
+        "Scene_Action": ["..."],
+        "Emotion_Atmosphere": ["..."],
+        "Symbol_Concept": ["..."]
+      },
+      "narrative_arc": ["..."],
+      "dynamic_tags": ["..."],
+      "audio_tags": ["..."]
+    },
+    "shot_level_analysis": [
+      {
+        "timestamp": "...",
+        "desc": "...",
+        "semantic_tags": { "...": ["..."] },
+        "narrative_arc": ["..."],
+        "dynamic_tags": ["..."],
+        "audio_tags": ["..."]
+      }
+    ]
+  }
+}
+```
+
+#### **4. 关键规则与思维链 (Key Rules & Chain of Thought)**
+
+你在执行任务时，必须严格遵守以下思维原则：
+
+1.  **上下文优先原则 (Context-First Principle)**：
+
+      * **必须**将输入的 `topic_context` 作为首要参考。例如，在“环保”背景下，工厂的镜头应解读为`Symbol_Concept: ["工业污染"]`；在“经济发展”背景下，则可能解读为`["工业基础"]`。
+
+2.  **“为匹配而生”的标签原则 (Tagging-for-Matching Principle)**：
+
+      * **拒绝噪音**：你生成的所有标签都应具备明确的匹配价值。
+      * 对于 **`dynamic_tags`**：专注于描述**效果**而非技术。使用`["节奏加快"]`、`["镜头聚焦"]`，而不是`["剪辑速度加快"]`、`["推镜头"]`。
+      * 对于 **`audio_tags`**：必须遵循`类型:描述`的扁平化格式，如`["BGM:激昂史诗"]`、`["VO:专业男声"]`、`["SFX:心跳声"]`，以简化查询。
+
+3.  **“场景聚合”原则 (Scene Aggregation Principle for `shot_level_analysis`)**：
+
+      * **这是生成`shot_level_analysis`最关键的规则，旨在避免分析“过碎”。**
+      * 你**不能**为视频中的每一次物理剪辑都创建一个`shot`对象。你必须将**表达同一个“场景单元”的连续镜头进行合并**。
+      * **合并规则**：当连续镜头的核心主体、地点、时间和情绪氛围保持一致时，应合并。例如：一段对话中的正反打镜头应合并为**一个**“对话场景”`shot`。
+      * **切分规则**：仅在时空、核心主体或情绪发生**根本性转折**时，才创建**新的**`shot`对象。例如，从办公室切换到家庭。
+
+#### **5. 输出格式 (Output Format)**
+
+  * 你的最终输出**必须且只能是**一个单一的、格式规整的JSON对象。
+  * 该JSON对象的**键 (key)** 是视频的文件名 (`video_filename.mp4`)。
+  * 该JSON对象的**值 (value)** 是按照上述框架和规则生成的完整分析对象。
+  * **请不要在JSON对象之外添加任何解释、欢迎语或总结。**
+
+**输出格式示例：**
+
+假设输入 `topic_context` 为 "展现都市脉搏与奋斗精神"，以及一个视频文件 `city_pulse_01.mp4`。
+
+```json
+{
+  "city_pulse_01.mp4": {
+    "video_level_analysis": {
+      "desc": "一段描绘城市从黄昏到深夜的延时摄影航拍，节奏由平缓逐渐加快，配以史诗感的电子乐。整体讲述了'都市脉搏'的故事，从宁静的序幕过渡到充满活力的发展，最终聚焦于奋斗者的象征——摩天大楼。",
+      "semantic_tags": {
+        "Subject": ["城市", "建筑群", "车流", "天空"],
+        "Scene_Action": ["延时摄影", "日夜更替", "航拍"],
+        "Emotion_Atmosphere": ["宏大", "壮观", "活力", "现代感", "奋斗"],
+        "Symbol_Concept": ["都市脉搏", "时间流逝", "人类文明", "奋斗精神"]
+      },
+      "narrative_arc": ["从序幕到高潮"],
+      "dynamic_tags": ["航拍", "延时摄影", "节奏加快"],
+      "audio_tags": ["BGM:史诗感电子乐"]
+    },
+    "shot_level_analysis": [
+      {
+        "timestamp": "00:00-00:08",
+        "desc": "广角航拍，展示城市在黄昏下的宁静天际线。",
+        "semantic_tags": {
+          "Subject": ["城市天际线", "夕阳"],
+          "Emotion_Atmosphere": ["宁静", "壮美"],
+          "Symbol_Concept": ["故事的开始"]
+        },
+        "narrative_arc": ["序幕"],
+        "dynamic_tags": ["静态广角", "节奏平缓"],
+        "audio_tags": ["BGM:舒缓前奏"]
+      },
+      {
+        "timestamp": "00:09-00:15",
+        "desc": "延时加速，车流变为光轨，城市灯光逐一点亮。",
+        "semantic_tags": {
+          "Subject": ["车流光轨", "城市灯光"],
+          "Emotion_Atmosphere": ["活力", "流动感"],
+          "Symbol_Concept": ["都市活力", "时间加速"]
+        },
+        "narrative_arc": ["发展与变化"],
+        "dynamic_tags": ["延时摄影", "快节奏"],
+        "audio_tags": ["BGM:节奏加强"]
+      },
+      {
+        "timestamp": "00:16-00:22",
+        "desc": "镜头缓慢推向一栋灯火通明的摩天大楼。",
+        "semantic_tags": {
+          "Subject": ["摩天大楼", "窗户灯光"],
+          "Emotion_Atmosphere": ["焦点", "坚持", "希望"],
+          "Symbol_Concept": ["奋斗中心", "不眠的追求"]
+        },
+        "narrative_arc": ["高潮与点题"],
+        "dynamic_tags": ["镜头聚焦", "节奏放缓"],
+        "audio_tags": ["BGM:高潮旋律"]
+      }
+    ]
+  }
+}
+```
+
+"""
+
 BASE_PROMPT = """
 
 你是一位精通多模态分析和视频脚本策划的AI专家。你的任务是接收一个包含文本上下文的JSON文件和一系列对应的图片文件，为每一张图片生成一段深度结合其视觉内容与文本上下文的、可用于视频制作的**结构化分析对象**。
@@ -816,6 +953,62 @@ def _process_answer_batch(batch_of_answers: list[dict], real_final_result: dict)
     return {}
 
 
+def add_video_desc_by_question(real_final_result) -> dict:
+    """
+    为视频生成相应描述，只提供问题背景
+    """
+    # 深度拷贝
+    updated_result = real_final_result
+    # 获取问题描述
+    question_title = updated_result.get('question_title', '')
+    question_description = updated_result.get('question_description', '')
+    full_prompt = f"{VIDEO_BASE_PROMPT}\n 问题标题为：{question_title}\n 问题描述为：{question_description}"
+    video_lib = updated_result.get('video_lib', [])
+    # video_lib = video_lib[:2]  # 仅保留前2个视频
+
+    video_abs_path_list = [video.get('video_abs_path', '') for video in video_lib if video.get('video_abs_path')]
+
+    batch_size = 5
+    # 将video_lib分成最多5个视频为一个批次
+    if not video_abs_path_list:
+        print("--- 未发现任何视频，无需处理 ---")
+        return updated_result
+    if len(video_abs_path_list) > batch_size:
+        print(f"--- 发现 {len(video_abs_path_list)} 个视频，将分批处理 ---")
+        video_batches = [video_abs_path_list[i:i + batch_size] for i in range(0, len(video_abs_path_list), batch_size)]
+    else:
+        print(f"--- 发现 {len(video_abs_path_list)} 个视频，无需分批处理 ---")
+        video_batches = [video_abs_path_list]
+    video_analysis_result_all = {}
+    for video_batch in video_batches:
+        base_name_video_paths = [os.path.basename(path) for path in video_batch]
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                # 生成视频描述
+                raw = analyze_videos_gemini(
+                    prompt=full_prompt,
+                    video_paths=video_batch
+                )
+                video_analysis_result = string_to_object(raw)
+                if validate_image_analysis(base_name_video_paths, video_analysis_result):
+                    print(f"视频描述生成成功，处理了 {len(video_batch)} 个视频")
+                    video_analysis_result_all.update(video_analysis_result)
+                    break
+                else:
+                    print(f"[警告] 视频描述生成失败，处理了 {len(video_batch)} 个视频，结果不一致：{video_analysis_result}")
+                    continue
+            except Exception as e:
+                print(f"[错误] 视频描述生成失败，处理了 {len(video_batch)} 个视频，异常：{e}")
+                continue
+    # 更新所有的视频描述
+    for video in video_lib:
+        video_name = video.get('video_name', '')
+        video_desc = video_analysis_result_all.get(video_name, {})
+        if video_desc:
+            video['video_desc'] = video_desc
+
+    return updated_result
+
 def add_image_desc_by_answer_batching(real_final_result: dict) -> dict:
     """
     为图片生成描述的最终优化版（多进程版）。
@@ -946,7 +1139,8 @@ def download_video(real_final_result):
                     print(f"视频已存在，跳过下载: {save_path}")
                 if save_path.exists():
                     item = {
-                        'video_name': base_name
+                        'video_name': base_name,
+                        'video_abs_path': str(save_path.resolve()),
                     }
                     video_info_list.append(item)
                     break
@@ -1129,6 +1323,10 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
 
     print(f"带图片描述结果保存至文件: {output_filename}")
 
+    add_video_desc_by_question(real_final_result)
+    save_json(output_filename, real_final_result)
+    print(f"视频描述已添加并保存至文件: {output_filename}")
+
 
 
 def gen_video(question_id):
@@ -1140,8 +1338,8 @@ def gen_video(question_id):
 if __name__ == "__main__":
     question_id = "1933799561345855869"
     fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=10)
-    final_video_info = gen_video_final_info(question_id)
-    gen_video_by_video_info( f"{question_id}/zhihu_answers_{question_id}_video_info_op.json")
+    # final_video_info = gen_video_final_info(question_id)
+    # gen_video_by_video_info( f"{question_id}/zhihu_answers_{question_id}_video_info_op.json")
 
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
     # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:
@@ -1154,6 +1352,8 @@ if __name__ == "__main__":
     # real_final_result = extract_image(real_final_result)
     # save_json(output_file, real_final_result)
 
+    # add_video_desc_by_question(real_final_result)
+    # save_json(output_filename, real_final_result)
 
     # real_final_result = download_video(real_final_result)
     # save_json(output_filename, real_final_result)
