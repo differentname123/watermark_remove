@@ -46,7 +46,7 @@ accounts = {
     'qiqi': 'qiqi',
     # 'mama': 'mama',
     # 'hong': 'hong',
-    'hong1': 'hong1',
+    # 'su': 'su',
     'yan': 'yan',
 }
 
