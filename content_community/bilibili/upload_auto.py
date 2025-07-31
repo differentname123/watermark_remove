@@ -37,31 +37,24 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 # config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT, mama_total_cookie)
 
 
-tao_SESSDATA = get_config("tao_bilibili_sessdata_cookie")  # 可选。妈妈账号的 SESSDATA cookie 值。
-tao_BILI_JCT = get_config("tao_bilibili_csrf_token")
-tao_total_cookie = get_config("tao_bilibili_total_cookie")
-config_map['TAO'] = (tao_SESSDATA, tao_BILI_JCT, tao_total_cookie)
+# 定义需要处理的账号名及其对应的config_map键名（区分大小写）
+accounts = {
+    'tao': 'TAO',
+    'ruru': 'ruru',
+    'nana': 'nana',
+    'jie': 'jie',
+    'qiqi': 'qiqi',
+    # 'mama': 'mama',
+    # 'hong': 'hong',
+    'hong1': 'hong1',
+    'yan': 'yan',
+}
 
-ruru_SESSDATA = get_config("ruru_bilibili_sessdata_cookie")  # 可选。Ruru账号的 SESSDATA cookie 值。
-ruru_BILI_JCT = get_config("ruru_bilibili_csrf_token")
-ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
-config_map['ruru'] = (ruru_SESSDATA, ruru_BILI_JCT, ruru_total_cookie)
-
-nana_SESSDATA = get_config("nana_bilibili_sessdata_cookie")  # 可选。Ruru账号的 SESSDATA cookie 值。
-nana_BILI_JCT = get_config("nana_bilibili_csrf_token")
-nana_total_cookie = get_config("nana_bilibili_total_cookie")
-config_map['nana'] = (nana_SESSDATA, nana_BILI_JCT, nana_total_cookie)
-
-jie_SESSDATA = get_config("jie_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
-jie_BILI_JCT = get_config("jie_bilibili_csrf_token")
-jie_total_cookie = get_config("jie_bilibili_total_cookie")
-config_map['jie'] = (jie_SESSDATA, jie_BILI_JCT, jie_BILI_JCT)
-
-
-qiqi_SESSDATA = get_config("qiqi_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
-qiqi_BILI_JCT = get_config("qiqi_bilibili_csrf_token")
-qiqi_total_cookie = get_config("qiqi_bilibili_total_cookie")
-config_map['qiqi'] = (qiqi_SESSDATA, qiqi_BILI_JCT, qiqi_total_cookie)
+for name, map_key in accounts.items():
+    sessdata = get_config(f"{name}_bilibili_sessdata_cookie")
+    bili_jct = get_config(f"{name}_bilibili_csrf_token")
+    total_cookie = get_config(f"{name}_bilibili_total_cookie")
+    config_map[map_key] = (sessdata, bili_jct, total_cookie)
 
 error_user_map = {}
 from content_community.bilibili.bilibili_uploader import upload_to_bilibili, fetch_bili_topics

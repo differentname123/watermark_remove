@@ -1242,57 +1242,33 @@ def fix_metadata_cache_with_uploads(all_found_videos, metadata_cache_with_upload
 def init_config():
     config_map = {}
 
-    dahao_SESSDATA = get_config("dahao_bilibili_sessdata_cookie")
-    dahao_BILI_JCT = get_config("dahao_bilibili_csrf_token")
-    dahao_total_cookie = get_config("dahao_bilibili_total_cookie")
-    config_map['443415885'] = {"name": "dahao", "SESSDATA": dahao_SESSDATA, "BILI_JCT": dahao_BILI_JCT,
-                               "total_cookie": dahao_total_cookie}
+    # 账号配置：key 是 config_map 中的 UID，value 是账号的前缀（name）
+    accounts = {
+        '443415885': 'dahao',
+        '35891943': 'tao',
+        '477861377': 'yan',
+        '1639172564': 'mama',
+        '1223805908': 'ruru',
+        '3546717871934392': 'nana',
+        '202157045': 'jie',
+        '131446458': 'qiqi',
+        # '3546909677455941': 'base'  # 如果需要恢复 base 账号，取消注释即可
+    }
 
-    # base_SESSDATA = get_config("bilibili_sessdata_cookie")  # 必需。你的B站登录会话 SESSDATA cookie 值。
-    # base_BILI_JCT = get_config("bilibili_csrf_token")
-    # base_total_cookie = get_config("bilibili_total_cookie")
-    #
-    # config_map['3546909677455941'] = {"name": "base", "SESSDATA": base_SESSDATA, "BILI_JCT": base_BILI_JCT,
-    #                                   "total_cookie": base_total_cookie}
+    for uid, name in accounts.items():
+        sessdata = get_config(f"{name}_bilibili_sessdata_cookie")
+        bili_jct = get_config(f"{name}_bilibili_csrf_token")
+        total_cookie = get_config(f"{name}_bilibili_total_cookie")
 
+        config_map[uid] = {
+            "name": name,
+            "SESSDATA": sessdata,
+            "BILI_JCT": bili_jct,
+            "total_cookie": total_cookie
+        }
 
-    tao_base_SESSDATA = get_config("tao_bilibili_sessdata_cookie")  # 必需。你的B站登录会话 SESSDATA cookie 值。
-    tao_base_BILI_JCT = get_config("tao_bilibili_csrf_token")
-    tao_base_total_cookie = get_config("tao_bilibili_total_cookie")
-
-    config_map['35891943'] = {"name": "base", "SESSDATA": tao_base_SESSDATA, "BILI_JCT": tao_base_BILI_JCT,
-                                      "total_cookie": tao_base_total_cookie}
-
-    mama_SESSDATA = get_config("mama_bilibili_sessdata_cookie")  # 可选。妈妈账号的 SESSDATA cookie 值。
-    mama_BILI_JCT = get_config("mama_bilibili_csrf_token")
-    mama_total_cookie = get_config("mama_bilibili_total_cookie")
-    config_map['1639172564'] = {"name": "mama", "SESSDATA": mama_SESSDATA, "BILI_JCT": mama_BILI_JCT,
-                                "total_cookie": mama_total_cookie}
-
-    ruru_SESSDATA = get_config("ruru_bilibili_sessdata_cookie")  # 可选。小姑姑账号的 SESSDATA cookie 值。
-    ruru_BILI_JCT = get_config("ruru_bilibili_csrf_token")
-    ruru_total_cookie = get_config("ruru_bilibili_total_cookie")
-    config_map['1223805908'] = {"name": "ruru", "SESSDATA": ruru_SESSDATA, "BILI_JCT": ruru_BILI_JCT,
-                                "total_cookie": ruru_total_cookie}
-
-    nana_SESSDATA = get_config("nana_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
-    nana_BILI_JCT = get_config("nana_bilibili_csrf_token")
-    nana_total_cookie = get_config("nana_bilibili_total_cookie")
-    config_map['3546717871934392'] = {"name": "nana", "SESSDATA": nana_SESSDATA, "BILI_JCT": nana_BILI_JCT,
-                                      "total_cookie": nana_total_cookie}
-
-    jie_SESSDATA = get_config("jie_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
-    jie_BILI_JCT = get_config("jie_bilibili_csrf_token")
-    jie_total_cookie = get_config("jie_bilibili_total_cookie")
-    config_map['202157045'] = {"name": "jie", "SESSDATA": jie_SESSDATA, "BILI_JCT": jie_BILI_JCT,
-                                      "total_cookie": jie_total_cookie}
-
-    qiqi_SESSDATA = get_config("qiqi_bilibili_sessdata_cookie")  # 可选。小姑妈账号的 SESSDATA cookie 值。
-    qiqi_BILI_JCT = get_config("qiqi_bilibili_csrf_token")
-    qiqi_total_cookie = get_config("qiqi_bilibili_total_cookie")
-    config_map['131446458'] = {"name": "qiqi", "SESSDATA": qiqi_SESSDATA, "BILI_JCT": qiqi_BILI_JCT,
-                                      "total_cookie": qiqi_total_cookie}
     return config_map
+
 
 stop_event = threading.Event()
 
