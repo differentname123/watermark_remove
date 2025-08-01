@@ -30,6 +30,28 @@ USER_AGENT = (
 )
 ZHIHU_COOKIE_STRING = "_xsrf=EGbVA6NHTaM3dXlCMEiWj9aRBvWl4inW; _zap=34c3bc6c-ebae-4e0d-9a06-5bfb7b8a9548; d_c0=APARO_5-wBmPTvibmi_6NacNH42miN-ERZY=|1735194921; Hm_lvt_98beee57fd2ef70ccdd5ca52b9740c49=1752912686; HMACCOUNT=14EFD85132347319; DATE=1752912688356; crystal=U2FsdGVkX19HZsSWXHhQvCmTy0IhrzSuQUWjAmBNS9sgZFRn8/yuh3qnHWWPtqhs6Fx+lpP4dATHFISdyemFNM4nXvmwy0g7ICamPZ7CB/IU+sI4WwbiZS83jULObdwxNXvxwM1lrWOA06h6rgMPFiBn+qiMLtZXpkprUsDW2FNS69MOpODrf6kUIyRL/QXg9IJ08veQmhzEr8G7YQHsdz07b0Wmj/50nQPJAtdug/kh+RlGpYjjx8ALS6jGD2Gq; __snaker__id=RQbe8vWX2MrZo7OW; cmci9xde=U2FsdGVkX184glWsyX1mezYXZa3qDzIhjRBe9TQQVEY+LLFTFMDXP9nSs9RkgMzxPSZtU4lOrgeYZefNb02KEA==; pmck9xge=U2FsdGVkX1/T3lTFMBSW1MNHTt55yQ7uWCI2fzMhaBs=; assva6=U2FsdGVkX1803CTSuJgB3mtcX8vMBRJ4mrNXHxoktsA=; assva5=U2FsdGVkX18s7ilkblADh/oGQosbZLgtP7rzonbhC4T0Gf8YWm1GZf8atIJSu1QVH69xU8U+rNeMHgJRf8dEEQ==; vmce9xdq=U2FsdGVkX1+9L5kRV9p5NPBm2ZFxevxsXB601UTW1lO8oB1sywbxX35uCVgDtPFrCRoAhGz6Qw95IDt5HxZKgRgHcwII5jsliZ9AEeEMx0QyMg0NlFbFg2/No39rs8FcREB1wxx4Hg7ZLGq+HBSZ6UbnPSt1xTw3YsTv3I27GXM=; z_c0=2|1:0|10:1752912935|4:z_c0|92:Mi4xemV3ZkR3QUFBQUFBOEJFN19uN0FHU1lBQUFCZ0FsVk5KNkpvYVFCQlUzLUlBR3dQNGcwQkhEOWNXcmsyZ0VFZnJB|55035f8a3b883e94b09b952267d56c00a1a59a98cc43712feb238eb4056739b8; q_c1=e3e3832501fe4a17ba8bf7b5b47f6e60|1752912935000|1752912935000; __zse_ck=004_9njDuYcKusVXiMuD5SZ7LomPNAudnA3idCp0Ig/GY0=5gYSDmi0TNqJ7FjyXoqYArffzF1BhUy=GuO4ecVqJEGHl8QUnfJi3U5WYI/Y1QFhwF7Gz7I7xqjnm05LC1vY2-1G/2qpHnazSH76s+360GqWHjozS9rp18hQPVk+DOgjdq/n5leUgxJ+237tPuguqC5x1a1EjhuQ/RyoAp0+8lSPskVcy16jac+kELW9lwJayh1jscDZfo7NsPnlZfJUWL; gdxidpyhxdE=tdTqBn8olmH5j1Mvzgb2xuBP1JV%5CEOlNCeWjTWLag7PU1kAgwZc0iYoJNXHP4pesZ9c6pt6sCy9XvWRvcCih4H3wlMve85vPDsuwZGH0niB0eBEbOdwyCMBakjZYqhkOUjVurq3zUjP5bbW9MM0av5%2Fc9lNsShTacGcfNJ14hrRJYUyE%3A1752924069740; tst=h; SESSIONID=g7XUl1IInUF9AXT8Qhzu67qCg6YIsGbsJhzvVkXxO1E; JOID=V1kQAE26VE5LfxtUC7zz1qk37Fgd2WcQGxAuGUTXBQx0O0AEN73oNiV4G1YISQCL874KJt7dAvWPk3H3dDUAq3I=; osd=W1kVBkq2VEtNeBdUDrr02qky6l8R2WIWHBwuHELQCQxxPUcIN7juMSl4HlAPRQCO9bkGJtvbBfmPlnfweDUFrXU=; Hm_lpvt_98beee57fd2ef70ccdd5ca52b9740c49=1752950198; BEC=5ee33e0856ed13c879689106c041a08d"
 
+def sort_and_filter_by_score(
+        items,
+        min_score: float = 0
+):
+  """
+  1. 过滤掉 relevance.score < min_score 的项
+  2. 按 score 从高到低排序
+
+  :param items: 待处理的字典列表
+  :param min_score: 分数阈值，低于该值的项会被丢弃
+  :return: 过滤并排序后的新列表
+  """
+
+  def get_score(item) -> float:
+    container = item.get('image_desc') or item.get('image_info') or {}
+    relevance = container.get('relevance') or {}
+    return relevance.get('score', 0)
+
+  # 先过滤
+  filtered = [item for item in items if get_score(item) >= min_score]
+  # 再排序
+  return sorted(filtered, key=get_score, reverse=True)
 
 def process_content_format(content_list: list) -> list:
     """
@@ -623,25 +645,34 @@ MAX_IMAGE_BATCH_SIZE = 20
 MAX_RETRIES = 3
 
 VIDEO_BASE_PROMPT = """
-#### **1. 角色与目标 (Role & Goal)**
+#### 1\. 角色与目标 (Role & Goal)
 
-你是一位顶尖的多模态分析专家和视频脚本策划AI。你的核心目标是接收一个**话题背景**和**一系列视频文件**，为每一个视频生成一段深度结构化的分析JSON。这份JSON必须精准、高效，最终服务于**“将视频素材与文案进行智能匹配”**的终极需求。
+你是一位顶尖的多模态分析专家和视频脚本策划 AI。你的核心目标是接收一个话题背景和一系列视频文件，为每一个视频生成一段深度结构化的分析 JSON。这份 JSON 必须精准、高效地解构视频内容，并对其与给定话题的匹配度进行可量化、可解释的评估，最终服务于“将视频素材与文案进行智能匹配、排序与筛选”的终极需求。
 
-#### **2. 核心输入 (Core Inputs)**
+-----
 
-1.  **`topic_context` (话题背景)**: 一个字符串，描述这批视频共同的主题或应用场景（例如：“展现城市科技创新”、“描绘家庭温馨瞬间”）。你必须将此背景作为核心“滤镜”来指导你的分析。
-2.  **`video_files` (视频文件)**: 一批需要处理的视频文件。
+#### 2\. 核心输入 (Core Inputs)
 
-#### **3. 核心任务与分析框架 (Core Task & Framework)**
+1.  `topic_context`（话题背景）：一个字符串，描述这批视频共同的主题或应用场景（例如：“展现城市科技创新”、“描绘家庭温馨瞬间”）。你必须将此背景作为所有分析和评估的核心“滤镜”与最高准则。
+2.  `video_files`（视频文件）：一批需要处理的视频文件。
 
-你需要为**每一个**输入的视频，严格按照下面定义的**【精炼实用版视频分析框架】**，生成一个完整的JSON分析对象。
+-----
 
-**分析框架定义如下：**
+#### 3\. 核心任务与分析框架 (Core Task & Framework)
+
+你需要为每一个输入的视频，严格按照下面定义的【精炼实用版视频分析框架】，生成一个完整的 JSON 分析对象。
+
+##### 分析框架定义如下（融合了最佳结构，将相关性评估置顶）：
 
 ```json
 {
   "video_filename.mp4": {
     "video_level_analysis": {
+      "topic_relevance": {
+        "score": 0,
+        "reasoning": "...",
+        "matching_keywords": ["..."]
+      },
       "desc": "...",
       "semantic_tags": {
         "Subject": ["..."],
@@ -667,42 +698,71 @@ VIDEO_BASE_PROMPT = """
 }
 ```
 
-#### **4. 关键规则与思维链 (Key Rules & Chain of Thought)**
+##### `topic_relevance` 字段详解（定义了最丰富的子字段和最清晰的评分标准）：
 
-你在执行任务时，必须严格遵守以下思维原则：
+  * `score`（整数，0-100）：一个量化分数，表示视频与 `topic_context` 的相关度。
+      * 85-100（高度相关）：视频的核心主题、情感氛围和象征概念与 `topic_context` 完美契合，是理想的素材。
+      * 50-84（中度相关）：视频在主要方面（如主体或场景）与话题相关，但在情感或概念上匹配度一般，或含少量无关元素。
+      * 1-49（低度相关）：仅包含零散或次要相关元素，整体关联性弱。
+      * 0（完全无关）：视频与话题背景无任何可识别联系。
+  * `reasoning`（字符串）：一段简洁有力的说明，必须引用分析中得出的标签（如 `Symbol_Concept`, `Emotion_Atmosphere` 等）支撑判断。
+  * `matching_keywords`（字符串数组）：从视频内容与标签中提炼的、与话题直接相关的关键词。
 
-1.  **上下文优先原则 (Context-First Principle)**：
+-----
 
-      * **必须**将输入的 `topic_context` 作为首要参考。例如，在“环保”背景下，工厂的镜头应解读为`Symbol_Concept: ["工业污染"]`；在“经济发展”背景下，则可能解读为`["工业基础"]`。
+#### 4\. 关键规则与思维链 (Key Rules & Chain of Thought)
 
-2.  **“为匹配而生”的标签原则 (Tagging-for-Matching Principle)**：
+1.  上下文优先原则 (Context-First Principle)
 
-      * **拒绝噪音**：你生成的所有标签都应具备明确的匹配价值。
-      * 对于 **`dynamic_tags`**：专注于描述**效果**而非技术。使用`["节奏加快"]`、`["镜头聚焦"]`，而不是`["剪辑速度加快"]`、`["推镜头"]`。
-      * 对于 **`audio_tags`**：必须遵循`类型:描述`的扁平化格式，如`["BGM:激昂史诗"]`、`["VO:专业男声"]`、`["SFX:心跳声"]`，以简化查询。
+      * 必须将 `topic_context` 作为首要参考依据。
+      * 例如：在“环保”背景下，工厂镜头应解读为 `Symbol_Concept: ["工业污染"]`；而在“经济发展”背景下则可能是 `Symbol_Concept: ["工业基础"]`。
 
-3.  **“场景聚合”原则 (Scene Aggregation Principle for `shot_level_analysis`)**：
+2.  综合相关性评估原则 (Integrated Relevance Assessment Principle)
 
-      * **这是生成`shot_level_analysis`最关键的规则，旨在避免分析“过碎”。**
-      * 你**不能**为视频中的每一次物理剪辑都创建一个`shot`对象。你必须将**表达同一个“场景单元”的连续镜头进行合并**。
-      * **合并规则**：当连续镜头的核心主体、地点、时间和情绪氛围保持一致时，应合并。例如：一段对话中的正反打镜头应合并为**一个**“对话场景”`shot`。
-      * **切分规则**：仅在时空、核心主体或情绪发生**根本性转折**时，才创建**新的**`shot`对象。例如，从办公室切换到家庭。
+      * 步骤一：先完成全面分析。
+      * 步骤二：多维度比对，从三个维度判断：
+        1.  直接内容匹配：`Subject`, `Scene_Action` 是否命中关键词。
+        2.  情感氛围匹配：`Emotion_Atmosphere`, `audio_tags` 是否契合所需情绪。
+        3.  象征概念匹配：`Symbol_Concept`, `narrative_arc` 是否寓意一致。
+      * 步骤三：严格赋分，参考 `score` 标准，避免表面匹配误导判断。
+      * 步骤四：提炼理由与关键词，分别输出到 `reasoning` 与 `matching_keywords` 字段。
 
-#### **5. 输出格式 (Output Format)**
+3.  为匹配而生的标签原则 (Tagging-for-Matching Principle)
 
-  * 你的最终输出**必须且只能是**一个单一的、格式规整的JSON对象。
-  * 该JSON对象的**键 (key)** 是视频的文件名 (`video_filename.mp4`)。
-  * 该JSON对象的**值 (value)** 是按照上述框架和规则生成的完整分析对象。
-  * **请不要在JSON对象之外添加任何解释、欢迎语或总结。**
+      * 标签必须具备明确匹配价值，拒绝冗余噪声。
+      * `dynamic_tags` 需聚焦视觉效果，用词如 `节奏加快`, `镜头聚焦`，避免技术术语。
+      * `audio_tags` 需使用 `类型:描述` 扁平格式，如：
+          * `BGM:激昂史诗`
+          * `VO:专业男声`
+          * `SFX:心跳声`
 
-**输出格式示例：**
+4.  场景聚合原则 (Scene Aggregation Principle for `shot_level_analysis`)
 
-假设输入 `topic_context` 为 "展现都市脉搏与奋斗精神"，以及一个视频文件 `city_pulse_01.mp4`。
+      * 不为每个物理剪辑建对象，应合并表达同一“场景单元”的镜头。
+
+-----
+
+#### 5\. 输出格式 (Output Format)
+
+  * 仅返回一个结构规整的 JSON 对象。
+  * JSON 键为视频文件名（如 `video_filename.mp4`）。
+  * 值为完整分析对象，不要输出除 JSON 外的说明语。
+
+-----
+
+#### 输出格式示例
+
+假设 `topic_context` 为：“展现都市脉搏与奋斗精神”，视频为 `city_pulse_01.mp4`
 
 ```json
 {
   "city_pulse_01.mp4": {
     "video_level_analysis": {
+      "topic_relevance": {
+        "score": 95,
+        "reasoning": "视频通过其核心意象(Symbol_Concept: ['都市脉搏']), 叙事弧光(narrative_arc: ['从序幕到高潮'])及音乐氛围(audio_tags: ['BGM:史诗感电子乐'])，与'都市脉搏与奋斗精神'主题在内容、情感和象征层面均高度契合。",
+        "matching_keywords": ["都市脉搏", "奋斗精神", "活力", "现代感", "时间流逝", "宏大"]
+      },
       "desc": "一段描绘城市从黄昏到深夜的延时摄影航拍，节奏由平缓逐渐加快，配以史诗感的电子乐。整体讲述了'都市脉搏'的故事，从宁静的序幕过渡到充满活力的发展，最终聚焦于奋斗者的象征——摩天大楼。",
       "semantic_tags": {
         "Subject": ["城市", "建筑群", "车流", "天空"],
@@ -755,71 +815,120 @@ VIDEO_BASE_PROMPT = """
   }
 }
 ```
-
 """
 
 BASE_PROMPT = """
+**你是一位精通多模态分析和视频脚本策划的AI专家**。你的任务是接收一个包含文本上下文的 JSON 文件和一系列对应的图片文件，为每一张图片生成一段深度结合其视觉内容与文本上下文的、可用于视频制作的**结构化分析对象**。
 
-你是一位精通多模态分析和视频脚本策划的AI专家。你的任务是接收一个包含文本上下文的JSON文件和一系列对应的图片文件，为每一张图片生成一段深度结合其视觉内容与文本上下文的、可用于视频制作的**结构化分析对象**。
+---
 
-**核心输入：**
+## 核心输入
 
-1.  **上下文JSON：** 一个完整的JSON对象，精准反映了原文的图文排版结构。
-2.  **图片文件：** 一系列图片，文件名与JSON中的`image_name`一一对应。
+1. **上下文 JSON**
+
+   * 一个完整的 JSON 对象，精准反映原文的图文排版结构。
+2. **图片文件**
+
+   * 多张图片，文件名与 JSON 中的 `image_name` 一一对应。
 
 你的分析必须同时基于视觉内容和文本上下文进行。
 
-**你的任务：**
+---
 
-1.  **解析完整数据**：接收并理解我提供的整个上下文JSON对象。
-2.  **自动定位与关联**：
-    *   根据我上传的图片文件名，逐一在JSON数据中定位`type`为`image`的对象。
-    *   对于你找到的**每一张图片**，自动识别并理解其紧邻的上下文（上一个和下一个`type`为`text`的对象），以及图片所在的整个回答或文章的核心论点。
+## 任务流程
 
-3.  **应用“多维分析框架”批量生成分析对象**：
-    *   对定位到的每一张图片，运用以下框架生成一个完整的分析对象。
+1. **解析完整数据**
+   接收并理解我提供的整个上下文 JSON 对象。
 
-    *   **第一步：视觉与功能定性 (Visual & Functional Analysis)**
-        *   **视觉分析：** 这是一张什么类型的图片？（如：网页截图、数据图表、新闻照片、纪实照片、风景照、表情包、梗图、插画等）。
-        *   **功能分析：** 结合上下文，作者使用这张图片的核心意图是什么？（如：为观点**提供证据**、为数据**提供可视化**、进行**情绪渲染**、制造**讽刺/幽默**效果、作为**叙事转折**等）。
+2. **自动定位与关联**
 
-    *   **第二步：生成结构化语义标签 (Structured Semantic Tagging)**
-        *   基于第一步的分析，为图片生成一个`semantic_tags`对象，该对象包含以下四个关键维度的标签数组。**这是后续配图算法的核心数据源，必须极其精准。**
-        *   `Subject (主体)`: 提取图片中最关键、最明确的名词实体。例如：`["医生", "孩子", "长城", "火箭"]`。
-        *   `Scene_Action (场景/动作)`: 描述图片所描绘的核心行为、状态或环境。例如：`["救援", "奔跑", "仰望星空", "家庭聚会"]`。
-        *   `Emotion_Atmosphere (情绪/氛围)`: 定义图片传达的直接情感或整体基调。例如：`["温暖", "悲伤", "庄严", "紧张", "希望", "宏大", "荒诞"]`。
-        *   `Symbol_Concept (象征/概念)`: **这是最重要的一步。** 结合图片的**功能意图**，提炼出它所代表的抽象概念或深层含义。这回答了“作者为什么要用这张图”的问题。例如：`["科技发展", "国家力量", "团结", "牺牲", "内卷", "普通人的梦想"]`。
+   * 根据上传的图片文件名，逐一在 JSON 数据中定位 `type: "image"` 的对象。
+   * 对每张图片，识别并理解其紧邻的上下文（前后最近的 `type: "text"` 对象），以及图片所在回答或文章的核心论点。
 
-    *   **第三步：生成人类可读的综合描述 (Synthesized Prose Description)**
-        *   将前两步的分析结果，融合成一段精炼、流畅的`image_desc`文本。这段描述应清晰地告诉视频制作者“画面是什么”、“它在这里起什么作用”，作为人类审核和理解的参考。
+3. **应用“四步分析框架”批量生成分析对象**
+   对每张定位到的图片，按以下框架生成完整的分析对象：
 
-4.  **整合输出**：
-    *   请只返回一个纯粹的JSON对象，不要包含任何额外的欢迎语、解释或总结。
-    *   这个JSON对象的键 (key) 必须是图片的名称 (`image_name`)。
-    *   这个JSON对象的值 (value) 必须是按照上述规则为该图片生成的、包含**结构化标签**和**综合描述**的**完整分析对象**。
+   ### 第一步：视觉与功能定性 (Visual & Functional Analysis)
 
-### **最终输出格式——至关重要**
+   * **视觉分析**：图片类型（如网页截图、数据图表、新闻照片、插画等）。
+   * **功能分析**：结合上下文，作者使用图片的核心意图（如提供证据、可视化数据、情绪渲染、幽默效果、叙事转折等）。
 
-你的输出必须严格遵循以下结构：
+   ### 第二步：结构化语义标签 (Structured Semantic Tagging)
+
+   基于第一步结果，为图片生成 `semantic_tags` 对象（算法核心数据源，须精准）：
+
+   * **Subject (主体)**：最关键的名词实体，如 `["医生","孩子","长城"]`。
+   * **Scene\_Action (场景/动作)**：核心行为或环境，如 `["救援","奔跑","家庭聚会"]`。
+   * **Emotion\_Atmosphere (情绪/氛围)**：传达的情感基调，如 `["温暖","紧张","宏大"]`。
+   * **Symbol\_Concept (象征/概念)**：深层含义或抽象概念，如 `["团结","牺牲","内卷"]`。
+
+   ### 第三步：综合描述 (Synthesized Prose Description)
+
+   将前两步分析结果融合，生成可读性强的 `image_desc` 文本，说明画面内容及其作用，用于人工审核和理解。
+
+   ### 第四步：上下文相关性评估 (Contextual Relevance Assessment)
+
+   生成 `relevance` 对象，评估图片与上下文关联紧密度，包含：
+
+   * **level**：关联等级
+   * **score**：数值评分
+   * **reasoning**：一句话核心理由
+
+   **评分标准**：
+
+   * **核心证据**（score = 5）
+
+     * 图片是论点的关键证明，缺失会严重影响说服力。
+   * **强力支撑**（score = 4）
+
+     * 图片提供强有力的具象化例证，极大增强表现力。
+   * **辅助说明**（score = 3）
+
+     * 图片与主题相关，补充解释或丰富视觉，但可替代。
+   * **氛围渲染**（score = 2）
+
+     * 图片逻辑关联弱，主要为营造情绪或视觉调剂。
+   * **弱相关/装饰**（score = 1）
+
+     * 纯装饰，与内容逻辑几乎无关。
+
+4. **整合输出**
+
+   * 仅返回一个纯 JSON 对象，不包含额外说明。
+   * JSON 键为 `image_name`，值为完整分析对象，且 `relevance` 字段必须排在首位。
+
+---
+
+## 最终示例格式
 
 ```json
 {
-  "image_name_1.jpg": {
-    "image_desc": "（这里是根据第三步生成的、人类可读的综合描述文字）",
+  "image_chart.png": {
+    "relevance": {
+      "level": "核心证据",
+      "score": 5,
+      "reasoning": "该图表是上文关于增长放缓论点的直接核心数据可视化证据。"
+    },
+    "image_desc": "这是一张数据图表的截图，用可视化方式证明人口增长放缓论点，核心在于展示曲线平缓趋势。",
     "semantic_tags": {
-      "Subject": ["...", "..."],
-      "Scene_Action": ["...", "..."],
-      "Emotion_Atmosphere": ["...", "..."],
-      "Symbol_Concept": ["...", "..."]
+      "Subject": ["图表","曲线","数据"],
+      "Scene_Action": ["展示趋势","可视化"],
+      "Emotion_Atmosphere": ["客观","冷静","学术"],
+      "Symbol_Concept": ["证据","人口问题","增长放缓","科学论证"]
     }
   },
-  "image_name_2.png": {
-    "image_desc": "这是一张数据图表的截图，用可视化的方式证明了上文关于人口增长放缓的论点，核心在于展示曲线的平缓趋势。",
+  "image_加班.jpg": {
+    "relevance": {
+      "level": "强力支撑",
+      "score": 4,
+      "reasoning": "图片通过场景渲染，有力例证“职场内卷”主题。"
+    },
+    "image_desc": "这是一张办公室深夜加班的纪实照片，用于渲染职场压力氛围。",
     "semantic_tags": {
-      "Subject": ["图表", "曲线", "数据"],
-      "Scene_Action": ["展示趋势", "可视化"],
-      "Emotion_Atmosphere": ["客观", "冷静", "学术"],
-      "Symbol_Concept": ["证据", "人口问题", "增长放缓", "科学论证"]
+      "Subject": ["办公室","员工","电脑"],
+      "Scene_Action": ["加班","深夜工作"],
+      "Emotion_Atmosphere": ["疲惫","压力","紧张","内卷"],
+      "Symbol_Concept": ["职场压力","奋斗","996"]
     }
   }
 }
@@ -1109,7 +1218,7 @@ def extract_image(real_final_result):
                 content_format.remove(item)  # 删除已处理的item
 
     # 添加到real_final_result中
-    real_final_result['image_lib'] = images
+    real_final_result['image_lib'] = sort_and_filter_by_score(images)
     return real_final_result
 
 def download_video(real_final_result):
@@ -1348,9 +1457,9 @@ if __name__ == "__main__":
 
     # output_filename = f"{question_id}/zhihu_answers_{question_id}.json"
     # real_final_result = read_json(output_filename)
-    # # add_image_desc_by_answer_batching(real_final_result)
+    # add_image_desc_by_answer_batching(real_final_result)
     # real_final_result = extract_image(real_final_result)
-    # save_json(output_file, real_final_result)
+    # save_json(output_filename, real_final_result)
 
     # add_video_desc_by_question(real_final_result)
     # save_json(output_filename, real_final_result)

@@ -763,6 +763,9 @@ video_info_prompt = """
     """
 
 
+
+
+
 def gen_zhihu_video_by_answer(real_final_result, output_path, max_retries=3, retry_delay=2):
     """
     通过回答信息生成视频脚本
@@ -771,7 +774,7 @@ def gen_zhihu_video_by_answer(real_final_result, output_path, max_retries=3, ret
     prompt = video_info_prompt
 
     real_final_result['answers'] = real_final_result['answers'][:50]
-    real_final_result['image_lib'] = real_final_result['image_lib']
+    real_final_result['image_lib'] = sort_and_filter_by_score(real_final_result['image_lib'])
     prompt = f"{prompt}\n{real_final_result}"
     raw = ""
     for attempt in range(1, max_retries + 1):
@@ -848,7 +851,7 @@ def gen_video_final_info(question_id):
   return final_video_info
 
 if __name__ == "__main__":
-    question_id = "1933690399068787181"
+    question_id = "1933988735948678767"
     output_file = f"{question_id}/zhihu_answers_{question_id}.json"
     real_final_result = read_json(output_file)
     video_output_file = output_file.replace(".json", "_video_info.json")
