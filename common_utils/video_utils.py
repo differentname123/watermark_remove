@@ -1878,6 +1878,41 @@ def process_color_filter(input_path: str, output_path: str, filter_type: str = '
 
 # --- 【推荐】终极整合函数 ---
 
+def _check_video_integrity(path: str) -> bool:
+    """
+    【新增】使用 ffmpeg 对文件进行一次快速的空处理，以检查其完整性。
+    这会强制解码所有流，如果文件有严重损坏（如码流错误），该过程会失败。
+    这是一个可靠的预检步骤。
+
+    :param path: 输入文件的路径。
+    :return: bool, True 表示文件完整可处理, False 表示文件损坏。
+    """
+    print(f"🕵️  正在对 '{os.path.basename(path)}' 进行完整性检查...")
+    cmd = [
+        "ffmpeg",
+        "-v", "error",       # 只显示致命错误
+        "-i", path,
+        "-f", "null",        # 不输出文件，只进行解码和处理
+        "-"                  # 输出到 stdout (被 null muxer 丢弃)
+    ]
+    try:
+        # 使用 subprocess.run 来执行命令。如果ffmpeg因错误退出，会抛出异常。
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding='utf-8')
+        print("✅ 完整性检查通过，文件可以处理。")
+        return True
+    except subprocess.CalledProcessError as e:
+        # ffmpeg 返回了非零退出码，说明文件解码失败
+        print(f"❌ 完整性检查失败：文件 '{os.path.basename(path)}' 可能已损坏或编码不标准。", file=sys.stderr)
+        print("--- FFmpeg 错误日志 (检查期间) ---\n", file=sys.stderr)
+        print(e.stderr, file=sys.stderr)
+        print("----------------------------------\n", file=sys.stderr)
+        print("⚠️ 将跳过对此文件的处理。")
+        return False
+    except FileNotFoundError:
+        # 这个不太可能发生，因为主函数会先检查ffmpeg是否存在
+        print("❌ 错误：找不到 ffmpeg 程序。", file=sys.stderr)
+        return False
+
 def apply_all_subtle_tweaks(input_path: str, output_path: str, show_progress: bool = True) -> bool:
     """
     【推荐使用】将所有微调操作一次性应用，效率最高，效果最隐蔽。
@@ -1893,7 +1928,8 @@ def apply_all_subtle_tweaks(input_path: str, output_path: str, show_progress: bo
     except FileNotFoundError as e:
         print(e, file=sys.stderr)
         return False
-
+    if not _check_video_integrity(input_path):
+        return False  # 如果检查失败，直接返回 False，不继续执行
     print(f"🎬 开始终极微调任务 [所有微小修改]: '{input_path}' -> '{output_path}'")
 
     # 1. 速度调整参数

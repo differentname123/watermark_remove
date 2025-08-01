@@ -296,7 +296,7 @@ def auto_upload():
         tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
         try:
             result = apply_all_subtle_tweaks(video_path, output_path=tweak_video_path)
-            if os.path.exists(tweak_video_path):
+            if os.path.exists(tweak_video_path) and result:
                 video_path = tweak_video_path
                 print(f"✅ 视频细节调整成功，保存为 {tweak_video_path}")
             else:
