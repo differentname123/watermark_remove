@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 import difflib
 
-from common_utils import time_to_ms
+from common_utils.common_utils import time_to_ms
 
 
 def compute_iou(box1, box2):
@@ -126,7 +126,7 @@ def save_frames_around_timestamp(
 
         out_path = os.path.join(output_dir, f"frame_{idx}.png")
         img.save(out_path)
-        print(f"已保存帧 {idx} -> {out_path}")
+        # print(f"已保存帧 {idx} -> {out_path}")
 
     cap.release()
 

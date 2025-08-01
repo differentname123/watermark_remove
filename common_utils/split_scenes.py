@@ -8,7 +8,7 @@ from scenedetect.scene_manager import SceneManager
 from scenedetect.stats_manager import StatsManager
 from scenedetect.detectors import ContentDetector
 
-from image_utils import save_frames_around_timestamp
+from common_utils.image_utils import save_frames_around_timestamp
 
 
 def find_and_split_scenes(
@@ -16,7 +16,7 @@ def find_and_split_scenes(
         high_threshold=50,
         min_scene_len=25,
         max_scenes=20,
-        step=5,
+        step=10,
         max_threshold=100
 ):
     """
@@ -39,7 +39,8 @@ def find_and_split_scenes(
     """
     current_high_threshold = high_threshold
     refined_scene_info = {}
-
+    coarse_scene_info = {}
+    fine_scene_info = {}
     video_manager = VideoManager([video_path])
     try:
         base_timecode = video_manager.get_base_timecode()
@@ -68,7 +69,7 @@ def find_and_split_scenes(
                 print(f"场景数量 {num_coarse_scenes} 在目标范围 (1, {max_scenes}] 内，开始进行边界精炼。")
 
                 # --- 阶段 2: 使用低阈值获取精细候选切点 ---
-                low_threshold = current_high_threshold / 2
+                low_threshold = current_high_threshold - 10
                 print("-" * 80)
                 print(f"阶段 2: 使用低阈值 {low_threshold:.2f} 获取精细候选切点...")
                 coarse_scene_info = {
@@ -171,7 +172,7 @@ def find_and_split_scenes(
 # --- 主程序入口 ---
 if __name__ == '__main__':
     # 把这里换成你的视频文件路径
-    my_video_path = 'test.mp4'
+    my_video_path = 'test2.mp4'
 
     # 运行带有精炼功能的场景分割
     scene_info_dict = find_and_split_scenes(

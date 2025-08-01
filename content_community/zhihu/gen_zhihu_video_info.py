@@ -405,7 +405,7 @@ video_info_op_prompt = """
       * **核心洞见**: 这次内容的灵魂是什么？（例如：“三重绝望”、“中国式动员力”）
       * **人设定位**: 我将以谁的口吻讲述？（例如：“温情故事家”）
       * **目标观众**: 我在对谁说话？他们的共鸣点在哪？
-      * **叙事蓝图**: 分析视频的情感曲线和节奏变化（例如：从制造危机感 \> 展现宏大行动 \> 升华情感）。
+      * **叙事蓝图**: 分析视频的情感曲线和节奏变化（例如：从制造危机感 > 展现宏大行动 > 升华情感）。
 
 3.  **建立决策框架**: 基于对策略和图像库的全面理解，在内心形成一个判断标准——后续的每一个选择（BGM、音色、分镜、关键词等），都必须服务于核心策略，并与可用的视觉素材相匹配。
 
@@ -774,7 +774,7 @@ def gen_zhihu_video_by_answer(real_final_result, output_path, max_retries=3, ret
     prompt = video_info_prompt
 
     real_final_result['answers'] = real_final_result['answers'][:50]
-    real_final_result['image_lib'] = sort_and_filter_by_score(real_final_result['image_lib'])
+    real_final_result['image_lib'] = real_final_result['image_lib']
     prompt = f"{prompt}\n{real_final_result}"
     raw = ""
     for attempt in range(1, max_retries + 1):
@@ -851,7 +851,7 @@ def gen_video_final_info(question_id):
   return final_video_info
 
 if __name__ == "__main__":
-    question_id = "1933988735948678767"
+    question_id = "1933829227528037647"
     output_file = f"{question_id}/zhihu_answers_{question_id}.json"
     real_final_result = read_json(output_file)
     video_output_file = output_file.replace(".json", "_video_info.json")

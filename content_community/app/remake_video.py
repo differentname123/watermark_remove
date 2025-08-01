@@ -18,6 +18,7 @@ import cv2
 from LLM.gemini import get_llm_content_gemini_flash_video
 from common_utils.common_utils import string_to_object, optimize_subtitle_timing, merge_time_segments, read_json, \
     save_json, fill_time_gaps, time_to_ms, find_file_by_name, merge_time_intervals, map_and_adjust_scenes
+from common_utils.image_utils import save_frames_around_timestamp
 from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box, find_overall_subtitle_box_target_number
 from common_utils.split_audio import separate_with_cli
 from common_utils.split_scenes import find_and_split_scenes
@@ -1554,9 +1555,21 @@ def remake_video_robust(
 
 
 if __name__ == '__main__':
-    video_path = r"W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\2025-07-05 17.47.06-视频-BTime-杜兰特声称自己最佳一次奥运之旅！人主义带队夺金#杜兰特 #美国男篮.mp4"
-    remake_video_robust(video_path)
-    # remake_video_op(video_path)
+    my_video_path = r"W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\2025-07-05 17.47.06-视频-BTime-杜兰特声称自己最佳一次奥运之旅！人主义带队夺金#杜兰特 #美国男篮.mp4"
+    remake_video_robust(my_video_path)
+    # remake_video_op(my_video_path)
 
+    # scene_info_dict = find_and_split_scenes(
+    #     my_video_path,
+    #     high_threshold=80,  # 初始高阈值
+    #     max_scenes=20,  # 期望的最大场景数
+    #     min_scene_len=50,  # 最小场景长度（帧）
+    #     step=10  # 阈值调整步长
+    # )
+    # print("\n场景信息字典已生成并打印。")
+    # for key,value in scene_info_dict.items():
+    #     timestamp = value[1]
+    #     save_frames_around_timestamp(my_video_path,timestamp,3,str(os.path.join('scenes',key)))
+    #
 
 
