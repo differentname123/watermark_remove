@@ -39,7 +39,7 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 
 # 定义需要处理的账号名及其对应的config_map键名（区分大小写）
 accounts = {
-    'tao': 'TAO',
+    'tao': 'tao',
     'ruru': 'ruru',
     'nana': 'nana',
     'jie': 'jie',
@@ -352,7 +352,11 @@ def auto_upload():
 
 
         description_json = best_scheme.get('简介', {})
-        description = "\n".join(description_json.values()) if isinstance(description_json, dict) else str(description_json)
+        target_keys = ["核心看点", "价值承诺", "互动引导", "补充信息"]
+        # 只拼接存在的指定字段
+        description = "\n".join(
+            str(description_json[k]) for k in target_keys if k in description_json
+        )
         tags = best_scheme.get('标签', ['AI修复', '视频剪辑'])
         origin_tag.extend(tags)  # 保留原始标签
         # 去重origin_tag

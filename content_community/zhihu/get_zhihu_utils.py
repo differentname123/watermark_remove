@@ -1336,8 +1336,8 @@ def gen_video(question_id):
     return final_video_path, final_video_info
 
 if __name__ == "__main__":
-    question_id = "1933799561345855869"
-    fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=10)
+    question_id = "1933988735948678767"
+    fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
     # final_video_info = gen_video_final_info(question_id)
     # gen_video_by_video_info( f"{question_id}/zhihu_answers_{question_id}_video_info_op.json")
 
