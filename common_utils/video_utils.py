@@ -1660,3 +1660,269 @@ def create_enhanced_cover(
         print("FFMPEG 输出 (stderr):")
         print(e.stderr)
         return None
+
+
+
+import sys
+import os
+import shutil
+import subprocess
+
+# --- 辅助函数 ---
+
+def _probe_has_audio(path: str) -> bool:
+    """
+    一个内部辅助函数，用于检查媒体文件是否包含音频流。
+    """
+    if not os.path.exists(path):
+        return False
+
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "a:0",      # 只选择第一个音频流
+        "-show_entries", "stream=codec_type",
+        "-of", "json",
+        path
+    ]
+    # 运行 ffprobe 命令
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding='utf-8')
+        # 如果有音频流，输出将包含 "audio"
+        return "audio" in result.stdout
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # 如果 ffprobe 失败 (例如，文件不是媒体文件)，或找不到 ffprobe，则认为没有音频
+        return False
+
+def _check_ffmpeg_installed():
+    """
+    检查并确保 FFmpeg 和 ffprobe 可执行文件存在于系统路径中。
+    如果找不到，则会引发 FileNotFoundError。
+    """
+    if not shutil.which("ffmpeg"):
+        raise FileNotFoundError("错误：找不到 FFmpeg。请安装 FFmpeg 并确保其路径已加入系统环境变量中。")
+    if not shutil.which("ffprobe"):
+        raise FileNotFoundError("错误：找不到 ffprobe。请安装 FFmpeg 并确保其路径已加入系统环境变量中。")
+
+def _run_command(cmd: list, output_path: str, show_progress: bool) -> bool:
+    """
+    封装了执行 ffmpeg 命令的通用逻辑，包含错误处理和可选的进度显示。
+    此函数不会在 ffmpeg 失败时中断程序。
+
+    :param cmd: 要执行的 ffmpeg 命令列表 (例如 ['ffmpeg', '-i', 'input.mp4', 'output.mp4'])。
+    :param output_path: 输出文件的路径，用于打印日志。
+    :param show_progress: 是否在控制台实时显示 FFmpeg 的处理进度。
+    :return: bool, True 表示成功, False 表示失败。
+    """
+    print(f"🚀 执行命令: {' '.join(cmd)}")
+
+    # 根据是否显示进度，决定如何处理 stderr
+    # show_progress=True: stderr=None，让 ffmpeg 的进度直接打印到控制台
+    # show_progress=False: stderr=subprocess.PIPE，捕获输出，只在出错时显示
+    stderr_setting = None if show_progress else subprocess.PIPE
+
+    try:
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,  # 始终捕获 stdout，以防有意外输出
+            stderr=stderr_setting,
+            text=True,
+            encoding='utf-8'
+        )
+
+        if result.returncode == 0:
+            print(f"✅ 处理完成！文件已成功保存到: {output_path}")
+            return True
+        else:
+            # FFmpeg 执行失败
+            print(f"❌ FFmpeg 在处理 '{output_path}' 时执行出错:", file=sys.stderr)
+            # 如果 stderr 被捕获了（即 show_progress=False），则打印它
+            if result.stderr:
+                print("\n--- FFmpeg 错误日志 ---\n", file=sys.stderr)
+                print(result.stderr, file=sys.stderr)
+                print("--------------------------\n", file=sys.stderr)
+            else:
+                # 如果进度是实时显示的，错误信息也已经显示在控制台了
+                print("错误详情已在上方实时输出中显示。", file=sys.stderr)
+            return False
+
+    except FileNotFoundError:
+        # 这个错误通常是 'ffmpeg' 命令本身找不到
+        print(f"❌ 命令执行失败：找不到 'ffmpeg' 程序。请确保 FFmpeg 已安装并配置在系统路径中。", file=sys.stderr)
+        return False
+    except Exception as e:
+        # 捕获其他可能的异常
+        print(f"❌ 执行命令时发生未知错误: {e}", file=sys.stderr)
+        return False
+
+# --- 核心处理函数 (参数微调版) ---
+
+def process_subtle_zoom_crop(input_path: str, output_path: str, scale_factor: float = 1.02, show_progress: bool = True) -> bool:
+    """
+    (微调版) 将视频放大一个极小的比例 (默认2%) 并从中心裁切，几乎不影响观感。
+
+    :param input_path: 输入视频路径。
+    :param output_path: 输出视频路径。
+    :param scale_factor: 放大比例，例如 1.02 代表放大到 102%。
+    :param show_progress: 是否显示 FFmpeg 处理进度。
+    :return: bool, True 表示成功, False 表示失败。
+    """
+    try:
+        _check_ffmpeg_installed()
+    except FileNotFoundError as e:
+        print(e, file=sys.stderr)
+        return False
+
+    print(f"🎬 开始微调任务 [放大 {scale_factor*100}% 并裁切]: '{input_path}' -> '{output_path}'")
+
+    # 构建基础命令
+    cmd = [
+        "ffmpeg", "-hide_banner", "-v", "error",
+        "-i", input_path,
+        "-vf", f"scale=iw*{scale_factor}:-1,crop=iw:ih",
+    ]
+
+    # 如果有音频，使用 acodec='copy' 可以极大地加快处理速度且不损失音质
+    if _probe_has_audio(input_path):
+        cmd.extend(["-c:a", "copy"])
+    else:
+        cmd.extend(["-an"])  # -an 表示无音频输出
+
+    # 添加输出文件路径和覆盖选项
+    cmd.extend(["-y", output_path])
+
+    return _run_command(cmd, output_path, show_progress)
+
+
+def process_subtle_speed_change(input_path: str, output_path: str, speed_multiplier: float = 0.99, show_progress: bool = True) -> bool:
+    """
+    (微调版) 对视频和音频进行几乎无法感知的速度调整 (默认减速1%)。
+
+    :param input_path: 输入视频路径。
+    :param output_path: 输出视频路径。
+    :param speed_multiplier: 速度乘数。> 1.0 加速, < 1.0 减速。
+    :param show_progress: 是否显示 FFmpeg 处理进度。
+    :return: bool, True 表示成功, False 表示失败。
+    """
+    try:
+        _check_ffmpeg_installed()
+    except FileNotFoundError as e:
+        print(e, file=sys.stderr)
+        return False
+
+    if not (0.5 <= speed_multiplier <= 100.0):
+        print("错误: 速度乘数对于音频处理('atempo'滤镜)必须在 0.5 到 100.0 之间。", file=sys.stderr)
+        return False
+
+    print(f"🎬 开始微调任务 [速度调整为 {speed_multiplier*100}%]: '{input_path}' -> '{output_path}'")
+
+    cmd = [
+        "ffmpeg", "-hide_banner", "-v", "error",
+        "-i", input_path,
+        "-vf", f"setpts={1.0/speed_multiplier}*PTS",
+    ]
+
+    # 因为音频被 atempo 滤镜处理过，不能再用 acodec='copy'，必须重新编码
+    if _probe_has_audio(input_path):
+        cmd.extend(["-af", f"atempo={speed_multiplier}"])
+    else:
+        cmd.extend(["-an"])
+
+    cmd.extend(["-y", output_path])
+
+    return _run_command(cmd, output_path, show_progress)
+
+
+def process_color_filter(input_path: str, output_path: str, filter_type: str = 'subtle', show_progress: bool = True) -> bool:
+    """
+    为视频应用调色滤镜，新增 'subtle' (微调) 类型。
+    'subtle' 类型：轻微改变亮度和饱和度，肉眼难以察觉。
+
+    :param input_path: 输入视频路径。
+    :param output_path: 输出视频路径。
+    :param filter_type: 可选 'subtle', 'vibrant'。
+    :param show_progress: 是否显示 FFmpeg 处理进度。
+    :return: bool, True 表示成功, False 表示失败。
+    """
+    try:
+        _check_ffmpeg_installed()
+    except FileNotFoundError as e:
+        print(e, file=sys.stderr)
+        return False
+
+    print(f"🎬 开始任务 [应用 '{filter_type}' 滤镜]: '{input_path}' -> '{output_path}'")
+
+    video_filter = ""
+    if filter_type == 'subtle':
+        video_filter = "eq=brightness=0.01:saturation=1.01"
+    elif filter_type == 'vibrant':
+        video_filter = "eq=saturation=1.5:contrast=1.1"
+    else:
+        print(f"错误: 未知的滤镜类型: '{filter_type}'", file=sys.stderr)
+        return False
+
+    cmd = [
+        "ffmpeg", "-hide_banner", "-v", "error",
+        "-i", input_path,
+        "-vf", video_filter,
+    ]
+
+    if _probe_has_audio(input_path):
+        cmd.extend(["-c:a", "copy"])
+    else:
+        cmd.extend(["-an"])
+
+    cmd.extend(["-y", output_path])
+
+    return _run_command(cmd, output_path, show_progress)
+
+
+# --- 【推荐】终极整合函数 ---
+
+def apply_all_subtle_tweaks(input_path: str, output_path: str, show_progress: bool = True) -> bool:
+    """
+    【推荐使用】将所有微调操作一次性应用，效率最高，效果最隐蔽。
+    包含: 放大2%、减速1%、轻微调色、增加微弱噪声。
+
+    :param input_path: 输入视频路径。
+    :param output_path: 输出视频路径。
+    :param show_progress: 是否显示 FFmpeg 处理进度。
+    :return: bool, True 表示成功, False 表示失败。
+    """
+    try:
+        _check_ffmpeg_installed()
+    except FileNotFoundError as e:
+        print(e, file=sys.stderr)
+        return False
+
+    print(f"🎬 开始终极微调任务 [所有微小修改]: '{input_path}' -> '{output_path}'")
+
+    # 1. 速度调整参数
+    speed_multiplier = 0.99
+
+    # 2. 视频滤镜链：放大 -> 裁切 -> 调色 -> 加噪声 -> 调速
+    # noise=alls=1:allf=t+u 表示一个非常轻微的全帧时变噪声
+    video_filters = (
+        f"scale=iw*1.02:-1,"
+        f"crop=iw:ih,"
+        f"eq=brightness=0.01:saturation=1.01,"
+        f"noise=alls=1:allf=t+u,"
+        f"setpts={1.0/speed_multiplier}*PTS"
+    )
+
+    # 3. 构建命令
+    cmd = [
+        "ffmpeg", "-hide_banner", "-v", "error",
+        "-i", input_path,
+        "-vf", video_filters,
+    ]
+
+    # 4. 如果有音频，则添加音频滤镜
+    if _probe_has_audio(input_path):
+        audio_filter = f"atempo={speed_multiplier}"
+        cmd.extend(["-af", audio_filter])
+    else:
+        cmd.extend(["-an"])
+
+    cmd.extend(["-y", output_path])
+
+    return _run_command(cmd, output_path, show_progress)

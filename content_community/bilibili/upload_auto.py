@@ -20,7 +20,7 @@ import traceback
 
 from common_utils.common_utils import get_config, format_seconds_to_mmss
 from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover, \
-    merge_videos_ffmpeg
+    merge_videos_ffmpeg, apply_all_subtle_tweaks
 from content_community.app.remake_video import remake_video_robust
 
 config_map = {}
@@ -293,6 +293,18 @@ def auto_upload():
         except Exception as e:
             print(f"⚠️  尾部插图失败，继续使用原视频：{e}")
 
+        tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
+        try:
+            result = apply_all_subtle_tweaks(video_path, output_path=tweak_video_path)
+            if os.path.exists(tweak_video_path):
+                video_path = tweak_video_path
+                print(f"✅ 视频细节调整成功，保存为 {tweak_video_path}")
+            else:
+                print(f"❌ 视频细节调整失败，继续使用原视频。")
+        except Exception as e:
+            print(f"⚠️ 视频细节调整失败：{e}")
+
+
         temp_video_path = video_path.replace('.mp4', '_temp.mp4')
         try:
             if generation_options.get('add_epilogue', False):
@@ -419,6 +431,8 @@ def auto_upload():
                     os.remove(new_video_path)
                 if temp_video_path and os.path.exists(temp_video_path):
                     os.remove(temp_video_path)
+                if tweak_video_path and os.path.exists(tweak_video_path):
+                    os.remove(tweak_video_path)
             except Exception as e:
                 print(f"⚠️ 删除视频文件失败：{e}")
 
