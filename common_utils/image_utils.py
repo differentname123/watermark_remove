@@ -6,6 +6,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 import difflib
 
+from common_utils import time_to_ms
+
 
 def compute_iou(box1, box2):
     """
@@ -79,6 +81,54 @@ def annotate_clusters_on_image(image: Image.Image, clusters: list) -> Image.Imag
             draw.text((x0, text_y), annotation_text, fill="blue", font=font)
     return image
 
+
+
+def save_frames_around_timestamp(
+    video_path: str,
+    timestamp,
+    num_frames: int,
+    output_dir: str
+) -> None:
+    """
+    从视频中在给定时间戳前后各截取 num_frames 帧并保存为图片。
+    输出文件命名格式：frame_{idx}.png，其中 idx 为帧在视频中的索引。
+    """
+    ts_sec = time_to_ms(timestamp) / 1000
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise FileNotFoundError(f"无法打开视频文件: {video_path}")
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if fps <= 0 or total_frames <= 0:
+        cap.release()
+        raise ValueError("无法获取视频帧率或总帧数")
+
+    # 目标帧序号
+    target_idx = int(round(ts_sec * fps))
+    # 计算要截取的帧索引区间
+    start_idx = max(0, target_idx - num_frames)
+    end_idx   = min(total_frames - 1, target_idx + num_frames)
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    for idx in range(start_idx, end_idx + 1):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ret, frame = cap.read()
+        if not ret:
+            print(f"警告：读取帧 {idx} 失败，跳过")
+            continue
+
+        # BGR 转 RGB 并保存
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        img = Image.fromarray(frame_rgb)
+
+        out_path = os.path.join(output_dir, f"frame_{idx}.png")
+        img.save(out_path)
+        print(f"已保存帧 {idx} -> {out_path}")
+
+    cap.release()
 
 def extract_frames_from_video(video_path: str, num_frames: int = 3) -> list:
     cap = cv2.VideoCapture(video_path)

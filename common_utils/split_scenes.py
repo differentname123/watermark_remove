@@ -8,6 +8,8 @@ from scenedetect.scene_manager import SceneManager
 from scenedetect.stats_manager import StatsManager
 from scenedetect.detectors import ContentDetector
 
+from image_utils import save_frames_around_timestamp
+
 
 def find_and_split_scenes(
         video_path,
@@ -66,10 +68,13 @@ def find_and_split_scenes(
                 print(f"场景数量 {num_coarse_scenes} 在目标范围 (1, {max_scenes}] 内，开始进行边界精炼。")
 
                 # --- 阶段 2: 使用低阈值获取精细候选切点 ---
-                low_threshold = current_high_threshold / 3
+                low_threshold = current_high_threshold / 2
                 print("-" * 80)
                 print(f"阶段 2: 使用低阈值 {low_threshold:.2f} 获取精细候选切点...")
-
+                coarse_scene_info = {
+                    f"场景{i + 1}": (s.get_timecode(), e.get_timecode())
+                    for i, (s, e) in enumerate(coarse_scene_list)
+                }
                 # !!! 关键步骤: 重置视频管理器到视频开头，以便重新检测
                 video_manager.reset()
 
@@ -83,7 +88,10 @@ def find_and_split_scenes(
                 scene_manager_fine.detect_scenes(frame_source=video_manager)
                 fine_scene_list = scene_manager_fine.get_scene_list(base_timecode)
                 print(f"检测到 {len(fine_scene_list)} 个精细候选场景。")
-
+                fine_scene_info = {
+                    f"场景{i+1}": (s.get_timecode(), e.get_timecode())
+                    for i, (s, e) in enumerate(fine_scene_list)
+                }
                 # --- 阶段 3: 边界对齐与校正 ---
                 print("-" * 80)
                 print("阶段 3: 对齐粗场景边界到最近的精细切点...")
@@ -154,22 +162,26 @@ def find_and_split_scenes(
         video_manager.release()
 
     print("-" * 80)
-    print("最终精炼场景分割结果:")
-    pprint.pprint(refined_scene_info)
+    print("=== 粗场景 ===");   pprint.pprint(coarse_scene_info)
+    print("=== 精细场景 ==="); pprint.pprint(fine_scene_info)
+    print("=== 最终精炼场景分割结果 ==="); pprint.pprint(refined_scene_info)
     return refined_scene_info
 
 
 # --- 主程序入口 ---
 if __name__ == '__main__':
     # 把这里换成你的视频文件路径
-    my_video_path = r"W:\project\python_project\watermark_remove\LLM\TikTokDownloader\downloads\2025-07-17 17.06.02-视频-娱乐传递官-宗馥莉——小公主的复仇.mp4"
+    my_video_path = 'test.mp4'
 
     # 运行带有精炼功能的场景分割
     scene_info_dict = find_and_split_scenes(
-        'test.mp4',
-        high_threshold=85,  # 初始高阈值
+        my_video_path,
+        high_threshold=50,  # 初始高阈值
         max_scenes=20,  # 期望的最大场景数
         min_scene_len=25,  # 最小场景长度（帧）
         step=5  # 阈值调整步长
     )
     print("\n场景信息字典已生成并打印。")
+    for key,value in scene_info_dict.items():
+        timestamp = value[1]
+        save_frames_around_timestamp(my_video_path,timestamp,3,str(os.path.join('scenes',key)))
