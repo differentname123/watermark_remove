@@ -176,7 +176,7 @@ def analyze_videos_gemini(
                 # 等待处理完成
                 while video_file.state.name == "PROCESSING":
                     print(f"[INFO] 视频 {basename} 正在处理…")
-                    time.sleep(5)
+                    time.sleep(10)
                     video_file = genai_flash.get_file(video_file.name)
                 if video_file.state.name == "FAILED":
                     raise RuntimeError(f"视频处理失败：{basename}")

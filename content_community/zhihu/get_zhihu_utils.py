@@ -17,7 +17,9 @@ from typing import List, Dict
 
 from LLM.gemini import analyze_images_gemini, analyze_videos_gemini
 from common_utils.common_utils import save_json, download_public_image, read_json, string_to_object, find_key_values, \
-    download_public_video
+    download_public_video, ms_to_time, time_to_ms
+from common_utils.split_scenes import find_and_split_scenes
+from common_utils.video_utils import probe_duration
 from content_community.zhihu.gen_video_by_video_info import gen_video_by_video_info
 from content_community.zhihu.gen_zhihu_video_info import gen_video_final_info
 
@@ -645,26 +647,38 @@ MAX_IMAGE_BATCH_SIZE = 20
 MAX_RETRIES = 3
 
 VIDEO_BASE_PROMPT = """
-好的，这是为您格式化后的提示词，已经移除了可能存在的干扰性转义符号，并优化了排版，使其更清晰、易于阅读和使用。
-
------
-
 ### **1. 角色与目标 (Role & Goal)**
-
-你是一位顶尖的多模态分析专家和视频脚本策划 AI。你的核心目标是接收一个话题背景和一系列视频文件，为每一个视频生成一段深度结构化的分析 JSON。这份 JSON 必须精准、高效地解构视频内容，并对其与给定话题的匹配度进行可量化、可解释的评估，最终服务于“将视频素材与文案进行智能匹配、排序与筛选”的终极需求。
-
+你是一位顶尖的多模态分析专家和视频脚本策划AI。你的核心目标是接收一个话题背景和**一组预先切分好场景的视频数据**，为每一个视频生成一段深度结构化的分析JSON。这份JSON必须精准、高效地解构**每一个给定场景**内的视听内容，并对整个视频与给定话题的匹配度进行可量化、可解释的评估，最终服务于“将视频素材与文案进行智能匹配、排序与筛选”的终极需求。
 -----
 
 ### **2. 核心输入 (Core Inputs)**
 
 1.  `topic_context` (话题背景): 一个字符串，描述这批视频共同的主题或应用场景（例如：“展现城市科技创新”、“描绘家庭温馨瞬间”）。你必须将此背景作为所有分析和评估的核心“滤镜”与最高准则。
-2.  `video_files` (视频文件): 一批需要处理的视频文件。
+2.  `video_scene_data` (视频场景数据): 一个JSON对象。其键为视频文件名，值为该视频预先切分好的场景列表 (`scenes`)。每个场景都精确定义了 `scene_name`、`start_time` (毫秒) 和 `end_time` (毫秒)。你必须严格基于此结构进行分析。
+    **输入格式示例：**
+    ```json
+    {
+      "video_1934271416687100245.mp4": {
+        "scenes": [
+          {"scene_name": "场景1", "start_time": 0, "end_time": 12687},
+          {"scene_name": "场景2", "start_time": 12687, "end_time": 36496},
+          {"scene_name": "场景3", "start_time": 36496, "end_time": 42880}
+        ]
+      },
+      "video_1934286389123474140.mp4": {
+        "scenes": [
+          {"scene_name": "场景1", "start_time": 0, "end_time": 7709},
+          {"scene_name": "场景2", "start_time": 7709, "end_time": 44690}
+        ]
+      }
+    }
+    ```
 
 -----
 
 ### **3. 核心任务与分析框架 (Core Task & Framework)**
 
-你需要为每一个输入的视频，严格按照下面定义的【精炼实用版视频分析框架】，生成一个完整的 JSON 分析对象。
+你需要为 `video_scene_data` 中的每一个视频，严格按照下面定义的分析框架，生成一个完整的 JSON 分析对象。
 
 #### **分析框架定义**
 
@@ -688,9 +702,11 @@ VIDEO_BASE_PROMPT = """
       "dynamic_tags": ["..."],
       "audio_tags": ["..."]
     },
-    "shot_level_analysis": [
+    "scene_level_analysis": [
       {
-        "timestamp": "...",
+        "scene_name": "...",
+        "start_time": 0,
+        "end_time": 0,
         "desc": "...",
         "semantic_tags": { "...": ["..."] },
         "narrative_arc": ["..."],
@@ -704,13 +720,13 @@ VIDEO_BASE_PROMPT = """
 
 #### **`topic_relevance` 字段详解**
 
-  * `score` (整数, 0-100): 一个量化分数，表示视频与 `topic_context` 的相关度。
-      * **85-100 (高度相关):** 视频的核心主题、情感氛围和象征概念与 `topic_context` 完美契合，是理想的素材。
-      * **50-84 (中度相关):** 视频在主要方面（如主体或场景）与话题相关，但在情感或概念上匹配度一般，或含少量无关元素。
-      * **1-49 (低度相关):** 仅包含零散或次要相关元素，整体关联性弱。
-      * **0 (完全无关):** 视频与话题背景无任何可识别联系。
-  * `reasoning` (字符串): 一段简洁有力的说明，必须引用分析中得出的标签（如 `Symbol_Concept`, `Emotion_Atmosphere` 等）支撑判断。
-  * `matching_keywords` (字符串数组): 从视频内容与标签中提炼的、与话题直接相关的关键词。
+  * `score` (整数, 0-100): 量化视频与 `topic_context` 的相关度。
+      * **85-100 (高度相关):** 核心主题、情感、象征与话题完美契合。
+      * **50-84 (中度相关):** 主要内容与话题相关，但次要方面匹配度一般。
+      * **1-49 (低度相关):** 仅含零散相关元素，整体关联弱。
+      * **0 (完全无关):** 与话题无任何可识别联系。
+  * `reasoning` (字符串): 必须引用分析标签来支撑分数判断的简洁说明。
+  * `matching_keywords` (字符串数组): 从视频中提炼的、与话题直接相关的关键词。
 
 -----
 
@@ -718,45 +734,56 @@ VIDEO_BASE_PROMPT = """
 
 1.  **上下文优先原则 (Context-First Principle)**
 
-      * 必须将 `topic_context` 作为首要参考依据。
-      * 例如：在“环保”背景下，工厂镜头应解读为 `Symbol_Concept: ["工业污染"]`；而在“经济发展”背景下则可能是 `Symbol_Concept: ["工业基础"]`。
+      * **核心指令：** 必须将 `topic_context` 作为所有解读的首要依据。
+      * **示例：** “环保”背景下，工厂是 `Symbol_Concept: ["工业污染"]`；“经济发展”背景下，则是 `Symbol_Concept: ["工业基础"]`。
 
 2.  **综合相关性评估原则 (Integrated Relevance Assessment Principle)**
 
-      * **步骤一：** 先完成全面分析。
-      * **步骤二：** 多维度比对，从三个维度判断：
-        1.  **直接内容匹配:** `Subject`, `Scene_Action` 是否命中关键词。
-        2.  **情感氛围匹配:** `Emotion_Atmosphere`, `audio_tags` 是否契合所需情绪。
-        3.  **象征概念匹配:** `Symbol_Concept`, `narrative_arc` 是否寓意一致。
-      * **步骤三：** 严格赋分，参考 `score` 标准，避免表面匹配误导判断。
-      * **步骤四：** 提炼理由与关键词，分别输出到 `reasoning` 与 `matching_keywords` 字段。
+      * **步骤一：** 完成对所有预设场景的全面内容分析。
+      * **步骤二：** 综合所有场景的分析结果，在 `video_level_analysis` 层面评估与 `topic_context` 的整体契合度。
+      * **步骤三：** 严格按照评分标准赋分，并提炼 `reasoning` 和 `matching_keywords`。
 
 3.  **为匹配而生的标签原则 (Tagging-for-Matching Principle)**
 
-      * 标签必须具备明确匹配价值，拒绝冗余噪声。
-      * `dynamic_tags` 需聚焦视觉效果，用词如 `节奏加快`, `镜头聚焦`，避免技术术语。
-      * `audio_tags` 需使用 `类型:描述` 扁平格式，如：
-          * `BGM:激昂史诗`
-          * `VO:专业男声`
-          * `SFX:心跳声`
+      * **核心指令：** 标签必须具备明确的匹配价值，拒绝模糊或冗余的标签。
+      * **`dynamic_tags`：** 需聚焦视觉效果，如 `节奏加快`, `镜头聚焦`。
+      * **`audio_tags`：** 需使用 `类型:描述` 扁平格式，如 `BGM:激昂史诗`, `VO:专业男声`, `SFX:心跳声`。
 
-4.  **场景聚合原则 (Scene Aggregation Principle for `shot_level_analysis`)**
+4.  **场景忠实原则 (Scene Fidelity Principle) -【最高优先级】**
 
-      * 不为每个物理剪辑建对象，应合并表达同一“场景单元”的镜头。
+      * **1. 认知与遵循 (Acknowledge & Follow):** 你必须认知到输入数据已包含精确的场景列表 (`scenes`)。你的任务是填充分析，而非切分。
+      * **2. 绝对禁止 (Forbid Modification):** **严禁**自行创建、合并、删除或修改任何场景的边界。
+      * **3. 精确对应 (Ensure 1:1 Correspondence):** 输出的 `scene_level_analysis` 数组，其元素数量必须与输入 `scenes` 数组的数量**完全一致**。
+      * **4. 数据映射 (Map & Analyze):** 对于每一个场景，必须将输入的 `scene_name`, `start_time`, `end_time` **原样复制**到输出的对应对象中，并**仅在该时间范围内**进行内容描述和打标。
 
 -----
 
 ### **5. 输出格式 (Output Format)**
 
-  * 仅返回一个结构规整的 JSON 对象。
-  * JSON 键为视频文件名（如 `video_filename.mp4`）。
-  * 值为完整分析对象，不要输出除 JSON 外的说明语。
+  * **唯一输出：** 仅返回一个结构规整、不含任何注释或多余文本的单一JSON对象。
+  * **结构：** JSON的顶级键应为视频文件名，其值为该视频的完整分析对象。
 
 -----
 
 ### **6. 输出格式示例**
 
-**假设 `topic_context` 为：“展现都市脉搏与奋斗精神”，视频为 `city_pulse_01.mp4`**
+**假设 `topic_context` 为：“展现都市脉搏与奋斗精神”**
+
+**假设 `video_scene_data` 输入为：**
+
+```json
+{
+  "city_pulse_01.mp4": {
+    "scenes": [
+      {"scene_name": "场景1-序幕", "start_time": 0, "end_time": 8000},
+      {"scene_name": "场景2-发展", "start_time": 8000, "end_time": 15000},
+      {"scene_name": "场景3-高潮", "start_time": 15000, "end_time": 22000}
+    ]
+  }
+}
+```
+
+**你的输出应为：**
 
 ```json
 {
@@ -778,39 +805,33 @@ VIDEO_BASE_PROMPT = """
       "dynamic_tags": ["航拍", "延时摄影", "节奏加快"],
       "audio_tags": ["BGM:史诗感电子乐"]
     },
-    "shot_level_analysis": [
+    "scene_level_analysis": [
       {
-        "timestamp": "00:00-00:08",
+        "scene_name": "场景1-序幕",
+        "start_time": 0,
+        "end_time": 8000,
         "desc": "广角航拍，展示城市在黄昏下的宁静天际线。",
-        "semantic_tags": {
-          "Subject": ["城市天际线", "夕阳"],
-          "Emotion_Atmosphere": ["宁静", "壮美"],
-          "Symbol_Concept": ["故事的开始"]
-        },
+        "semantic_tags": {"Subject": ["城市天际线", "夕阳"], "Emotion_Atmosphere": ["宁静", "壮美"], "Symbol_Concept": ["故事的开始"]},
         "narrative_arc": ["序幕"],
         "dynamic_tags": ["静态广角", "节奏平缓"],
         "audio_tags": ["BGM:舒缓前奏"]
       },
       {
-        "timestamp": "00:09-00:15",
+        "scene_name": "场景2-发展",
+        "start_time": 8000,
+        "end_time": 15000,
         "desc": "延时加速，车流变为光轨，城市灯光逐一点亮。",
-        "semantic_tags": {
-          "Subject": ["车流光轨", "城市灯光"],
-          "Emotion_Atmosphere": ["活力", "流动感"],
-          "Symbol_Concept": ["都市活力", "时间加速"]
-        },
+        "semantic_tags": {"Subject": ["车流光轨", "城市灯光"], "Emotion_Atmosphere": ["活力", "流动感"], "Symbol_Concept": ["都市活力", "时间加速"]},
         "narrative_arc": ["发展与变化"],
         "dynamic_tags": ["延时摄影", "快节奏"],
         "audio_tags": ["BGM:节奏加强"]
       },
       {
-        "timestamp": "00:16-00:22",
+        "scene_name": "场景3-高潮",
+        "start_time": 15000,
+        "end_time": 22000,
         "desc": "镜头缓慢推向一栋灯火通明的摩天大楼。",
-        "semantic_tags": {
-          "Subject": ["摩天大楼", "窗户灯光"],
-          "Emotion_Atmosphere": ["焦点", "坚持", "希望"],
-          "Symbol_Concept": ["奋斗中心", "不眠的追求"]
-        },
+        "semantic_tags": {"Subject": ["摩天大楼", "窗户灯光"], "Emotion_Atmosphere": ["焦点", "坚持", "希望"], "Symbol_Concept": ["奋斗中心", "不眠的追求"]},
         "narrative_arc": ["高潮与点题"],
         "dynamic_tags": ["镜头聚焦", "节奏放缓"],
         "audio_tags": ["BGM:高潮旋律"]
@@ -1056,6 +1077,61 @@ def _process_answer_batch(batch_of_answers: list[dict], real_final_result: dict)
     print(f"[严重错误] 批次处理失败 {MAX_RETRIES} 次，跳过此批次。")
     return {}
 
+def merge_short_scenes(scenes_by_video: dict, min_duration_ms: int) -> dict:
+    """
+    合并持续时间小于 min_duration_ms 的场景，并为每个场景增加 start_time 和 end_time 键。
+    """
+    merged = {}
+    for video, scenes in scenes_by_video.items():
+        # 按时间顺序获取所有场景时间对
+        ordered_times = [(time_to_ms(s), time_to_ms(e)) for s, e in scenes.values()]
+        # 合并短场景
+        merged_times = []
+        for start_ms, end_ms in ordered_times:
+            if merged_times:
+                prev_start, prev_end = merged_times[-1]
+                # 如果新段不足阈值，则合并到上一段
+                if (end_ms - start_ms) < min_duration_ms:
+                    merged_times[-1] = (prev_start, max(prev_end, end_ms))
+                    continue
+            # 否则新增场景段
+            merged_times.append((start_ms, end_ms))
+        # 构建输出格式
+        scenes_list = []
+        for idx, (start_ms, end_ms) in enumerate(merged_times, start=1):
+            scenes_list.append({
+                'scene_name': f"场景{idx}",
+                'start_time': start_ms,
+                'end_time': end_ms
+            })
+        merged[video] = {'scenes': scenes_list}
+    return merged
+
+
+def gen_scene_info(video_abs_path_list):
+    """
+    生成场景信息
+    """
+    scene_info_map = {}
+    for video_path in video_abs_path_list:
+        base_name = os.path.basename(video_path)
+        # 确保视频路径是绝对路径
+        video_path = pathlib.Path(video_path).resolve()
+        if not video_path.is_file():
+            print(f"视频文件不存在：{video_path}")
+            continue
+        scene_info_dict = find_and_split_scenes(str(video_path), max_scenes=10,high_threshold=10)
+        if not scene_info_dict:
+            start_time = ms_to_time(0)
+            print("未能成功获取视频场景信息。", scene_info_dict)
+            duration_s = probe_duration(video_path)
+            end_time = ms_to_time(duration_s * 1000)
+            scene_info_dict = {'场景1':(start_time, end_time)}
+        scene_info_map[base_name] = scene_info_dict
+
+    merged_scene_info_map = merge_short_scenes(scene_info_map, min_duration_ms=2000)
+    return merged_scene_info_map
+
 
 def add_video_desc_by_question(real_final_result) -> dict:
     """
@@ -1071,7 +1147,7 @@ def add_video_desc_by_question(real_final_result) -> dict:
     # video_lib = video_lib[:2]  # 仅保留前2个视频
 
     video_abs_path_list = [video.get('video_abs_path', '') for video in video_lib if video.get('video_abs_path')]
-
+    scene_info_map = gen_scene_info(video_abs_path_list)
     batch_size = 5
     # 将video_lib分成最多5个视频为一个批次
     if not video_abs_path_list:
@@ -1090,7 +1166,7 @@ def add_video_desc_by_question(real_final_result) -> dict:
             try:
                 # 生成视频描述
                 raw = analyze_videos_gemini(
-                    prompt=full_prompt,
+                    prompt=f'{full_prompt}\n 场景信息为：{scene_info_map}',
                     video_paths=video_batch
                 )
                 video_analysis_result = string_to_object(raw)
@@ -1440,8 +1516,8 @@ def gen_video(question_id):
     return final_video_path, final_video_info
 
 if __name__ == "__main__":
-    question_id = "1933829227528037647"
-    fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
+    question_id = "1933988735948678767"
+    # fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
     # final_video_info = gen_video_final_info(question_id)
     # gen_video_by_video_info( f"{question_id}/zhihu_answers_{question_id}_video_info_op.json")
 
@@ -1450,11 +1526,15 @@ if __name__ == "__main__":
     #     json.dump(hot_list_data, f, ensure_ascii=False, indent=4)
     # print("结果已保存到 zhihu_hot_list.json 文件中。")
 
-    # output_filename = f"{question_id}/zhihu_answers_{question_id}.json"
-    # real_final_result = read_json(output_filename)
+    output_filename = f"{question_id}/zhihu_answers_{question_id}.json"
+    real_final_result = read_json(output_filename)
     # add_image_desc_by_answer_batching(real_final_result)
     # real_final_result = extract_image(real_final_result)
     # save_json(output_filename, real_final_result)
+
+    add_video_desc_by_question(real_final_result)
+    save_json(output_filename, real_final_result)
+
 
     # add_video_desc_by_question(real_final_result)
     # save_json(output_filename, real_final_result)
