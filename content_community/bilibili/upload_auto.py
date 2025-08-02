@@ -40,8 +40,8 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 # 定义需要处理的账号名及其对应的config_map键名（区分大小写）
 accounts = {
     'tao': 'tao',
-    'ruru': 'ruru',
-    'nana': 'nana',
+    'nana': 'ruru',
+    # 'nana': 'nana',
     'jie': 'jie',
     'qiqi': 'qiqi',
     # 'mama': 'mama',
