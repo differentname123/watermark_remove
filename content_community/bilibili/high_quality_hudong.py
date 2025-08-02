@@ -1254,6 +1254,7 @@ def init_config():
         '477861377': 'yan',
         '3546947310848473': 'hong',
         '3546947566700892': 'su',
+        '3546731853645896': 'xue',
         # '3546909677455941': 'base'  # 如果需要恢复 base 账号，取消注释即可
     }
 
@@ -1293,7 +1294,7 @@ def fun():
 
         interaction_data = load_processed_dict('../../LLM/TikTokDownloader/interaction_data.json')
         metadata_cache_with_uploads = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
-        metadata_cache_with_uploads_back = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads_0802.json')
+        metadata_cache_with_uploads_back = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads0802.json')
         metadata_cache_with_uploads.update(metadata_cache_with_uploads_back)
 
         bvid_uid_map = {}
