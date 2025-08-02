@@ -86,7 +86,7 @@ def fetch_all_archives(cookie_str: str) -> List[Dict]:
 
 if __name__ == '__main__':
     # 示例调用
-    COOKIE_STRING = get_config("ruru_bilibili_total_cookie")
+    COOKIE_STRING = get_config("nana_bilibili_total_cookie")
     items = fetch_all_archives(COOKIE_STRING)
     bvid_list = find_key_values(items, 'bvid')
     bvid_list = list(set(bvid_list))

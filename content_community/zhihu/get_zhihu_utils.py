@@ -1186,6 +1186,8 @@ def add_video_desc_by_question(real_final_result) -> dict:
         video_desc = video_analysis_result_all.get(video_name, {})
         if video_desc:
             video['video_desc'] = video_desc
+            # 删除video_abs_path字段
+            video.pop('video_abs_path', None)
 
     return updated_result
 
@@ -1516,24 +1518,24 @@ def gen_video(question_id):
     return final_video_path, final_video_info
 
 if __name__ == "__main__":
-    question_id = "1933988735948678767"
+    question_id = "1935046646762271123"
     # fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
     # final_video_info = gen_video_final_info(question_id)
-    # gen_video_by_video_info( f"{question_id}/zhihu_answers_{question_id}_video_info_op.json")
+    gen_video_by_video_info( f"{question_id}/zhihu_answers_{question_id}_video_info_op.json")
 
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
     # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:
     #     json.dump(hot_list_data, f, ensure_ascii=False, indent=4)
     # print("结果已保存到 zhihu_hot_list.json 文件中。")
 
-    output_filename = f"{question_id}/zhihu_answers_{question_id}.json"
-    real_final_result = read_json(output_filename)
+    # output_filename = f"{question_id}/zhihu_answers_{question_id}.json"
+    # real_final_result = read_json(output_filename)
     # add_image_desc_by_answer_batching(real_final_result)
     # real_final_result = extract_image(real_final_result)
     # save_json(output_filename, real_final_result)
 
-    add_video_desc_by_question(real_final_result)
-    save_json(output_filename, real_final_result)
+    # add_video_desc_by_question(real_final_result)
+    # save_json(output_filename, real_final_result)
 
 
     # add_video_desc_by_question(real_final_result)
