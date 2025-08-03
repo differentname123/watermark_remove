@@ -1392,6 +1392,20 @@ def fetch_question_answers(question_id: str, output_filename: str, desired_answe
             page.wait_for_selector('h1.QuestionHeader-title', timeout=15000)
             print(">>> 页面加载成功，问题标题已出现。")
 
+            # 等待问题标题加载完成后，尝试点击“显示全部”按钮
+            try:
+                # Playwright sync API 中 query_selector 找不到时返回 None
+                more_btn = page.query_selector("button.QuestionRichText-more")
+                if more_btn:
+                    print(">>> 检测到 '显示全部' 按钮，执行点击")
+                    more_btn.click()
+                    # 可根据需要加短暂等待，确保展开完成
+                    page.wait_for_timeout(500)
+                else:
+                    print(">>> 未检测到 '显示全部' 按钮，跳过点击")
+            except Exception as e:
+                print(f"点击 '显示全部' 按钮时出错，已忽略: {e}")
+
             # 初始数据提取
             script_tag = page.query_selector('#js-initialData')
             if script_tag:
@@ -1518,10 +1532,10 @@ def gen_video(question_id):
     return final_video_path, final_video_info
 
 if __name__ == "__main__":
-    question_id = "1935046646762271123"
-    # fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
+    question_id = "399852621"
+    fetch_question_answers(question_id, f"{question_id}/zhihu_answers_{question_id}.json", desired_answers=100)
     # final_video_info = gen_video_final_info(question_id)
-    gen_video_by_video_info( f"{question_id}/zhihu_answers_{question_id}_video_info_op.json")
+    # gen_video_by_video_info( f"{question_id}/zhihu_answers_{question_id}_video_info_op.json")
 
     # hot_list_data = fetch_zhihu_hot(ZHIHU_COOKIE_STRING)
     # with open('zhihu_hot_list.json', 'w', encoding='utf-8') as f:
