@@ -21,6 +21,89 @@ from PIL import ImageFont
 from common_utils.common_utils import time_to_ms
 
 
+def get_media_dimensions(file_path):
+    """使用 ffprobe 获取媒体文件的宽度和高度。"""
+    command = [
+        'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+        '-show_entries', 'stream=width,height', '-of', 'json', file_path
+    ]
+    try:
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        data = json.loads(result.stdout)
+        return data['streams'][0]['width'], data['streams'][0]['height']
+    except Exception as e:
+        print(f"错误: 无法获取 '{file_path}' 的尺寸。错误信息: {e}")
+        return None, None
+
+
+def process_video_with_template(input_video, template_image, output_video, blur_sigma=25, preset='veryfast'):
+    """
+    将视频填充到模板的透明区域，背景为模糊填充，并生成最终视频。
+
+    参数:
+    input_video (str): 输入视频文件的路径。
+    template_image (str): 带透明窗口的模板图片路径。
+    output_video (str): 输出视频文件的路径。
+    blur_sigma (int): 背景模糊程度，数值越大越模糊。
+    preset (str): FFmpeg 的编码速度预设。
+    """
+    # 1. --- 文件和尺寸检查 ---
+    for f in [input_video, template_image]:
+        if not os.path.exists(f):
+            print(f"错误: 输入文件 '{f}' 未找到！")
+            return False
+
+    final_w, final_h = get_media_dimensions(template_image)
+    if not final_w:
+        return False
+
+    # 根据之前的讨论，我们硬编码这些坐标
+    target_x, target_y = 0, 639
+    target_w, target_h = 1291, 1001
+
+    print(f"模板尺寸: {final_w}x{final_h} | 目标区域: {target_w}x{target_h} at ({target_x},{target_y})")
+
+    # 2. --- 使用多行f-string构建更易读的滤镜 ---
+    filter_complex = f"""
+        [0:v]split=2[bg_src][fg_src];
+        [bg_src]scale={final_w}:{final_h},gblur=sigma={blur_sigma}[blurred_bg];
+        [fg_src]scale=w={target_w}:h={target_h}:force_original_aspect_ratio=decrease[scaled_fg];
+        [blurred_bg][scaled_fg]overlay=x={target_x}+({target_w}-w)/2:y={target_y}+({target_h}-h)/2[base_video];
+        [base_video][1:v]overlay=0:0[final_video];
+        [final_video]crop=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p,setsar=1[v_out]
+    """
+
+    # 3. --- 构建最终的 FFmpeg 命令 ---
+    ffmpeg_command = [
+        'ffmpeg',
+        '-loglevel', 'error',  # 只显示错误日志
+        '-i', input_video,
+        '-loop', '1',
+        '-i', template_image,
+        '-filter_complex', filter_complex,
+        '-map', '[v_out]',
+        '-map', '0:a?',
+        '-c:v', 'libx264',
+        '-preset', preset,  # 使用速度预设
+        '-c:a', 'copy',
+        '-shortest',
+        '-y',
+        output_video
+    ]
+
+    # 4. --- 执行命令 ---
+    print(f"正在处理视频，输出到 '{output_video}'...")
+    try:
+        subprocess.run(ffmpeg_command, check=True)
+        print("处理成功！")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"FFmpeg 执行出错: {e}")
+        return False
+    except FileNotFoundError:
+        print("错误: 未找到 'ffmpeg' 或 'ffprobe'。请确保它们已安装并位于系统 PATH 中。")
+        return False
+
 def cut_audio_segment(input_audio_path: str, start_time: float, end_time: float, output_audio_path: str):
     """
     从音频中截取指定时间段，保存为新的音频文件。
