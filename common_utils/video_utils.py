@@ -91,7 +91,7 @@ def get_media_dimensions(file_path):
         return None, None
 
 
-def process_video_with_template(input_video, template_image, output_video, blur_sigma=25, preset='veryfast'):
+def process_video_with_template(input_video, template_image, output_video, left_up_point, box_info, blur_sigma=25, preset='veryfast'):
     """
     将视频填充到模板的透明区域，背景为模糊填充，并生成最终视频。
 
@@ -113,8 +113,8 @@ def process_video_with_template(input_video, template_image, output_video, blur_
         return False
 
     # 根据之前的讨论，我们硬编码这些坐标
-    target_x, target_y = 0, 639
-    target_w, target_h = 1291, 1001
+    target_x, target_y = left_up_point
+    target_w, target_h = box_info
 
     print(f"模板尺寸: {final_w}x{final_h} | 目标区域: {target_w}x{target_h} at ({target_x},{target_y})")
 

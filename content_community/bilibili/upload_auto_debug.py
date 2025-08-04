@@ -18,9 +18,9 @@ import copy
 import time
 import traceback
 
-from common_utils.common_utils import get_config, format_seconds_to_mmss
+from common_utils.common_utils import get_config, format_seconds_to_mmss, read_json
 from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover, \
-    merge_videos_ffmpeg, apply_all_subtle_tweaks
+    merge_videos_ffmpeg, apply_all_subtle_tweaks, process_video_with_template
 from content_community.app.remake_video import remake_video_robust
 
 config_map = {}
@@ -179,6 +179,25 @@ def time_str_to_seconds(time_str: str) -> int | None:
         print(f"错误: 无法解析时间字符串 '{time_str}'。详情: {e}")
         return None
 
+def add_template(video_path, output_video_path, user_name):
+    """
+    增加框信息，大大提高通过率
+    """
+    try:
+        template_data = read_json('template.json')
+        user_template_info = template_data.get(user_name, {})
+        if not user_template_info:
+            print(f"⚠️ 用户 {user_name} 的模板信息不存在，使用默认模板。")
+            return False
+        template_image = f"{user_name}_transparent.png"
+        left_up_point = user_template_info.get('left_up_point', (0, 0))
+        box_info = user_template_info.get('box_info', (0, 0))
+        process_video_with_template(input_video=video_path, template_image=template_image, output_video=output_video_path, left_up_point=left_up_point, box_info=box_info)
+    except Exception as e:
+        print(f"⚠️ 添加模板失败：{e}")
+        return False
+
+
 # ---------- 主逻辑 ----------
 def auto_upload():
     temp_set = set()  # 用于临时存储已处理的任务，避免重复处理
@@ -281,32 +300,39 @@ def auto_upload():
         except Exception as e:
             print(f"⚠️  尾部插图失败，继续使用原视频：{e}")
 
-        tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
-        try:
-            result = apply_all_subtle_tweaks(video_path, output_path=tweak_video_path)
-            if os.path.exists(tweak_video_path) and result:
-                video_path = tweak_video_path
-                print(f"✅ 视频细节调整成功，保存为 {tweak_video_path}")
-            else:
-                print(f"❌ 视频细节调整失败，继续使用原视频。")
-        except Exception as e:
-            print(f"⚠️ 视频细节调整失败：{e}")
-
+        # tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
+        # try:
+        #     result = apply_all_subtle_tweaks(video_path, output_path=tweak_video_path)
+        #     if os.path.exists(tweak_video_path) and result:
+        #         video_path = tweak_video_path
+        #         print(f"✅ 视频细节调整成功，保存为 {tweak_video_path}")
+        #     else:
+        #         print(f"❌ 视频细节调整失败，继续使用原视频。")
+        # except Exception as e:
+        #     print(f"⚠️ 视频细节调整失败：{e}")
 
         temp_video_path = video_path.replace('.mp4', '_temp.mp4')
-        try:
-            print(f"🔄 添加结尾视频片段到 {video_path}... userName: {userName}")
-            copyright_video_path = f'{userName}_final.mp4'
-            if not os.path.exists(copyright_video_path):
-                copyright_video_path = 'final.mp4'
-                print(f"⚠️ 版权视频文件 {copyright_video_path} 不存在，使用默认视频。")
-            video_path_list = [video_path, copyright_video_path]
-            merge_videos_ffmpeg(video_path_list, output_path=temp_video_path)
-            if os.path.exists(temp_video_path):
-                video_path = temp_video_path
-                print(f"✅ 合并视频成功，保存为 {temp_video_path}")
-        except Exception as e:
-            print(f"⚠️ 合并视频失败：{e}")
+        add_template(video_path, temp_video_path, userName)
+        if os.path.exists(temp_video_path):
+            video_path = temp_video_path
+            print(f"✅ 添加模板成功，保存为 {temp_video_path}")
+
+        # temp_video_path = video_path.replace('.mp4', '_temp.mp4')
+        # try:
+        #     print(f"🔄 添加结尾视频片段到 {video_path}... userName: {userName}")
+        #     copyright_video_path = f'{userName}_final.mp4'
+        #     if not os.path.exists(copyright_video_path):
+        #         copyright_video_path = 'final.mp4'
+        #         print(f"⚠️ 版权视频文件 {copyright_video_path} 不存在，使用默认视频。")
+        #     video_path_list = [video_path, copyright_video_path]
+        #     merge_videos_ffmpeg(video_path_list, output_path=temp_video_path)
+        #     if os.path.exists(temp_video_path):
+        #         video_path = temp_video_path
+        #         print(f"✅ 合并视频成功，保存为 {temp_video_path}")
+        # except Exception as e:
+        #     print(f"⚠️ 合并视频失败：{e}")
+
+
 
 
         try:
@@ -419,8 +445,8 @@ def auto_upload():
                     os.remove(new_video_path)
                 if temp_video_path and os.path.exists(temp_video_path):
                     os.remove(temp_video_path)
-                if tweak_video_path and os.path.exists(tweak_video_path):
-                    os.remove(tweak_video_path)
+                # if tweak_video_path and os.path.exists(tweak_video_path):
+                #     os.remove(tweak_video_path)
             except Exception as e:
                 print(f"⚠️ 删除视频文件失败：{e}")
 
