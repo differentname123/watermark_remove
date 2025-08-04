@@ -21,6 +21,61 @@ from PIL import ImageFont
 from common_utils.common_utils import time_to_ms
 
 
+def create_transparent_video_middle_third(input_path: str, output_path: str):
+    """
+    使用 FFmpeg 为视频的中间三分之一区域的白色部分创建透明通道。
+    （已优化：此版本会忽略音频，只处理视频部分。）
+    """
+    if not os.path.exists(input_path):
+        print(f"错误：输入文件 '{input_path}' 不存在。")
+        return
+
+    filter_complex = (
+        "[0:v]split=3[s0][s1][s2];"
+        "[s0]crop=in_w:in_h/3:0:0,format=yuva444p[top];"
+        "[s1]crop=in_w:in_h/3:0:in_h/3[middle_orig];"
+        "[s2]crop=in_w:in_h/3:0:2*in_h/3,format=yuva444p[bottom];"
+        "[middle_orig]colorkey=color=white:similarity=0.01:blend=0[middle_keyed];"
+        "[top][middle_keyed][bottom]vstack=inputs=3"
+    )
+
+    command = [
+        'ffmpeg',
+        '-i', input_path,
+        '-filter_complex', filter_complex,
+        '-an',                    # 新增：-an (Audio No)，忽略所有音轨
+        '-c:v', 'prores_ks',
+        '-pix_fmt', 'yuva444p10le',
+        '-alpha_bits', '16',
+        '-y',
+        output_path
+    ]
+
+    print("即将执行以下 FFmpeg 命令：")
+    print(' '.join(shlex.quote(c) for c in command))
+    print("-" * 20)
+
+    try:
+        process = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding='utf-8'
+        )
+        print("FFmpeg 命令执行成功！")
+        print(f"带透明信息的视频已保存至：{output_path}")
+
+    except FileNotFoundError:
+        print("\n错误: 'ffmpeg' 命令未找到。")
+        print("请确保您已经正确安装了 FFmpeg，并将其添加到了系统的 PATH 环境变量中。")
+    except subprocess.CalledProcessError as e:
+        print("\nFFmpeg 执行过程中发生错误。")
+        print(f"返回码: {e.returncode}")
+        print("\n--- FFmpeg 错误日志 (stderr) ---")
+        print(e.stderr)
+        print("---------------------------------")
+
 def get_media_dimensions(file_path):
     """使用 ffprobe 获取媒体文件的宽度和高度。"""
     command = [
