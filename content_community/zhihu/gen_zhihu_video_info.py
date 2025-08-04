@@ -873,5 +873,5 @@ if __name__ == "__main__":
     video_info = gen_zhihu_video_by_answer(real_final_result, video_output_file)
 
     # video_info = read_json(video_output_file)
-    # video_op_output_file = video_output_file.replace(".json", "_op.json")
+    video_op_output_file = video_output_file.replace(".json", "_op.json")
     op_video_info(video_info, real_final_result, video_op_output_file)
