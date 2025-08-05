@@ -18,6 +18,7 @@ import tempfile
 
 import ffmpeg
 from PIL import ImageFont
+from PIL import Image
 
 from common_utils.common_utils import time_to_ms
 
@@ -91,6 +92,46 @@ def get_media_dimensions(file_path):
         print(f"错误: 无法获取 '{file_path}' 的尺寸。错误信息: {e}")
         return None, None
 
+def make_transparent(input_path: str, output_path: str,
+                     target_x: int, target_y: int,
+                     target_w: int, target_h: int) -> None:
+    """
+    将输入图像在指定区域设为透明，并保存为 PNG。
+
+    :param input_path:  原始图像路径（支持 JPG、PNG 等格式）
+    :param output_path: 输出图像路径，推荐使用 .png 后缀
+    :param target_x:    透明框左上角 X 坐标
+    :param target_y:    透明框左上角 Y 坐标
+    :param target_w:    透明框宽度
+    :param target_h:    透明框高度
+    """
+    # 打开原图并转换为 RGBA
+    img = Image.open(input_path).convert("RGBA")
+    width, height = img.size
+
+    # 检查参数合法性
+    if not (0 <= target_x < width and 0 <= target_y < height):
+        raise ValueError("透明框起点超出图像范围")
+    if target_x + target_w > width or target_y + target_h > height:
+        raise ValueError("透明框尺寸超出图像范围")
+
+    # 拆分通道
+    r, g, b, a = img.split()
+
+    # 将 alpha 通道转换为可编辑的像素列表
+    alpha = a.load()
+
+    # 在指定区域内将 alpha 设为 0（完全透明）
+    for y in range(target_y, target_y + target_h):
+        for x in range(target_x, target_x + target_w):
+            alpha[x, y] = 0
+
+    # 合并回 RGBA
+    img = Image.merge("RGBA", (r, g, b, a))
+
+    # 保存结果
+    img.save(output_path, format="PNG")
+    print(f"已保存带透明区域的图像到 {output_path}")
 
 def process_video_with_template(input_video, template_image, output_video, left_up_point, box_info, blur_sigma=25, preset='veryfast'):
     """
