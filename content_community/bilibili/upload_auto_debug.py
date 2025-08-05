@@ -300,16 +300,16 @@ def auto_upload():
         except Exception as e:
             print(f"⚠️  尾部插图失败，继续使用原视频：{e}")
 
-        # tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
-        # try:
-        #     result = apply_all_subtle_tweaks(video_path, output_path=tweak_video_path)
-        #     if os.path.exists(tweak_video_path) and result:
-        #         video_path = tweak_video_path
-        #         print(f"✅ 视频细节调整成功，保存为 {tweak_video_path}")
-        #     else:
-        #         print(f"❌ 视频细节调整失败，继续使用原视频。")
-        # except Exception as e:
-        #     print(f"⚠️ 视频细节调整失败：{e}")
+        tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
+        try:
+            result = apply_all_subtle_tweaks(video_path, output_path=tweak_video_path)
+            if os.path.exists(tweak_video_path) and result:
+                video_path = tweak_video_path
+                print(f"✅ 视频细节调整成功，保存为 {tweak_video_path}")
+            else:
+                print(f"❌ 视频细节调整失败，继续使用原视频。")
+        except Exception as e:
+            print(f"⚠️ 视频细节调整失败：{e}")
 
         temp_video_path = video_path.replace('.mp4', '_temp.mp4')
         add_template(video_path, temp_video_path, userName)
@@ -355,7 +355,7 @@ def auto_upload():
         origin_tag = metadata[0].get('tag', [])
         origin_tag.extend(metadata[0].get('text_extra', []))
         title = best_scheme.get('标题', '欢迎来看我的视频！')
-        title = f'{title}_re'
+        title = f're_{title}'
         human_type2 = best_scheme.get('分区编号', 21)
         topic_json = fetch_bili_topics(config[2], type_pid=human_type2)
         topic_name = '骑行去追夏天的风'  # 默认话题名称
@@ -445,8 +445,8 @@ def auto_upload():
                     os.remove(new_video_path)
                 if temp_video_path and os.path.exists(temp_video_path):
                     os.remove(temp_video_path)
-                # if tweak_video_path and os.path.exists(tweak_video_path):
-                #     os.remove(tweak_video_path)
+                if tweak_video_path and os.path.exists(tweak_video_path):
+                    os.remove(tweak_video_path)
             except Exception as e:
                 print(f"⚠️ 删除视频文件失败：{e}")
 
