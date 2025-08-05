@@ -2099,14 +2099,14 @@ def apply_all_subtle_tweaks(input_path: str, output_path: str, show_progress: bo
         return False
 
     # 2. 生成全面的随机参数
-    scale_factor = random.uniform(1.02, 1.05)
-    speed_multiplier = random.uniform(0.985, 0.995)
-    brightness = random.uniform(-0.01, 0.01)
-    saturation = random.uniform(1.01, 1.04)
-    gamma = random.uniform(0.98, 1.02)
-    noise_strength = random.randint(1, 4)
-    rotate_angle_deg = random.uniform(-0.15, 0.15)
-    pitch_multiplier = random.uniform(0.998, 1.002)
+    scale_factor = random.uniform(1.04, 1.05)
+    speed_multiplier = random.uniform(0.95, 0.96)
+    brightness = random.uniform(0.04, 0.05)
+    saturation = random.uniform(1.08, 1.1)
+    gamma = random.uniform(1.04, 1.06)
+    noise_strength = random.randint(4, 6)
+    rotate_angle_deg = random.uniform(0.2, 0.4)
+    pitch_multiplier = random.uniform(1.004, 1.006)
     fps_factor = random.uniform(0.998, 1.002)
     crf_value = random.randint(22, 25)
 
