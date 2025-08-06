@@ -5,6 +5,5 @@
     <mapping directory="$PROJECT_DIR$/LLM/LatentSync" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/LLM/MediaCrawler" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/LLM/TikTokDownloader" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/LLM/weibo-search" vcs="Git" />
   </component>
 </project>
