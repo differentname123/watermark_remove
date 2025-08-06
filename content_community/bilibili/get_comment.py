@@ -79,14 +79,13 @@ def get_bilibili_comments(bvid: str):
 
     # --- 3. 解析评论数据 ---
     if comment_data.get("data"):
-        if comment_data["data"].get("replies"):
-            replies_list = comment_data["data"]["replies"]
-            # 按照点赞数量排序，reverse=False 表示从低到高排序（可根据需要调整）
-            replies_list.sort(key=lambda x: x.get("like", 0), reverse=False)
-            return replies_list
-        elif comment_data["data"].get("top_replies"):
-            # 当返回置顶/热门评论时，可自行处理，这里直接返回
-            return comment_data["data"]["top_replies"]
+        replies = comment_data["data"].get("replies") or []
+        top_replies = comment_data["data"].get("top_replies") or []
+
+        # 简单合并两个列表，顺序：先 top_replies 后 replies
+        merged_comments = top_replies + replies
+
+        return merged_comments if merged_comments else None
 
     print("该视频可能还没有评论，或者返回的数据结构未能解析。")
     if comment_data.get("data") and comment_data["data"].get("notice"):
@@ -96,7 +95,7 @@ def get_bilibili_comments(bvid: str):
 
 if __name__ == "__main__":
     # 示例：输入 BV号 获取对应视频的评论
-    bvid = "BV1aENbzhEXg"  # 请替换成需要查询的 BV 号
+    bvid = "BV1ZNtAz9E5q"  # 请替换成需要查询的 BV 号
     comments = get_bilibili_comments(bvid)
 
     if comments:

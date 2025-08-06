@@ -279,7 +279,7 @@ def get_llm_content_gemini_flash_video(
             # traceback.print_exc()
 
             last_error = e
-            print(f"[WARN] Key “{key_name}” 调用失败：{e}，切换下一个…")
+            print(f"[WARN] Key “{key_name}” 调用失败：{e}，切换下一个…{video_path}")
             # 继续到下一个 key
 
         except Exception as e:
@@ -298,7 +298,7 @@ def get_llm_content_gemini_flash_video(
                     # 如果删除也失败了，打印日志但不中断流程
                     print(f"[ERROR] 删除文件 {video_file.name} 失败：{de}")
 
-    return f"所有 API Key 均尝试失败。最后一次错误：{last_error}"
+    return f"所有 API Key 均尝试失败。最后一次错误：{last_error} {video_path}"
 
 
 
