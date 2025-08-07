@@ -15,30 +15,59 @@ BASE_DIR = 'goods_info'
 
 all_records_file = f"{BASE_DIR}/all_goods_info.json"
 
+success_bvids_file = f"{BASE_DIR}/all_goods_bvid.json"
 
 base_prompt = """
+
 ## 角色 (Role)
-你是一位顶级的社交媒体电商运营专家与数据分析师。你的核心能力是深度解析视频内容与观众情绪，从而精准推荐具有高转化潜力与市场热度的商品。
+
+你是一位顶级社交媒体电商运营专家及数据分析师。你的核心能力是在深刻洞察内容与观众情感的基础上，**平衡“内容原生性”与“市场转化效率”**，以推荐最具商业价值的商品。
 
 ## 核心任务 (Task)
-根据我提供的、关于一个短视频的完整JSON数据，为该视频推荐 5-7 个最适合推广的商品。你的分析过程需要严谨，并以一个结构清晰、信息丰富的JSON格式输出最终结果。
+
+根据我提供的、关于一个短视频的完整JSON数据，为其推荐多种最适合推广的商品。你的分析必须逻辑严谨、数据驱动，并以结构清晰、信息丰富的JSON格式输出最终结果。
 
 ## 输入数据说明 (Input Data)
+
 我将提供一个JSON对象，其中包含三大关键信息模块：
+
 1.  `titles`: 视频的多角度营销包装方案。
 2.  `video_anlyse`: 对视频内容的客观结构化分析。
-3.  `comments`: 真实观众的热门评论，**这是分析的核心依据**。
+3.  `comments`: 真实观众的热门评论，**这是判断用户真实需求和情绪风向的核心依据**。
 
 ## 处理指令 (Processing Instructions)
-1.  **深度综合分析**: 全面分析所有输入信息。洞察视频的核心要素，例如本案例中的：**饭局社交、情侣关系、朋友拆台、戏剧性尴尬（社死）、高光梗（“原文是条狗”）、以及观众情绪（对男方动机的质疑、对女方“恋爱脑”的共情或担忧）**。
-2.  **商品匹配黄金原则**:
-    * **强关联性 (Relevance)**: 商品必须与视频的核心场景、主题、情绪或高光梗有直接、强力的联系。
-    * **大众化优先 (Popularity-First)**: 优先推荐认知度高、受众广、决策成本低的大众消费品。
-    * **需求激发 (Demand Stimulation)**: 思考商品是否能满足观众被视频激发的需求（如：化解尴尬、提升情商、获得快乐等）。
-3.  **提取关键词**: 在分析的基础上，为每个推荐的商品提炼出最相关的搜索关键词。
-4.  **综合评分**: 在内心评估每个商品的“内容相关度”和“市场转化潜力”，然后给出一个最终的综合推荐分数。
+
+你的分析过程必须严格遵循以下**四大核心原则**：
+
+**1. 转化优先过滤器 (Conversion-First Filter)**
+
+  * **A. 默认规则 (Default Rule):** **将95%的注意力集中在**高频次、低决策成本、适合冲动消费的**快消品和大众化商品**上。这是确保高转化率的基本盘。
+      * **正面清单 (Priority List):** 食品饮料、美妆护肤、创意日用、趣味玩具、应季爆款小商品、数码配件、宠物用品等。
+  * **B. 例外条款 (Exception Clause):** 在极少数情况下，你可以推荐“默认规则”之外的商品（如书籍、课程、小众商品等）。**但必须满足以下所有严苛条件：**
+      * **① 证据确凿:** `comments` 或 `video_anlyse` 中必须存在**大量、明确、直接**指向该特定商品的讨论或需求。例如，评论区大量用户在问“视频里这本书叫什么名字？”或“这个软件哪里下载？”。
+      * **② 不可替代:** 该商品与视频内容的绑定是独一无二的，无法用一个更大众化的商品轻易替代。
+      * **③ 理由阐述:** 若使用此条款，必须在`reason`字段中明确指出**“基于例外条款推荐，证据源于评论区高频询问”**，以供人工审核。
+
+**2. 强关联性原则 (Strong Relevance)**
+
+  * 商品必须与视频的核心**场景**（如办公室、饭局）、**主题**（如情侣、职场）、**情绪**（如尴尬、治愈、搞笑）或**高光梗**（如“原文是条狗”）有直接、巧妙的联系。
+
+**3. 解决方案式匹配 (Solution-Oriented Matching)**
+
+  * 站在观众视角思考：这个商品是否为我在视频中感受到的某种情绪或遇到的场景，提供了一个**“解决方案”**？
+      * **情绪方案:** 通过美食获得快乐、用解压玩具缓解焦虑。
+      * **场景方案:** 用破冰游戏活跃聚会气氛、用便携漱口水化解饭后尴尬。
+
+**4. 精准关键词策略 (Precision Keyword Strategy)**
+
+  * 为每个商品生成高商业价值的搜索关键词。关键词的设计应遵循**“组合公式”**，以提升搜索精准度和转化率，关键词不能够出现空格或者'/'等其它符号：
+      * **公式A (品类+特性):** 例如 `“漱口水便携”`、`“速溶咖啡提神”`
+      * **公式B (场景/人群+品类):** 例如 `“办公室零食”`、`“情侣礼物”`
+      * **公式C (视频热梗/情绪+品类):** 例如 `“社死神器”`、`“解压玩具”`
+      * **一个商品的关键词组合应尽可能覆盖不同公式**，形成搜索矩阵。
 
 ## 输出格式要求 (Output Format Requirement)
+
 你的回答**必须是唯一且纯粹的JSON对象**。禁止在JSON代码块前后添加任何Markdown标记、介绍、总结或任何形式的解释性文字。输出的根节点必须是一个名为 `product_recommendations` 的数组，数组中的每个对象都必须严格遵循以下**四个字段**的规范：
 
 ```json
@@ -52,14 +81,15 @@ base_prompt = """
     }
   ]
 }
-````
+```
 
 ### **JSON 字段详细解释:**
 
-  * `product_name`: (string) **具体的商品名称或品类。** 例如: "三只松鼠坚果礼盒", "社交类桌游", "《非暴力沟通》"。**注意：这必须是一个简短的名称，而不是一个描述性长句。**
-  * `reason`: (string) **简明扼要的核心推荐理由。** 必须直接关联视频内容、高光梗或观众普遍情绪。
-  * `score`: (integer) **一个 1-10 的综合推荐指数。** 这个分数是你结合了**“内容相关度”**和**“市场转化潜力”**后给出的最终评分 (1=不推荐, 10=强烈推荐)。
-  * `keywords`: (array of strings) **一个包含核心搜索关键词的字符串数组。** 这些关键词应高度概括商品特点并紧密结合视频热点，适合在电商平台（如淘宝、抖音商城）进行搜索。
+  * `product_name`: (string) **具体的商品名称或品类。** 例如: `"三只松鼠每日坚果"`, `"usmile便携漱口水"`, `"桌面小型加湿器"`。**名称应简短且具有代表性。**
+  * `reason`: (string) **简明扼要的核心推荐理由。** 必须直接关联视频内容、高光梗或观众情绪。**如果应用了【例外条款】，必须在此处注明。**
+  * `score`: (integer) **一个 1-10 的综合推荐指数。** 该分数是基于**转化潜力（权重70%）**和**内容相关度（权重30%）**的加权评估。应用【例外条款】的商品，其转化潜力需经过更审慎的评估。
+  * `keywords`: (array of strings) **一个包含核心搜索关键词的字符串数组。** 必须遵循**【精准关键词策略】**生成，兼具概括性和搜索热度。
+
 """
 
 
@@ -394,6 +424,7 @@ def send_good_comment(
         final_goods_record: 包含 'final_goods' 和 'property_goods' 键的字典，
                             其中 'product_recommendations' 是待推荐商品列表。
     """
+    print(f"\n\n正在发送商品评论到视频 {bvid}")
     # 1. 获取并按分数降序排序推荐列表
     recommendations: List[Dict[str, Any]] = (
         final_goods_record
@@ -449,24 +480,27 @@ def send_good_comment(
     return None
 
 
-def add_good_comment_for_video(user_name='ruru'):
+def add_good_comment_for_video(user_name='qiqi'):
     """
     为视频增加合适的商品链接
     """
+    print(f"\n\n开始为用户 {user_name} 的视频增加商品评论...")
     config_map = init_config()
-    total_cookie = config_map['1223805908']['total_cookie']
-    csrf_token = config_map['1223805908'].get('BILI_JCT', '')
+
     # 找到对应的 UID
     uid = '1223805908'
     for key, value in config_map.items():
         if value['name'] == user_name:
             uid = key
             break
+    total_cookie = config_map[uid]['total_cookie']
+    csrf_token = config_map[uid].get('BILI_JCT', '')
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
     temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=50)
     metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     all_records = read_json(all_records_file)
-    success_bvids = [record['bvid'] for record in all_records.values() if record.get('status') == 'success']
+    success_bvids = read_json(success_bvids_file)
+    # success_bvids = [record['bvid'] for record in all_records.values() if record.get('status') == 'success']
     print(f"已处理 {len(all_records)} 条记录，其中 {len(success_bvids)} 条成功。")
     # 过滤出已经处理过的
     processed_bvids = success_bvids
@@ -523,11 +557,19 @@ def add_good_comment_for_video(user_name='ruru'):
                     all_records[bvid]['status'] = 'success'
                     all_records[bvid]['rpid'] = rpid
                     save_json(all_records_file, all_records)
+                    success_bvids.append(bvid)
+                    save_json(success_bvids_file, success_bvids)
 
 
 
 
 if __name__ == '__main__':
-    # 示例关键词列表
-    add_good_comment_for_video()
-    # 可以添加更多关键词或修改关键词列表进行测试
+    username_list = ['qiqi', 'jie', 'ruru']
+    while True:
+        start_time = time.time()
+        for user_name in username_list:
+            add_good_comment_for_video(user_name)
+        elapsed = int(time.time() - start_time)
+        sleep_time = max(0, 3600 - elapsed)
+        print(f"本轮处理耗时 {elapsed:.2f} 秒，休眠 {sleep_time:.2f} 秒后再开始下一轮...")
+        time.sleep(sleep_time)

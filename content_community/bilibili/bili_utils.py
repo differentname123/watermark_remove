@@ -177,20 +177,54 @@ def list_selection_car_items(cookie: str):
         print(f"[Error] 获取选品车列表失败: {e}")
         return None
 
-def update_short_url(cookie, goods):
-    """
-    生成商品的短链接
-    """
-    print(f"开始生成短链接...{goods[0]['goodsName']} 等 {len(goods)} 个商品")
-    add_goods_to_selection(cookie=cookie, goods=goods)
+import time
 
-    car_items = list_selection_car_items(cookie)
+def update_short_url(cookie, goods, max_retries=3):
+    """
+    生成商品的短链接，每个 good 必须匹配到短链才算成功，否则最多重试 max_retries 次。
 
-    for good in goods:
-        for item in car_items:
-            if good['outerId'] in item['outerId'] or item['outerId'] in good['outerId']:
-                good['shortUrl'] = item.get('shortUrl', '')
+    Args:
+        cookie (str): 认证所需的 cookie。
+        goods (list of dict): 每个 dict 至少包含 'outerId' 和 'goodsName' 键。
+        max_retries (int): 最大重试次数，默认 3 次。
+
+    Returns:
+        list of dict: 原 goods 列表，每个 dict 新增 'shortUrl' 字段（若匹配到则为链接，否则为空字符串）。
+    """
+    for attempt in range(1, max_retries + 1):
+        print(f"[尝试 {attempt}/{max_retries}] 开始生成短链接...{goods[0]['goodsName']} 等 {len(goods)} 个商品")
+
+        # 每次重置 shortUrl 字段
+        for good in goods:
+            good['shortUrl'] = ''
+
+        # 加入选品车
+        add_goods_to_selection(cookie=cookie, goods=goods)
+        time.sleep(2)  # 等待选品车更新
+
+        # 获取选品车当前列表
+        car_items = list_selection_car_items(cookie)
+
+        # 匹配 shortUrl
+        for good in goods:
+            for item in car_items:
+                if good['outerId'] in item.get('outerId', '') or item.get('outerId', '') in good['outerId']:
+                    good['shortUrl'] = item.get('shortUrl', '')
+                    break  # 找到就跳出内层循环
+
+        # 检查是否全部匹配成功
+        unmatched = [g for g in goods if not g['shortUrl']]
+        if not unmatched:
+            print("所有商品均已成功生成短链接。")
+            return goods
+
+        print(f"未匹配到短链的商品还有 {len(unmatched)} 个，将进行下一次重试。")
+
+    print("达到最大重试次数，以下商品未获取到短链：")
+    for g in [g for g in goods if not g['shortUrl']]:
+        print(f" - {g['goodsName']} (outerId={g['outerId']})")
     return goods
+
 
 if __name__ == '__main__':
     total_cookie = get_config("ruru_bilibili_total_cookie")

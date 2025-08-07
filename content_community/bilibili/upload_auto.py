@@ -201,6 +201,7 @@ def auto_upload():
         updated_entry = copy.deepcopy(value)
         status = value.get('status', '未处理')
         if status == 'error':
+            print(f"⚠️ 跳过 {key}：之前处理失败，已标记")
             error_count += 1
             continue
 
