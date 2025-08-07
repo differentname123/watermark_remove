@@ -14,6 +14,54 @@ import random
 
 from common_utils.common_utils import get_config
 
+def add_goods_to_selection(cookie: str, goods: list, operate_source: int = 4, from_type: int = 18):
+    """
+    将抓取到的商品批量加入选品车
+
+    :param cookie: 登录后的 Cookie 字符串
+    :param goods: 要加入选品车的商品列表，每项结构需与接口 body 中 goods 字段保持一致
+    :param operate_source: 操作来源标识，默认为4（可根据实际场景调整）
+    :param from_type: 来源类型，默认为18（可根据实际场景调整）
+    :return: 接口返回的 JSON 响应
+    """
+    url = "https://cm.bilibili.com/dwp/api/web_api/v1/selection/car/item/add"
+    headers = {
+        "accept": "application/json, text/plain, */*",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+        "content-type": "application/json;charset=UTF-8",
+        "priority": "u=1, i",
+        "sec-ch-ua": "\"Not)A;Brand\";v=\"8\", \"Chromium\";v=\"138\", \"Microsoft Edge\";v=\"138\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "referer": "https://cm.bilibili.com/quests/",
+        "cookie": cookie,
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "\
+                      "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+    }
+
+    payload = {
+        "goods": goods,
+        "operateSource": operate_source,
+        "bizExtraInfo": "",
+        "fromType": from_type
+    }
+    goodsName = ', '.join([item.get('goodsName', '未知商品') for item in goods])
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=10)
+        resp.raise_for_status()
+        result = resp.json()
+        if result.get("code") == 0:
+            print(f"[Success] 已成功加入 {len(goods)} 个商品到选品车 goodsName: {goodsName}")
+        else:
+            print(f"[Warning] 接口返回非 0 状态: {result.get('code')} - {result.get('message')} goodsName: {goodsName}")
+        return result
+    except Exception as e:
+        print(f"[Error] 添加商品到选品车失败: {e}")
+        return None
+
 
 def fetch_goods(cookie: str, max_count: int, goodsName: str = '', sourceTypes: int = 1):
     """
@@ -85,5 +133,7 @@ if __name__ == '__main__':
     total_cookie = get_config("ruru_bilibili_total_cookie")
 
     cookie = total_cookie
-    result = fetch_goods(cookie=cookie, max_count=30, goodsName="零食")
+    result = fetch_goods(cookie=cookie, max_count=20, goodsName="零食")
     print(f"共获取到 {len(result)} 个商品")
+
+    add_goods_to_selection(cookie=cookie, goods=result[:10], operate_source=4, from_type=18)
