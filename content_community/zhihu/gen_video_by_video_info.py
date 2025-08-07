@@ -283,7 +283,7 @@ def gen_video_by_video_info(video_info_file, bgm_library_path=r"W:\project\pytho
 
 
 if __name__ == '__main__':
-    question_id = "1896269793218242192"
+    question_id = "1936601885311239615"
 
     video_info_file = f"{question_id}/zhihu_answers_{question_id}_video_info_op.json"
 
