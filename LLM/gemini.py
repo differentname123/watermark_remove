@@ -106,6 +106,8 @@ API_KEY_NA = get_config("gemini_api_key_na")
 API_KEY_CHU = get_config("gemini_api_key_chu")
 API_KEY_RU = get_config("gemini_api_key_ru")
 API_KEY_chu1 = get_config("gemini_api_key_chu1")
+API_KEY_chu2 = get_config("gemini_api_key_chu2")
+API_KEY_chu3 = get_config("gemini_api_key_chu3")
 
 
 API_KEY_MAP = {
@@ -115,7 +117,9 @@ API_KEY_MAP = {
     'na':API_KEY_NA,
     'chu':API_KEY_CHU,
     'ru':API_KEY_RU,
-    'chu1':API_KEY_chu1
+    'chu1':API_KEY_chu1,
+    'chu2': API_KEY_chu2,
+    'chu3': API_KEY_chu3
 }
 
 # 创建一个全局的 Key Manager 实例
@@ -412,7 +416,7 @@ if __name__ == "__main__":
     if result:
         print("\n[RESULT] 模型输出：\n", result)
     else:
-        print("\n[FAIL] 内容生成失败")
+        print(f"\n[FAIL] 内容生成失败{result}")
     print(f"[INFO] 执行时间: {time.time() - start_time:.2f} 秒")
 
     # 再次调用，观察排序是否根据上次成功结果发生变化
@@ -422,7 +426,7 @@ if __name__ == "__main__":
     if result:
         print("\n[RESULT] 模型输出：\n", result)
     else:
-        print("\n[FAIL] 内容生成失败")
+        print(f"\n[FAIL] 内容生成失败{result}")
     print(f"[INFO] 执行时间: {time.time() - start_time:.2f} 秒")
 
     print("\n" + "=" * 20 + " 测试结束 " + "=" * 20)

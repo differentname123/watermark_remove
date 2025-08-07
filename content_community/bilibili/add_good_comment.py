@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from LLM.gemini import get_llm_content
 from common_utils.common_utils import read_json, get_config, save_json
-from content_community.bilibili.bili_utils import fetch_goods, update_short_url
+from content_community.bilibili.bili_utils import fetch_goods, update_short_url, list_selection_car_items
 from content_community.bilibili.comment import BilibiliCommenter
 from content_community.bilibili.get_comment import get_bilibili_comments
 from content_community.bilibili.get_danmu import string_to_list
@@ -15,7 +15,7 @@ from common_utils.common_utils import string_to_object, save_json, read_json
 BASE_DIR = 'goods_info'
 
 
-success_bvids_file = f"{BASE_DIR}/all_goods_bvid.json"
+# success_bvids_file = f"{BASE_DIR}/all_goods_bvid.json"
 
 base_prompt = """
 
@@ -160,6 +160,8 @@ final_prompt = """
      * **C. 情绪式 (Emotional/Vibe):** 用纯粹的情绪或氛围感染用户。（“……感觉整个人都治愈了。” / “……这才是周末该有的样子。”）
      * **D. 宣告式 (Declarative):** 表达一个强烈的个人决定或发现。（“……行了，我的购物车又多了一样东西。” / “……这玩意儿我焊死在办公桌上了。”）
 5.  **克制与暗示 (Hint, Don't Shout):** 避免任何直接的销售呼吁。核心是“种草”，通过描绘拥有产品后的积极体验，驱动用户自主产生探索欲。
+6.  **精简至上 (Brevity is Key):** 字数限制在 60 字之内，确保信息传达高效且不冗余。
+7.  **禁止筛选出处方药品，因为处方药品的推广需要遵循更严格的法律法规。保健的或者非处方的药品可以推荐。**
 
 ##### **【第二部分：三步创作流程 (3-Step Creation Workflow)】**
 
@@ -288,7 +290,8 @@ def search_goods_info(key_word_list, user_name='ruru'):
                 local_good_data = read_json(local_file_path)
                 for good in goods:
                     good['updateTime'] = current_time
-                    local_good_data[good['outerId']] = good
+                    outerId = good['outerId'].split('-')[-1]
+                    local_good_data[outerId] = good
                 save_json(local_file_path, local_good_data)
 
         property_goods.extend(search_local_goods_info(key_word, local_file_path))
@@ -297,7 +300,7 @@ def search_goods_info(key_word_list, user_name='ruru'):
 
     # 打印详细的总体信息
     print(f"抓取到 {len(property_goods)} 条商品信息。key_word_list {len(key_word_list)} 关键词列表 {key_word_list} ")
-    return {good['outerId']: good for good in property_goods}
+    return {good['outerId'].split('-')[-1]: good for good in property_goods}
 
 
 def format_title(raw_data: dict) -> dict:
@@ -357,7 +360,8 @@ def gen_property_good(video_info):
     titles = format_title(title_schemes)
     format_video_info['titles'] = titles
 
-    video_anlyse = video_info.get('danmu_info', {}).get('视频分析', {})
+    danmu_info = video_info.get('danmu_info') or {}
+    video_anlyse = danmu_info.get('视频分析', {})
     format_video_info['video_anlyse'] = video_anlyse
 
     comment_list = video_info.get('hudong', {}).get('comment_list', [])
@@ -389,6 +393,9 @@ def filter_property_good(property_goods, limit_count=40):
     """
     过滤商品信息，只保留佣金比例大于 min_commission_rate 的商品。
     """
+    # 如果 property_goods 已经是一个列表，则直接使用
+    if isinstance(property_goods, list):
+        return property_goods
     property_goods_list = []
     for key, good in property_goods.items():
         if good.get('commissionRate', 0) and float(good.get('commissionRate', 0)) > 0:
@@ -422,7 +429,8 @@ def gen_final_property_good(video_info, property_goods):
     titles = format_title(title_schemes)
     format_video_info['titles'] = titles
 
-    video_anlyse = video_info.get('danmu_info', {}).get('视频分析', {})
+    danmu_info = video_info.get('danmu_info') or {}
+    video_anlyse = danmu_info.get('视频分析', {})
     format_video_info['video_anlyse'] = video_anlyse
 
     comment_list = video_info.get('hudong', {}).get('comment_list', [])
@@ -486,6 +494,7 @@ def send_good_comment(
 
     for rec in sorted_recs:
         outer_id: str = rec.get('outerId', '')
+        outer_id = outer_id.split('-')[-1]  # 确保只取最后一部分
         if not outer_id:
             continue
 
@@ -503,12 +512,13 @@ def send_good_comment(
             new_target_good = update_short_url(total_cookie, [target_good])
             short_url: Optional[str] = new_target_good[0].get('shortUrl')
         if not short_url:
-            print(f"⚠️ 商品 {outer_id} “{rec.get('goodsName', '')}” 缺少 shortUrl，跳过。")
+            print(f"⚠️ 商品 {outer_id} “{rec.get('goodsName', '')}” 缺少 shortUrl，跳过。 {bvid}")
             continue
 
         comment_body = f"{short_url}\n{pinned_text}"
 
         # 4. 发布评论
+        print(f"正在发布商品评论: 视频 {bvid}，商品 {outer_id} “{rec.get('goodsName', '')}” comment_body: {comment_body}")
         rpid = commenter.post_comment(bvid=bvid, message_content=comment_body)
         if not rpid:
             # 发布失败，尝试下一个
@@ -537,19 +547,21 @@ def add_good_comment_for_video(user_name='qiqi'):
         if value['name'] == user_name:
             uid = key
             break
+    update_local_goods_info(user_name)
     total_cookie = config_map[uid]['total_cookie']
     csrf_token = config_map[uid].get('BILI_JCT', '')
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
     temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=50)
     metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     all_records = read_json(all_records_file)
-    success_bvids = read_json(success_bvids_file)
-    # success_bvids = [record['bvid'] for record in all_records.values() if record.get('status') == 'success']
+    # success_bvids = read_json(success_bvids_file)
+    success_bvids = [record['bvid'] for record in all_records.values() if record.get('status') == 'success' or record.get('rpid')]
+    # success_bvids.extend(single_success_bvids)
     print(f"已处理 {len(all_records)} 条记录，其中 {len(success_bvids)} 条成功。")
     # 过滤出已经处理过的
     processed_bvids = success_bvids
     videos_to_process = [video for video in temp_found_videos if video['bvid'] not in processed_bvids]
-    print(f"找到 {len(videos_to_process)} 个未处理的视频。总共视频数量：{len(temp_found_videos)}")
+    print(f"{user_name} 找到 {len(videos_to_process)} 个未处理的视频。总共视频数量：{len(temp_found_videos)}")
 
     for video in videos_to_process:
         try:
@@ -570,7 +582,6 @@ def add_good_comment_for_video(user_name='qiqi'):
                 if bvid not in all_records:
                     all_records[bvid] = {}
                 all_records[bvid]['bvid'] = bvid
-                all_records[bvid]['status'] = 'start'
                 all_records[bvid]['user_name'] = user_name
                 all_records[bvid]['property_good_info'] = property_good_info
                 all_records[bvid]['video_info'] = format_video_info
@@ -602,14 +613,30 @@ def add_good_comment_for_video(user_name='qiqi'):
                         all_records[bvid]['status'] = 'success'
                         all_records[bvid]['rpid'] = rpid
                         save_json(all_records_file, all_records)
-                        success_bvids.append(bvid)
-                        save_json(success_bvids_file, success_bvids)
         except Exception as e:
             print(f"处理视频 {bvid} 时出错: {e}")
             traceback.print_exc()
             all_records[bvid]['status'] = 'error'
             all_records[bvid]['error_message'] = str(e)
             save_json(all_records_file, all_records)
+
+
+def update_local_goods_info(user_name='ruru'):
+    """
+    拉取选品车中的商品信息，并更新本地 JSON 文件。
+    """
+    goods_file = f"{BASE_DIR}/{user_name}_goods_info.json"
+    goods_info = read_json(goods_file)
+    count = 0
+    car_items = list_selection_car_items(get_config(f'{user_name}_bilibili_total_cookie'), 100)
+    for car_item in car_items:
+        outer_id = car_item.get('outerId', '').split('-')[-1]  # 确保只取最后一部分
+        if outer_id:
+            car_item['updateTime'] = time.time()  # 添加更新时间
+            goods_info[outer_id] = car_item
+            count += 1
+    save_json(goods_file, goods_info)
+    print(f'查询到选品车商品个数 {len(car_items)} 更新成功个数 {count}')
 
 
 def worker_process_loop(user_name, interval):
@@ -654,7 +681,8 @@ def worker_process_loop(user_name, interval):
 
 
 if __name__ == '__main__':
-    username_list = ['nana', 'qiqi', 'jie', 'ruru']
+    # username_list = ['yan','nana', 'qiqi', 'jie', 'ruru']
+    username_list = ['jie']
     RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600
 
     print("--- 主进程启动，准备为每个用户创建独立的子进程 ---")

@@ -129,18 +129,22 @@ def fetch_goods(cookie: str, max_count: int, goodsName: str = '', sourceTypes: i
 
     return goods
 
-def list_selection_car_items(cookie: str):
+import requests
+import time
+import random
+
+def list_selection_car_items(cookie: str, target_count: int = 10):
     """
-    获取选品车中商品列表（默认第一页 10 条）
+    获取选品车中商品列表，直到达到目标数量或无更多数据
 
     :param cookie: 登录后的 Cookie 字符串
-    :return: 接口返回的 JSON 响应
+    :param target_count: 希望拉取的商品总数，默认为10
+    :return: 包含商品的列表，最多 target_count 条
     """
-    url = (
-        "https://cm.bilibili.com/dwp/api/web_api/v1/selection/car/item/list"
-        "?page=1&size=10&sourceType=-1&promotionCampaigns=&"
-        "selectionCarItemType=1&windowShelveStatus=-1&goodsName=&requestFrom=-1"
-    )
+    items = []
+    page = 1
+    size = min(10, target_count)
+
     headers = {
         "accept": "application/json, text/plain, */*",
         "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
@@ -159,23 +163,49 @@ def list_selection_car_items(cookie: str):
         )
     }
 
-    # 随机延迟，模拟人为操作节奏
-    time.sleep(random.uniform(0.5, 1.2))
+    while len(items) < target_count:
+        # 构建请求 URL
+        url = (
+            f"https://cm.bilibili.com/dwp/api/web_api/v1/selection/car/item/list"
+            f"?page={page}&size={size}&sourceType=-1&promotionCampaigns=&"
+            f"selectionCarItemType=1&windowShelveStatus=-1&goodsName=&requestFrom=-1"
+        )
 
-    try:
-        resp = requests.get(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-        result = resp.json()
-        if result.get("code") == 0:
-            items = result.get("data", {}).get("data", [])
-            print(f"[Success] 已获取 {len(items)} 条选品车商品")
-            return items
-        else:
-            print(f"[Warning] 接口返回非 0 状态: {result.get('code')} - {result.get('message')}")
-            return None
-    except Exception as e:
-        print(f"[Error] 获取选品车列表失败: {e}")
-        return None
+        # 模拟随机延迟
+        time.sleep(random.uniform(0.5, 1.2))
+
+        try:
+            resp = requests.get(url, headers=headers, timeout=10)
+            resp.raise_for_status()
+            result = resp.json()
+
+            if result.get("code") == 0:
+                data = result.get("data", {}).get("data", [])
+                if not data:
+                    print("[Info] 无更多数据，提前结束")
+                    break
+
+                items.extend(data)
+                print(f"[Success] 分页 {page} 获取 {len(data)} 条，共累计 {len(items)} 条")
+
+                # 如果本次返回少于请求数量，说明已无更多数据
+                if len(data) < size:
+                    break
+
+                # 准备下一页
+                page += 1
+                remaining = target_count - len(items)
+                size = min(10, remaining)
+            else:
+                print(f"[Warning] 接口返回非 0 状态: {result.get('code')} - {result.get('message')}")
+                break
+        except Exception as e:
+            print(f"[Error] 获取选品车列表失败: {e}")
+            break
+
+    # 最终返回不超过 target_count 条数据
+    return items
+
 
 import time
 
@@ -228,6 +258,7 @@ def update_short_url(cookie, goods, max_retries=5):
 
 if __name__ == '__main__':
     total_cookie = get_config("ruru_bilibili_total_cookie")
+    # car_items = list_selection_car_items(total_cookie, 100)
 
     cookie = total_cookie
     result = fetch_goods(cookie=cookie, max_count=20, goodsName="零食")
