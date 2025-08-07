@@ -1,9 +1,10 @@
 import time
 import traceback
+from typing import Any, Dict, List, Optional
 
 from LLM.gemini import get_llm_content
 from common_utils.common_utils import read_json, get_config, save_json
-from content_community.bilibili.bili_utils import fetch_goods
+from content_community.bilibili.bili_utils import fetch_goods, update_short_url
 from content_community.bilibili.comment import BilibiliCommenter
 from content_community.bilibili.get_comment import get_bilibili_comments
 from content_community.bilibili.get_danmu import string_to_list
@@ -207,7 +208,7 @@ def search_goods_info(key_word_list, user_name='ruru'):
         goods = search_local_goods_info(key_word, local_file_path)
         if len(goods) < 1:
             goods = fetch_goods(get_config(f'{user_name}_bilibili_total_cookie'), 20, key_word)
-            print(f"通过接口 关键词 '{key_word}' 抓取到 {len(goods)} 条商品信息。")
+            # print(f"通过接口 关键词 '{key_word}' 抓取到 {len(goods)} 条商品信息。")
             # 更新local_file_path的数据
             if goods:
                 local_good_data = read_json(local_file_path)
@@ -377,13 +378,13 @@ def gen_final_property_good(video_info, property_goods):
                 return None  # 达到最大重试次数后返回 None
             traceback.print_exc()
 
-from typing import Any, Dict, List, Optional
 
 def send_good_comment(
+    total_cookie,
     commenter: Any,
     bvid: str,
     final_goods_record: Dict[str, Any]
-) -> None:
+):
     """
     发送商品评论到指定的 B 站视频，并将评论置顶。
 
@@ -423,8 +424,11 @@ def send_good_comment(
 
         short_url: Optional[str] = target_good.get('shortUrl')
         pinned_text: str = rec.get('pinned_comment', '').strip()
-        if not short_url or not pinned_text:
-            # 缺少必要信息，则跳过
+        if not short_url:
+            new_target_good = update_short_url(total_cookie, [target_good])
+            short_url: Optional[str] = new_target_good[0].get('shortUrl')
+        if not short_url:
+            print(f"⚠️ 商品 {outer_id} “{rec.get('goodsName', '')}” 缺少 shortUrl，跳过。")
             continue
 
         comment_body = f"{short_url}\n{pinned_text}"
@@ -437,11 +441,12 @@ def send_good_comment(
 
         # 5. 置顶评论并结束
         if commenter.pin_comment(bvid=bvid, rpid=rpid):
-            print(f"✅ 已成功发送并置顶商品评论: 视频 {bvid}，商品 {outer_id} “{rec.get('goodsName', '')}”")
-            return
+            print(f"✅ 已成功发送并置顶商品评论: 视频 {bvid}，商品 {outer_id} “{rec.get('goodsName', '')}” pinned_text: {pinned_text}")
+            return rpid
 
     # 如果所有推荐都处理完仍未成功
     print(f"⚠️ 未能发送或置顶任何商品评论到视频 {bvid}")
+    return None
 
 
 def add_good_comment_for_video(user_name='ruru'):
@@ -449,17 +454,19 @@ def add_good_comment_for_video(user_name='ruru'):
     为视频增加合适的商品链接
     """
     config_map = init_config()
+    total_cookie = config_map['1223805908']['total_cookie']
+    csrf_token = config_map['1223805908'].get('BILI_JCT', '')
     # 找到对应的 UID
     uid = '1223805908'
     for key, value in config_map.items():
         if value['name'] == user_name:
             uid = key
             break
-    commenter = BilibiliCommenter(total_cookie=config_map[uid]['total_cookie'], csrf_token=config_map[uid].get('BILI_JCT', ''))
+    commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
     temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=50)
     metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     all_records = read_json(all_records_file)
-    success_bvids = [record['bvid'] for record in all_records.values() if record.get('status') == 'generated']
+    success_bvids = [record['bvid'] for record in all_records.values() if record.get('status') == 'success']
     print(f"已处理 {len(all_records)} 条记录，其中 {len(success_bvids)} 条成功。")
     # 过滤出已经处理过的
     processed_bvids = success_bvids
@@ -481,12 +488,13 @@ def add_good_comment_for_video(user_name='ruru'):
             print(f"正在处理视频 {bvid} 的商品信息...")
             property_good_info, format_video_info = gen_property_good(target_value)
         if property_good_info:
-            all_records[bvid] = {
-                'bvid': bvid,
-                'status': 'generated',
-                'property_good_info': property_good_info,
-                'video_info': format_video_info
-            }
+            if bvid not in all_records:
+                all_records[bvid] = {}
+            all_records[bvid]['bvid'] = bvid
+            all_records[bvid]['status'] = 'start'
+            all_records[bvid]['user_name'] = user_name
+            all_records[bvid]['property_good_info'] = property_good_info
+            all_records[bvid]['video_info'] = format_video_info
             save_json(all_records_file, all_records)
 
             keyword_list = [good['product_name'] for good in property_good_info['product_recommendations']]
@@ -495,7 +503,7 @@ def add_good_comment_for_video(user_name='ruru'):
             keyword_list = list(set(keyword_list))
 
             if 'property_goods' in record and record['property_goods']:
-                print(f"视频 {bvid} 已经有商品信息，跳过。")
+                print(f"视频 {bvid} 已经候选商品信息，跳过。")
                 property_goods = record['property_goods']
             else:
                 print(f"为视频 {bvid} 生成商品信息，关键词列表长度 {len(keyword_list)} 关键词列表：{keyword_list}")
@@ -509,7 +517,12 @@ def add_good_comment_for_video(user_name='ruru'):
                 final_goods = gen_final_property_good(target_value, property_goods)
                 all_records[bvid]['final_goods'] = final_goods
                 save_json(all_records_file, all_records)
-            return
+            if final_goods:
+                rpid = send_good_comment(total_cookie, commenter, bvid, all_records[bvid])
+                if rpid:
+                    all_records[bvid]['status'] = 'success'
+                    all_records[bvid]['rpid'] = rpid
+                    save_json(all_records_file, all_records)
 
 
 

@@ -110,7 +110,7 @@ def fetch_goods(cookie: str, max_count: int, goodsName: str = '', sourceTypes: i
             items = data.get("data", {}).get("data", {})
 
             if not items:
-                print(f"[Info] 第 {page} 页无更多数据，提前结束")
+                # print(f"[Info] 第 {page} 页无更多数据，提前结束")
                 break
 
             goods.extend(items)
@@ -129,6 +129,69 @@ def fetch_goods(cookie: str, max_count: int, goodsName: str = '', sourceTypes: i
 
     return goods
 
+def list_selection_car_items(cookie: str):
+    """
+    获取选品车中商品列表（默认第一页 10 条）
+
+    :param cookie: 登录后的 Cookie 字符串
+    :return: 接口返回的 JSON 响应
+    """
+    url = (
+        "https://cm.bilibili.com/dwp/api/web_api/v1/selection/car/item/list"
+        "?page=1&size=10&sourceType=-1&promotionCampaigns=&"
+        "selectionCarItemType=1&windowShelveStatus=-1&goodsName=&requestFrom=-1"
+    )
+    headers = {
+        "accept": "application/json, text/plain, */*",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+        "priority": "u=1, i",
+        "sec-ch-ua": "\"Not)A;Brand\";v=\"8\", \"Chromium\";v=\"138\", \"Microsoft Edge\";v=\"138\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "referer": "https://cm.bilibili.com/quests/",
+        "cookie": cookie,
+        "user-agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+        )
+    }
+
+    # 随机延迟，模拟人为操作节奏
+    time.sleep(random.uniform(0.5, 1.2))
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        result = resp.json()
+        if result.get("code") == 0:
+            items = result.get("data", {}).get("data", [])
+            print(f"[Success] 已获取 {len(items)} 条选品车商品")
+            return items
+        else:
+            print(f"[Warning] 接口返回非 0 状态: {result.get('code')} - {result.get('message')}")
+            return None
+    except Exception as e:
+        print(f"[Error] 获取选品车列表失败: {e}")
+        return None
+
+def update_short_url(cookie, goods):
+    """
+    生成商品的短链接
+    """
+    print(f"开始生成短链接...{goods[0]['goodsName']} 等 {len(goods)} 个商品")
+    add_goods_to_selection(cookie=cookie, goods=goods)
+
+    car_items = list_selection_car_items(cookie)
+
+    for good in goods:
+        for item in car_items:
+            if good['outerId'] in item['outerId'] or item['outerId'] in good['outerId']:
+                good['shortUrl'] = item.get('shortUrl', '')
+    return goods
+
 if __name__ == '__main__':
     total_cookie = get_config("ruru_bilibili_total_cookie")
 
@@ -136,4 +199,6 @@ if __name__ == '__main__':
     result = fetch_goods(cookie=cookie, max_count=20, goodsName="零食")
     print(f"共获取到 {len(result)} 个商品")
 
-    add_goods_to_selection(cookie=cookie, goods=result[:10], operate_source=4, from_type=18)
+    # add_goods_to_selection(cookie=cookie, goods=result[:10], operate_source=4, from_type=18)
+    goods = update_short_url(cookie=cookie, goods=result)
+    print(goods)
