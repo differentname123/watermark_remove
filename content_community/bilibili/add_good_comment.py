@@ -1,3 +1,4 @@
+import multiprocessing
 import time
 import traceback
 from typing import Any, Dict, List, Optional
@@ -13,7 +14,6 @@ from common_utils.common_utils import string_to_object, save_json, read_json
 
 BASE_DIR = 'goods_info'
 
-all_records_file = f"{BASE_DIR}/all_goods_info.json"
 
 success_bvids_file = f"{BASE_DIR}/all_goods_bvid.json"
 
@@ -154,7 +154,11 @@ final_prompt = """
 1.  **人设思维 (Persona First):** 采用第一人称视角，模拟视频创作者或真实观众的口吻，进行“自白”或“吐槽”式的表达。
 2.  **钩子优先 (Hook First):** 开头必须具备强大的吸引力。技巧是使用能唤起强烈情感共鸣的陈述、激发好奇心的提问，或对视频内容做出精辟的观察。
 3.  **极致口语 (Colloquialism is King):** 全面采用非正式、对话式的语言风格，多用短句、网络流行语和表情符号，营造即时性的真实感。
-4.  **互动导向 (Interaction-Oriented):** 文案结尾应具备激发对话的潜力。技巧是提出一个开放性问题，使用反问句，或留下一个圈内人才懂的“暗号”，以鼓励用户回复。
+4.  **打造“余音绕梁”的结尾 (Craft a Resonant Ending):** 结尾是临门一脚，目标是给用户留下深刻印象或行动的冲动。**请根据商品和视频的调性，自主判断并选择最合适的收尾方式，避免公式化。** 你可以从以下几种风格中选择：
+     * **A. 互动式 (Interactive):** 用提问引发讨论。（“……还有谁不懂！” / “……这算是官方吐槽道具吗？”）
+     * **B. 金句式 (Pithy "Mic-Drop"):** 用一句斩钉截铁的断言收尾，彰显态度和自信。 （“……我宣布，这就是年度最佳。” / “……用过就回不去了。”）
+     * **C. 情绪式 (Emotional/Vibe):** 用纯粹的情绪或氛围感染用户。（“……感觉整个人都治愈了。” / “……这才是周末该有的样子。”）
+     * **D. 宣告式 (Declarative):** 表达一个强烈的个人决定或发现。（“……行了，我的购物车又多了一样东西。” / “……这玩意儿我焊死在办公桌上了。”）
 5.  **克制与暗示 (Hint, Don't Shout):** 避免任何直接的销售呼吁。核心是“种草”，通过描绘拥有产品后的积极体验，驱动用户自主产生探索欲。
 
 ##### **【第二部分：三步创作流程 (3-Step Creation Workflow)】**
@@ -526,7 +530,7 @@ def add_good_comment_for_video(user_name='qiqi'):
     """
     print(f"\n\n开始为用户 {user_name} 的视频增加商品评论...")
     config_map = init_config()
-
+    all_records_file = f"{BASE_DIR}/{user_name}_record_info.json"
     # 找到对应的 UID
     uid = '1223805908'
     for key, value in config_map.items():
@@ -548,68 +552,124 @@ def add_good_comment_for_video(user_name='qiqi'):
     print(f"找到 {len(videos_to_process)} 个未处理的视频。总共视频数量：{len(temp_found_videos)}")
 
     for video in videos_to_process:
-        bvid = video['bvid']
-        target_value = find_video_by_bvid(bvid, metadata_cache_with_uploads) or {}
-        if not target_value:
-            print(f"视频 {bvid} 在 metadata_cache_with_uploads.json 中未找到对应信息，跳过。")
-            continue
-        record = all_records.get(bvid, {})
-        if 'property_good_info' in record and record['property_good_info']:
-            print(f"视频 {bvid} 已经有商品信息，跳过。")
-            property_good_info = record['property_good_info']
-            format_video_info = record.get('video_info', {})
-        else:
-            print(f"正在处理视频 {bvid} 的商品信息...")
-            property_good_info, format_video_info = gen_property_good(target_value)
-        if property_good_info:
-            if bvid not in all_records:
-                all_records[bvid] = {}
-            all_records[bvid]['bvid'] = bvid
-            all_records[bvid]['status'] = 'start'
-            all_records[bvid]['user_name'] = user_name
-            all_records[bvid]['property_good_info'] = property_good_info
-            all_records[bvid]['video_info'] = format_video_info
+        try:
+            bvid = video['bvid']
+            target_value = find_video_by_bvid(bvid, metadata_cache_with_uploads) or {}
+            if not target_value:
+                print(f"视频 {bvid} 在 metadata_cache_with_uploads.json 中未找到对应信息，跳过。")
+                continue
+            record = all_records.get(bvid, {})
+            if 'property_good_info' in record and record['property_good_info']:
+                print(f"视频 {bvid} 已经有商品信息，跳过。")
+                property_good_info = record['property_good_info']
+                format_video_info = record.get('video_info', {})
+            else:
+                print(f"正在处理视频 {bvid} 的商品信息...")
+                property_good_info, format_video_info = gen_property_good(target_value)
+            if property_good_info:
+                if bvid not in all_records:
+                    all_records[bvid] = {}
+                all_records[bvid]['bvid'] = bvid
+                all_records[bvid]['status'] = 'start'
+                all_records[bvid]['user_name'] = user_name
+                all_records[bvid]['property_good_info'] = property_good_info
+                all_records[bvid]['video_info'] = format_video_info
+                save_json(all_records_file, all_records)
+
+                keyword_list = [good['product_name'] for good in property_good_info['product_recommendations']]
+                for good in property_good_info['product_recommendations']:
+                    keyword_list.extend(good['keywords'])
+                keyword_list = list(set(keyword_list))
+
+                if 'property_goods' in record and record['property_goods']:
+                    print(f"视频 {bvid} 已经候选商品信息，跳过。")
+                    property_goods = record['property_goods']
+                else:
+                    print(f"为视频 {bvid} 生成商品信息，关键词列表长度 {len(keyword_list)} 关键词列表：{keyword_list}")
+                    property_goods = search_goods_info(keyword_list, user_name)
+                    all_records[bvid]['property_goods'] = filter_property_good(property_goods)
+                    save_json(all_records_file, all_records)
+                if 'final_goods' in record and record['final_goods']:
+                    print(f"视频 {bvid} 已经有最终商品信息，跳过。")
+                    final_goods = record['final_goods']
+                else:
+                    final_goods = gen_final_property_good(target_value, property_goods)
+                    all_records[bvid]['final_goods'] = final_goods
+                    save_json(all_records_file, all_records)
+                if final_goods:
+                    rpid = send_good_comment(total_cookie, commenter, bvid, all_records[bvid])
+                    if rpid:
+                        all_records[bvid]['status'] = 'success'
+                        all_records[bvid]['rpid'] = rpid
+                        save_json(all_records_file, all_records)
+                        success_bvids.append(bvid)
+                        save_json(success_bvids_file, success_bvids)
+        except Exception as e:
+            print(f"处理视频 {bvid} 时出错: {e}")
+            traceback.print_exc()
+            all_records[bvid]['status'] = 'error'
+            all_records[bvid]['error_message'] = str(e)
             save_json(all_records_file, all_records)
 
-            keyword_list = [good['product_name'] for good in property_good_info['product_recommendations']]
-            for good in property_good_info['product_recommendations']:
-                keyword_list.extend(good['keywords'])
-            keyword_list = list(set(keyword_list))
 
-            if 'property_goods' in record and record['property_goods']:
-                print(f"视频 {bvid} 已经候选商品信息，跳过。")
-                property_goods = record['property_goods']
-            else:
-                print(f"为视频 {bvid} 生成商品信息，关键词列表长度 {len(keyword_list)} 关键词列表：{keyword_list}")
-                property_goods = search_goods_info(keyword_list, user_name)
-                all_records[bvid]['property_goods'] = filter_property_good(property_goods)
-                save_json(all_records_file, all_records)
-            if 'final_goods' in record and record['final_goods']:
-                print(f"视频 {bvid} 已经有最终商品信息，跳过。")
-                final_goods = record['final_goods']
-            else:
-                final_goods = gen_final_property_good(target_value, property_goods)
-                all_records[bvid]['final_goods'] = final_goods
-                save_json(all_records_file, all_records)
-            if final_goods:
-                rpid = send_good_comment(total_cookie, commenter, bvid, all_records[bvid])
-                if rpid:
-                    all_records[bvid]['status'] = 'success'
-                    all_records[bvid]['rpid'] = rpid
-                    save_json(all_records_file, all_records)
-                    success_bvids.append(bvid)
-                    save_json(success_bvids_file, success_bvids)
+def worker_process_loop(user_name, interval):
+    """
+    这是一个长期运行的工作进程函数。
+    它会为一个指定的用户重复执行任务，并确保每次任务的启动间隔至少为 interval 秒。
+    """
+    print(f"[进程 {multiprocessing.current_process().pid} | 用户 {user_name}] 已启动，工作周期为 {interval} 秒。")
 
+    while True:
+        start_time = time.time()
 
+        print(
+            f"[{time.strftime('%H:%M:%S')}] [进程 {multiprocessing.current_process().pid} | 用户 {user_name}] -------> 新一轮周期开始 <-------")
+
+        try:
+            # 执行核心任务
+            add_good_comment_for_video(user_name)
+        except Exception as e:
+            # 关键：捕获任务中可能出现的任何异常，防止整个进程崩溃
+            print(
+                f"[{time.strftime('%H:%M:%S')}] [进程 {multiprocessing.current_process().pid} | 用户 {user_name}] 任务执行出错: {e}")
+
+        end_time = time.time()
+
+        # 计算任务实际花费的时间
+        elapsed_time = end_time - start_time
+        print(
+            f"[{time.strftime('%H:%M:%S')}] [进程 {multiprocessing.current_process().pid} | 用户 {user_name}] 本轮任务耗时 {elapsed_time:.2f} 秒。")
+
+        # 计算需要等待的时间
+        wait_time = interval - elapsed_time
+
+        if wait_time > 0:
+            print(
+                f"[{time.strftime('%H:%M:%S')}] [进程 {multiprocessing.current_process().pid} | 用户 {user_name}] 等待 {wait_time:.2f} 秒后进入下一轮...")
+            time.sleep(wait_time)
+        else:
+            # 如果任务执行时间已经超过了设定的周期，就立刻开始下一轮
+            print(
+                f"[{time.strftime('%H:%M:%S')}] [进程 {multiprocessing.current_process().pid} | 用户 {user_name}] 任务耗时已超出周期，立即开始下一轮。")
 
 
 if __name__ == '__main__':
-    username_list = ['qiqi', 'jie', 'ruru']
-    while True:
-        start_time = time.time()
-        for user_name in username_list:
-            add_good_comment_for_video(user_name)
-        elapsed = int(time.time() - start_time)
-        sleep_time = max(0, 3600 - elapsed)
-        print(f"本轮处理耗时 {elapsed:.2f} 秒，休眠 {sleep_time:.2f} 秒后再开始下一轮...")
-        time.sleep(sleep_time)
+    username_list = ['nana', 'qiqi', 'jie', 'ruru']
+    RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600
+
+    print("--- 主进程启动，准备为每个用户创建独立的子进程 ---")
+
+    processes = []
+    # 遍历用户列表，为每个用户创建一个进程
+    for user in username_list:
+        p = multiprocessing.Process(target=worker_process_loop, args=(user, RUN_INTERVAL_SECONDS))
+        processes.append(p)
+        p.start()  # 启动进程
+        print(f"已为用户 <{user}> 启动进程，PID: {p.pid}")
+
+    # 主进程等待所有子进程结束。
+    # 因为子进程是无限循环，所以主进程会一直在这里等待，直到您手动停止程序 (例如按 Ctrl+C)。
+    for p in processes:
+        p.join()
+
+    print("--- 所有子进程已终止 ---")

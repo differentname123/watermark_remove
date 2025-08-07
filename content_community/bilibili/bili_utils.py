@@ -179,7 +179,7 @@ def list_selection_car_items(cookie: str):
 
 import time
 
-def update_short_url(cookie, goods, max_retries=3):
+def update_short_url(cookie, goods, max_retries=5):
     """
     生成商品的短链接，每个 good 必须匹配到短链才算成功，否则最多重试 max_retries 次。
 
