@@ -105,6 +105,7 @@ API_KEY_GE = get_config("gemini_api_key_ge")
 API_KEY_NA = get_config("gemini_api_key_na")
 API_KEY_CHU = get_config("gemini_api_key_chu")
 API_KEY_RU = get_config("gemini_api_key_ru")
+API_KEY_chu1 = get_config("gemini_api_key_chu1")
 
 
 API_KEY_MAP = {
@@ -113,7 +114,8 @@ API_KEY_MAP = {
     'ge':API_KEY_GE,
     'na':API_KEY_NA,
     'chu':API_KEY_CHU,
-    'ru':API_KEY_RU
+    'ru':API_KEY_RU,
+    'chu1':API_KEY_chu1
 }
 
 # 创建一个全局的 Key Manager 实例
