@@ -724,7 +724,7 @@ def auto_replay(user_name):
 
 if __name__ == '__main__':
     username_list = ['cai', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru']
-    username_list = ['ruru']
+    # username_list = ['ruru']
     RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600
 
     print("--- 主进程启动，准备为每个用户创建独立的子进程 ---")
