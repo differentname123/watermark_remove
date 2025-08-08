@@ -441,7 +441,7 @@ def send_good_comment(
     )
     sorted_recs = sorted(
         recommendations,
-        key=lambda item: item.get('score', 0),
+        key=lambda item: item.get('estimated_ctr', 0),
         reverse=True
     )
 
@@ -555,7 +555,7 @@ def add_good_comment_for_video(user_name='qiqi'):
                 property_goods = search_goods_info(keyword_list, user_name)
                 all_records[bvid]['property_goods'] = filter_property_good(property_goods)
                 save_json(all_records_file, all_records)
-                if 'final_goods' in record and record['final_goods'] and True:
+                if 'final_goods' in record and record['final_goods'] and False:
                     print(f"视频 {bvid} 已经有最终商品信息，跳过。")
                     final_goods = record['final_goods']
                 else:
