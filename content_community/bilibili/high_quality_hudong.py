@@ -791,6 +791,8 @@ def parse_and_group_danmaku(data: dict) -> list:
 
     # 3. 遍历 "推荐弹幕列表" 并添加到分组字典中
     recommendation_list = data.get("推荐弹幕列表", [])
+    recommendation_list_back = data.get("精选弹幕再创作列表", [])
+    recommendation_list.extend(recommendation_list_back)
     for item in recommendation_list:
         timestamp = item.get("建议时间戳")
         contents = item.get("推荐弹幕内容", [])
@@ -1246,7 +1248,7 @@ def init_config():
     accounts = {
         '443415885': 'dahao',
         '35891943': 'tao',
-        # '1639172564': 'mama',
+        '3546954575383021': 'mama',
         '1223805908': 'ruru',
         '3546717871934392': 'nana',
         '202157045': 'jie',

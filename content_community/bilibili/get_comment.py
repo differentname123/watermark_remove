@@ -95,7 +95,7 @@ def get_bilibili_comments(bvid: str):
 
 if __name__ == "__main__":
     # 示例：输入 BV号 获取对应视频的评论
-    bvid = "BV1ZNtAz9E5q"  # 请替换成需要查询的 BV 号
+    bvid = "BV19qtBzUE78"  # 请替换成需要查询的 BV 号
     comments = get_bilibili_comments(bvid)
 
     if comments:
