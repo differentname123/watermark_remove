@@ -572,7 +572,7 @@ class BilibiliCommenter:
             return False
 
     def reply_to_comment(self, bvid: str, message_content: str, root_rpid: int, parent_rpid: int,
-                         type_code: int = 1) -> int | None:
+                         type_code: int = 1, use_proxy: bool = False) -> int | None:
         """
         回复指定的 Bilibili 评论 (发送楼中楼评论)。
         在发送回复前，此方法会先尝试为被回复的评论（父评论）点赞。
@@ -582,8 +582,17 @@ class BilibiliCommenter:
         :param root_rpid: 根评论的 ID (顶级评论的 rpid)。
         :param parent_rpid: 直接回复的评论 ID (父评论的 rpid)。
         :param type_code: 目标类型，1 通常代表视频。
+        :param use_proxy: 是否开启代理，仅作用于本次 COMMENT_ADD_API_URL 请求。
         :return: 新回复的 rpid (评论ID) 如果成功，否则返回 None。
         """
+        # 仅影响本次请求的代理设置，其他请求不受影响
+        proxy_env_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']
+        old_proxy_env = {k: os.environ.get(k) for k in proxy_env_keys}
+        # 清除环境变量中的代理设置
+        for k in proxy_env_keys:
+            if k in os.environ:
+                del os.environ[k]
+
         video_info = self._get_video_info(bvid)
         if not video_info:
             print("回复失败：无法获取有效的视频信息。")
@@ -621,8 +630,13 @@ class BilibiliCommenter:
             "Referer": f"https://www.bilibili.com/video/{bvid}/"
         })
 
+        # 根据 use_proxy 决定此次请求是否走代理
+        proxies = {"http": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"} if use_proxy else {
+            "http": None, "https": None
+        }
+
         try:
-            response = self.session.post(full_url, data=signed_post_body_data)
+            response = self.session.post(full_url, data=signed_post_body_data, proxies=proxies)
             response.raise_for_status()
             result = response.json()
 
@@ -644,6 +658,13 @@ class BilibiliCommenter:
         except Exception as e:
             print(f"发生未知错误：{e}")
             return None
+        finally:
+            # 恢复原有的代理环境变量，确保全局环境不变
+            for k, v in old_proxy_env.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
 
     def post_comment(self,
                      bvid: str,
@@ -651,7 +672,8 @@ class BilibiliCommenter:
                      type_code: int = 1,
                      forward_to_dynamic: bool = False,
                      like_video: bool = False,
-                     image_path: str = "") -> int | None:
+                     image_path: str = "",
+                     use_proxy: bool = False) -> int | None:
         """
         发送 Bilibili 评论，并可在内部上传图片。
         :param bvid: 视频 BV 号。
@@ -660,76 +682,108 @@ class BilibiliCommenter:
         :param forward_to_dynamic: 是否同时转发到动态。
         :param like_video: 是否先为视频点赞。
         :param image_path: 本地图片路径，若非空则上传并附带到评论中。
+        :param use_proxy: 是否开启代理，仅作用于本次 COMMENT_ADD_API_URL 请求。
         :return: 评论的 rpid (评论ID) 如果成功，否则返回 None。
         """
-        if like_video:
-            print(f"准备评论视频 {bvid}，先尝试为该视频点赞...")
-            self.like_video(bvid=bvid)
+        # 记录是否要开启代理的状态
+        # 注意：此处仅对 COMMENT_ADD_API_URL 的请求生效，其他请求会恢复原状
+        proxy_env_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']
+        old_proxy_env = {k: os.environ.get(k) for k in proxy_env_keys}
 
-        video_info = self._get_video_info(bvid)
-        if not video_info:
-            print("评论失败：无法获取有效的视频信息。")
-            return None
-        oid = video_info['aid']
-
-        pictures_data = None
-        if image_path:
-            print(f"检测到 image_path='{image_path}'，开始上传图片...")
-            upload_resp = upload_bilibili_image(
-                image_path=image_path,
-                cookies={"bili_jct": self.csrf_token, "SESSDATA": self.session.cookies.get("SESSDATA")},
-                csrf_token=self.csrf_token
-            )
-            if not upload_resp or upload_resp.status_code != 200:
-                print("图片上传失败，评论将不包含图片。")
-            else:
-                data = upload_resp.json().get("data", {})
-                data["img_src"] = data.get("image_url")
-                data["img_width"] = data.get("image_width")
-                data["img_height"] = data.get("image_height")
-                pictures_data = [data]
-                print("图片上传并组装完成，准备在评论中附带图片。")
-
-        post_body_data = {
-            "plat": 1,
-            "oid": oid,
-            "type": type_code,
-            "message": message_content,
-            "at_name_to_mid": "{}",
-            "gaia_source": "main_web",
-            "csrf": self.csrf_token,
-            "statistics": '{"appId":100,"platform":5}',
-            "dm_img_list": json.dumps(self._DM_IMG_LIST),
-            "dm_img_str": self._DM_IMG_STR,
-            "dm_cover_img_str": self._DM_COVER_IMG_STR,
-            "dm_img_inter": self._DM_IMG_INTER,
-        }
-        if pictures_data:
-            post_body_data["pictures"] = json.dumps(pictures_data)
-        if forward_to_dynamic:
-            post_body_data["sync_to_dynamic"] = 1
+        # 暂时清除环境变量中的代理设置，确保本次请求不会被其他请求影响
+        for k in proxy_env_keys:
+            if k in os.environ:
+                del os.environ[k]
 
         try:
-            signed_data = self._sign_params_for_wbi(post_body_data)
-        except ValueError as e:
-            print(f"评论失败：{e}")
-            return None
+            if like_video:
+                print(f"准备评论视频 {bvid}，先尝试为该视频点赞...")
+                self.like_video(bvid=bvid)
 
-        self.session.headers.update({"Referer": f"https://www.bilibili.com/video/{bvid}/"})
-        try:
-            resp = self.session.post(self._COMMENT_ADD_API_URL, data=signed_data)
-            resp.raise_for_status()
-            result = resp.json()
-            if result.get("code") == 0:
-                print("评论发送成功！")
-                rpid = result["data"]["reply"]["rpid"]
-                time.sleep(5)
-                self.like_comment(oid=oid, rpid=rpid, type_code=type_code)
-                return rpid
-            else:
-                print(f"评论失败，错误码：{result['code']}, 信息：{result['message']}")
-        except Exception as e:
-            print(f"请求出错：{e}")
+            video_info = self._get_video_info(bvid)
+            if not video_info:
+                print("评论失败：无法获取有效的视频信息。")
+                return None
+            oid = video_info['aid']
+
+            pictures_data = None
+            if image_path:
+                print(f"检测到 image_path='{image_path}'，开始上传图片...")
+                upload_resp = upload_bilibili_image(
+                    image_path=image_path,
+                    cookies={"bili_jct": self.csrf_token, "SESSDATA": self.session.cookies.get("SESSDATA")},
+                    csrf_token=self.csrf_token
+                )
+                if not upload_resp or upload_resp.status_code != 200:
+                    print("图片上传失败，评论将不包含图片。")
+                else:
+                    data = upload_resp.json().get("data", {})
+                    data["img_src"] = data.get("image_url")
+                    data["img_width"] = data.get("image_width")
+                    data["img_height"] = data.get("image_height")
+                    pictures_data = [data]
+                    print("图片上传并组装完成，准备在评论中附带图片。")
+
+            post_body_data = {
+                "plat": 1,
+                "oid": oid,
+                "type": type_code,
+                "message": message_content,
+                "at_name_to_mid": "{}",
+                "gaia_source": "main_web",
+                "csrf": self.csrf_token,
+                "statistics": '{"appId":100,"platform":5}',
+                "dm_img_list": json.dumps(self._DM_IMG_LIST),
+                "dm_img_str": self._DM_IMG_STR,
+                "dm_cover_img_str": self._DM_COVER_IMG_STR,
+                "dm_img_inter": self._DM_IMG_INTER,
+            }
+            if pictures_data:
+                post_body_data["pictures"] = json.dumps(pictures_data)
+            if forward_to_dynamic:
+                post_body_data["sync_to_dynamic"] = 1
+
+            try:
+                signed_data = self._sign_params_for_wbi(post_body_data)
+            except ValueError as e:
+                print(f"评论失败：{e}")
+                return None
+
+            self.session.headers.update({"Referer": f"https://www.bilibili.com/video/{bvid}/"})
+
+            # 再次确保最终请求使用明确的代理策略
+            proxies = {
+                "http": "http://127.0.0.1:7890",
+                "https": "http://127.0.0.1:7890",
+            } if use_proxy else {
+                "http": None,
+                "https": None
+            }
+
+            try:
+                resp = self.session.post(self._COMMENT_ADD_API_URL, data=signed_data, proxies=proxies)
+                resp.raise_for_status()
+                result = resp.json()
+                if result.get("code") == 0:
+                    print("评论发送成功！")
+                    rpid = result["data"]["reply"]["rpid"]
+                    time.sleep(5)
+                    self.like_comment(oid=oid, rpid=rpid, type_code=type_code)
+                    return rpid
+                else:
+                    print(f"评论失败，错误码：{result['code']}, 信息：{result['message']}")
+            except Exception as e:
+                print(f"请求出错：{e}")
+
+        finally:
+            # 恢复原有的代理环境变量
+            for k, v in old_proxy_env.items():
+                if v is None:
+                    if k in os.environ:
+                        del os.environ[k]
+                else:
+                    os.environ[k] = v
+
         return None
 
     def like_comment(self, oid: int, rpid: int, type_code: int = 1) -> bool:
@@ -861,40 +915,37 @@ if __name__ == "__main__":
         print("请编辑脚本，替换 YOUR_CSRF_TOKEN 和 YOUR_SESSDATA 为您的实际信息。")
         exit()
 
-    target_bvid = "BV1ZNtAz9E5q"
+    target_bvid = "BV1c3t1zDEzw"
     comment_text = f"这是一条由脚本发送的顶级评论! [{time.strftime('%Y-%m-%d %H:%M:%S')}]"
     comment_type = 1
 
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
-    commenter.pin_comment(target_bvid, 270297293713)
+    # commenter.pin_comment(target_bvid, 271871684816)
     #
-    # # # --- 步骤 1: 发送一条顶级评论 (现在会先点赞视频) ---
-    # # print("-" * 30)
-    # # print("步骤 1: 尝试发送一条顶级评论...")
-    # # posted_rpid = commenter.post_comment(
-    # #     target_bvid, comment_text, comment_type,
-    # #     like_video=True,
-    # #     image_path="test.jpg",
-    # #     forward_to_dynamic=True
-    # # )
-    # #
-    # # # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
-    # # if posted_rpid:
-    # #     print("-" * 30)
-    # #     print(f"步骤 2: 顶级评论发送成功，rpid 为 {posted_rpid}。现在尝试回复这条评论...")
-    # #     time.sleep(3)
-    # #     reply_text = f"这是对 rpid={posted_rpid} 的回复。[{time.strftime('%Y-%m-%d %H:%M:%S')}]"
-    # #     reply_rpid = commenter.reply_to_comment(
-    # #         bvid=target_bvid, message_content=reply_text,
-    # #         root_rpid=posted_rpid, parent_rpid=posted_rpid, type_code=comment_type
-    # #     )
-    # #     if reply_rpid:
-    # #         print("\n回复操作成功完成！")
-    # #     else:
-    # #         print("\n回复操作失败。")
-    # # else:
-    # #     print("-" * 30)
-    # #     print("顶级评论发送失败，无法进行回复操作。")
+    # --- 步骤 1: 发送一条顶级评论 (现在会先点赞视频) ---
+    print("-" * 30)
+    print("步骤 1: 尝试发送一条顶级评论...")
+    posted_rpid = commenter.post_comment(
+        target_bvid, comment_text, comment_type,
+        like_video=True    )
+
+    # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
+    if posted_rpid:
+        print("-" * 30)
+        print(f"步骤 2: 顶级评论发送成功，rpid 为 {posted_rpid}。现在尝试回复这条评论...")
+        time.sleep(3)
+        reply_text = f"这是对 rpid={posted_rpid} 的回复。[{time.strftime('%Y-%m-%d %H:%M:%S')}]"
+        reply_rpid = commenter.reply_to_comment(
+            bvid=target_bvid, message_content=reply_text,
+            root_rpid=posted_rpid, parent_rpid=posted_rpid, type_code=comment_type,use_proxy=True
+        )
+        if reply_rpid:
+            print("\n回复操作成功完成！")
+        else:
+            print("\n回复操作失败。")
+    else:
+        print("-" * 30)
+        print("顶级评论发送失败，无法进行回复操作。")
     # #
     # # # --- 步骤 3: 发送一条弹幕 ---
     # # print("-" * 30)

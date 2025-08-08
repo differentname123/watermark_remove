@@ -514,7 +514,7 @@ def add_good_comment_for_video(user_name='qiqi'):
     total_cookie = config_map[uid]['total_cookie']
     csrf_token = config_map[uid].get('BILI_JCT', '')
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
-    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=10)
+    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=11)
     metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     all_records = read_json(all_records_file)
     # success_bvids = read_json(success_bvids_file)
@@ -690,8 +690,9 @@ def auto_replay(user_name):
                 shill_comments = [comment for comment in shill_comments if comment not in exist_shill_comments]
             commenter_items = list(commenter_map.items())
             random.shuffle(commenter_items)
+            use_proxy = True
             for shill_comment in shill_comments:
-                if success_count >= 3: # 单次回复数量限制
+                if success_count > 3: # 单次回复数量限制
                     print(f"用户 {user_name} 已经成功回复 {success_count} 条评论，跳过剩余评论。")
                     time.sleep(10)
                     break
@@ -700,8 +701,9 @@ def auto_replay(user_name):
                         continue
                     reply_rpid = commenter.reply_to_comment(
                         bvid=bvid, message_content=shill_comment,
-                        root_rpid=rpid, parent_rpid=rpid
+                        root_rpid=rpid, parent_rpid=rpid, use_proxy=use_proxy
                     )
+                    use_proxy = False
                     if reply_rpid:
                         success_count += 1
                         exist_shill_comments.append(shill_comment)
@@ -722,7 +724,7 @@ def auto_replay(user_name):
 
 if __name__ == '__main__':
     username_list = ['cai', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru']
-    # username_list = ['ruru']
+    username_list = ['ruru']
     RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600
 
     print("--- 主进程启动，准备为每个用户创建独立的子进程 ---")
