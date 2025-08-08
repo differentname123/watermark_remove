@@ -506,7 +506,7 @@ def add_good_comment_for_video(user_name='qiqi'):
     total_cookie = config_map[uid]['total_cookie']
     csrf_token = config_map[uid].get('BILI_JCT', '')
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
-    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=20)
+    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=100)
     metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     all_records = read_json(all_records_file)
     # success_bvids = read_json(success_bvids_file)

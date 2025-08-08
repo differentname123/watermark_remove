@@ -264,6 +264,7 @@ def get_llm_content_gemini_flash_video(
         video_file = None
         try:
             print(f"[INFO] 使用 API Key “{key_name}” 上传视频…")
+            api_key_manager.record_success(key_name)
             video_file = genai_flash.upload_file(path=video_path)
 
             # 等待处理
@@ -300,7 +301,6 @@ def get_llm_content_gemini_flash_video(
         finally:
             # 无论成功还是失败，都尝试删掉已经上传的文件
             if video_file is not None:
-                api_key_manager.record_success(key_name)
                 try:
                     print(f"[INFO] 删除临时文件 {video_file.name}…")
                     genai_flash.delete_file(video_file.name)
