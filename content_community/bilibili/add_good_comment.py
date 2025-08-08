@@ -1,16 +1,18 @@
+import datetime
 import multiprocessing
+import random
 import time
 import traceback
 from typing import Any, Dict, List, Optional
 
 from LLM.gemini import get_llm_content
-from common_utils.common_utils import read_json, get_config, save_json
+from common_utils.common_utils import read_json, get_config, save_json_safe
 from content_community.bilibili.bili_utils import fetch_goods, update_short_url, list_selection_car_items
 from content_community.bilibili.comment import BilibiliCommenter
 from content_community.bilibili.get_comment import get_bilibili_comments
 from content_community.bilibili.get_danmu import string_to_list
 from content_community.bilibili.high_quality_hudong import init_config, find_video_by_bvid
-from common_utils.common_utils import string_to_object, save_json, read_json
+from common_utils.common_utils import string_to_object, save_json_safe, read_json
 
 BASE_DIR = 'goods_info'
 
@@ -252,7 +254,7 @@ def search_goods_info(key_word_list, user_name='ruru'):
                     outerId = good['outerId'].split('-')[-1]
                     # good['outerId'] = outerId
                     local_good_data[outerId] = good
-                save_json(local_file_path, local_good_data)
+                save_json_safe(local_file_path, local_good_data)
 
         property_goods.extend(search_local_goods_info(key_word, local_file_path))
     # 去重
@@ -360,6 +362,7 @@ def filter_property_good(property_goods, limit_count=40):
     for key, good in property_goods.items():
         if good.get('price', 0) and float(good.get('price', 0)) < 100:
             property_goods_list.append(good)
+    print(f"过滤商品信息，保留佣金比例大于 0 的商品，当前商品数量: {len(property_goods_list)} 原始商品数量: {len(property_goods)}")
 
     # 按照commissionRate降序排序，取前20个
     property_goods_list = sorted(property_goods_list, key=lambda x: float(x.get('commissionRate', 0)), reverse=True)[:limit_count]
@@ -467,9 +470,10 @@ def send_good_comment(
 
         short_url: Optional[str] = target_good.get('shortUrl')
         pinned_text: str = rec.get('pinned_comment', '').strip()
-        if not short_url:
-            new_target_good = update_short_url(total_cookie, [target_good])
-            short_url: Optional[str] = new_target_good[0].get('shortUrl')
+        new_target_good = update_short_url(total_cookie, [target_good])
+        new_short_url: Optional[str] = new_target_good[0].get('shortUrl')
+        if new_short_url:
+            short_url = new_short_url
         if not short_url:
             print(f"⚠️ 商品 {outer_id} “{rec.get('goodsName', '')}” 缺少 shortUrl，跳过。 {bvid}")
             continue
@@ -486,11 +490,11 @@ def send_good_comment(
         # 5. 置顶评论并结束
         if commenter.pin_comment(bvid=bvid, rpid=rpid):
             print(f"✅ 已成功发送并置顶商品评论: 视频 {bvid}，商品 {outer_id} “{rec.get('goodsName', '')}” pinned_text: {pinned_text}")
-            return rpid
+            return rpid, rec.get('goodsName', '')
 
     # 如果所有推荐都处理完仍未成功
     print(f"⚠️ 未能发送或置顶任何商品评论到视频 {bvid}")
-    return None
+    return None, None
 
 
 def add_good_comment_for_video(user_name='qiqi'):
@@ -510,12 +514,13 @@ def add_good_comment_for_video(user_name='qiqi'):
     total_cookie = config_map[uid]['total_cookie']
     csrf_token = config_map[uid].get('BILI_JCT', '')
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
-    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=50)
+    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=10)
     metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     all_records = read_json(all_records_file)
     # success_bvids = read_json(success_bvids_file)
     success_bvids = [record['bvid'] for record in all_records.values() if record.get('status') == 'success' or record.get('rpid')]
-    # success_bvids.extend(single_success_bvids)
+    # success_bvids = []
+
     print(f"已处理 {len(all_records)} 条记录，其中 {len(success_bvids)} 条成功。")
     # 过滤出已经处理过的
     processed_bvids = success_bvids
@@ -533,7 +538,7 @@ def add_good_comment_for_video(user_name='qiqi'):
             if 'property_good_info' in record and record['property_good_info']:
                 print(f"视频 {bvid} 已经有商品信息，跳过。")
                 property_good_info = record['property_good_info']
-                format_video_info = record.get('video_info', {})
+                # format_video_info = record.get('video_info', {})
             else:
                 print(f"正在处理视频 {bvid} 的商品信息...")
                 property_good_info, format_video_info = gen_property_good(target_value)
@@ -543,8 +548,8 @@ def add_good_comment_for_video(user_name='qiqi'):
                 all_records[bvid]['bvid'] = bvid
                 all_records[bvid]['user_name'] = user_name
                 all_records[bvid]['property_good_info'] = property_good_info
-                all_records[bvid]['video_info'] = format_video_info
-                save_json(all_records_file, all_records)
+                # all_records[bvid]['video_info'] = format_video_info
+                save_json_safe(all_records_file, all_records)
 
                 keyword_list = [good['product_name'] for good in property_good_info['product_recommendations']]
                 for good in property_good_info['product_recommendations']:
@@ -558,26 +563,29 @@ def add_good_comment_for_video(user_name='qiqi'):
                 print(f"为视频 {bvid} 生成商品信息，关键词列表长度 {len(keyword_list)} 关键词列表：{keyword_list}")
                 property_goods = search_goods_info(keyword_list, user_name)
                 all_records[bvid]['property_goods'] = filter_property_good(property_goods)
-                save_json(all_records_file, all_records)
+                save_json_safe(all_records_file, all_records)
                 if 'final_goods' in record and record['final_goods'] and False:
                     print(f"视频 {bvid} 已经有最终商品信息，跳过。")
                     final_goods = record['final_goods']
                 else:
                     final_goods = gen_final_property_good(target_value, property_goods)
                     all_records[bvid]['final_goods'] = final_goods
-                    save_json(all_records_file, all_records)
+                    save_json_safe(all_records_file, all_records)
                 if final_goods:
-                    rpid = send_good_comment(total_cookie, commenter, bvid, all_records[bvid])
+                    rpid, good_name = send_good_comment(total_cookie, commenter, bvid, all_records[bvid])
                     if rpid:
                         all_records[bvid]['status'] = 'success'
                         all_records[bvid]['rpid'] = rpid
-                        save_json(all_records_file, all_records)
+                        all_records[bvid]['good_name'] = good_name
+                        all_records[bvid]['upload_time'] = time.time()
+                        all_records[bvid]['property_goods'] = []
+                        save_json_safe(all_records_file, all_records)
         except Exception as e:
             print(f"处理视频 {bvid} 时出错: {e}")
             traceback.print_exc()
             all_records[bvid]['status'] = 'error'
             all_records[bvid]['error_message'] = str(e)
-            save_json(all_records_file, all_records)
+            save_json_safe(all_records_file, all_records)
 
 
 def update_local_goods_info(user_name='ruru'):
@@ -594,7 +602,7 @@ def update_local_goods_info(user_name='ruru'):
             car_item['updateTime'] = time.time()  # 添加更新时间
             goods_info[outer_id] = car_item
             count += 1
-    save_json(goods_file, goods_info)
+    save_json_safe(goods_file, goods_info)
     print(f'查询到选品车商品个数 {len(car_items)} 更新成功个数 {count}')
 
 
@@ -614,6 +622,7 @@ def worker_process_loop(user_name, interval):
         try:
             # 执行核心任务
             add_good_comment_for_video(user_name)
+            auto_replay(user_name)
         except Exception as e:
             # 关键：捕获任务中可能出现的任何异常，防止整个进程崩溃
             print(
@@ -638,10 +647,82 @@ def worker_process_loop(user_name, interval):
             print(
                 f"[{time.strftime('%H:%M:%S')}] [进程 {multiprocessing.current_process().pid} | 用户 {user_name}] 任务耗时已超出周期，立即开始下一轮。")
 
+def auto_replay(user_name):
+    """
+    自动扫描进行置顶文案的回复增加购买的几率
+    """
+    all_records_file = f"{BASE_DIR}/{user_name}_record_info.json"
+    all_records = read_json(all_records_file)
+    config_map = init_config()
+    commenter_map = {}
+    today = datetime.date.today().isoformat()
+    for key, detail_config in config_map.items():
+        name = detail_config.get('name', key)
+        if user_name == name:
+            continue
+        commenter_map[name] = BilibiliCommenter(
+            total_cookie=detail_config.get('total_cookie', ''),
+            csrf_token=detail_config.get('BILI_JCT', '')
+        )
+        print(f"已创建评论者 {name} (UID: {key})")
+    for bvid, record in all_records.items():
+        try:
+            success_count = 0
+            rpid = record.get('rpid')
+            good_name = record.get('good_name', '')
+            exist_shill_comments = record.get('exist_shill_comments', [])
+            exist_shill_users = record.get('exist_shill_users', [])
+            last_processed_date = record.get('last_processed_date', '')
+            if not rpid or not good_name or last_processed_date == today:
+                print(f"{user_name} 视频 {bvid} 没有 rpid，{rpid},  没有 good_name，{good_name}跳过。最近处理日期 {last_processed_date}，今天日期 {today}")
+                continue
+            product_recommendations = record.get('final_goods', {}).get('product_recommendations', [])
+            # 遍历product_recommendations找到good_name对应的商品
+            target_product = None
+            for product in product_recommendations:
+                if product.get('goodsName') == good_name:
+                    target_product = product
+                    break
+            shill_comments = []
+            if target_product:
+                shill_comments = target_product.get('shill_comments', [])
+                # 去除已经存在的评论
+                shill_comments = [comment for comment in shill_comments if comment not in exist_shill_comments]
+            commenter_items = list(commenter_map.items())
+            random.shuffle(commenter_items)
+            for shill_comment in shill_comments:
+                if success_count >= 3: # 单次回复数量限制
+                    print(f"用户 {user_name} 已经成功回复 {success_count} 条评论，跳过剩余评论。")
+                    time.sleep(10)
+                    break
+                for commenter_name, commenter in commenter_items:
+                    if commenter_name in exist_shill_users:
+                        continue
+                    reply_rpid = commenter.reply_to_comment(
+                        bvid=bvid, message_content=shill_comment,
+                        root_rpid=rpid, parent_rpid=rpid
+                    )
+                    if reply_rpid:
+                        success_count += 1
+                        exist_shill_comments.append(shill_comment)
+                        exist_shill_users.append(commenter_name)
+                        # 更新记录
+                        record['exist_shill_comments'] = exist_shill_comments
+                        record['exist_shill_users'] = exist_shill_users
+                        print(f"{commenter_name} 回复用户 {user_name} 成功: 视频 {bvid}，评论 {reply_rpid} 内容: {shill_comment}")
+                        break
+        except Exception as e:
+            print(f"用户 {user_name} 回复视频 {bvid} 时出错: {e}")
+            traceback.print_exc()
+        finally:
+            record['last_processed_date'] = today
+            all_records[bvid] = record
+            save_json_safe(all_records_file, all_records)
+
 
 if __name__ == '__main__':
     username_list = ['cai', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru']
-    # username_list = ['tao']
+    # username_list = ['ruru']
     RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600
 
     print("--- 主进程启动，准备为每个用户创建独立的子进程 ---")

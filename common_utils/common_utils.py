@@ -16,6 +16,7 @@ import pathlib
 import aiofiles
 import aiohttp
 import requests
+from filelock import FileLock, Timeout
 
 
 def find_key_values(data, target_key) -> list:
@@ -978,6 +979,26 @@ def save_json(json_path, data):
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
+
+def save_json_safe(json_path, data):
+    """
+    [并发安全] 将数据保存为 JSON 文件。
+    使用文件锁来防止多个进程同时写入导致数据丢失。
+    """
+    # 锁文件通常在原文件名后加 .lock
+    lock_path = f"{json_path}.lock"
+    lock = FileLock(lock_path, timeout=10) # 设置10秒超时
+
+    try:
+        with lock:
+            # 确保目录存在
+            os.makedirs(os.path.dirname(json_path), exist_ok=True)
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+    except Timeout:
+        print(f"错误：无法获取文件锁 {lock_path}，另一进程可能正长时间占用该文件。")
+        # 这里可以根据需要决定是抛出异常还是记录日志
+        raise
 
 def fill_time_gaps(
     segments: list,
