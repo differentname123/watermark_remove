@@ -120,11 +120,15 @@ final_prompt = """
    - 对每个 goods 计算四项子分（0–10）：
      * Relevance（相关度，权重 40%）：基于商品描述(description)、tags 与转化赛道匹配程度手动量化（1-10）。
      * Commercial（商业潜力，权重 30%）：若存在 price/sales/rating 则直接量化；若缺失，则按下列启发式估算（0-10）：
-         - 若 description 包含“热卖/爆款/推荐/畅销/旗舰/官方/人气/高评分”等词 → +7（偏高）
-         - 若 goods 在 comments 中被直接提及（同款/相似款）或有多条求推荐 → +2（社交流量信号）
-         - 若 shopName 含“官方/旗舰/直营”字样或为明显品牌名 → +1（品牌背书）
-         - 若无任何相关提示 → 取中性基础分 5（表示既无利好亦无明显风险）
-         （将上述项相加并裁剪到 0–10 区间）
+        -   **消费需求层级 (Consumption Demand Tier)** - 基于商品名(`goodsName`)和描述(`description`)中的品类关键词进行评估，作为商业潜力的基础调节项。
+            -   **高频消费品 (High-Frequency) → +5分**: 品类含“零食、速食、饮料、面膜、纸巾、洗护、日用耗材、宠物零食”等，需求高、决策快。
+            -   **中频消费品 (Mid-Frequency) → +3分**: 品类含“服饰、美妆、图书、家居用品、数码配件、母婴用品”等，有周期性复购需求。
+            -   **低频/高客单价品 (Low-Frequency) → +1分**: 品类含“大家电、家具、手机、电脑、课程、手表”等，决策周期长、单次购买。
+        -   **热度信号 → +3分**: `description` 包含“热卖/爆款/推荐/畅销/人气/高评分”等强引导词。
+        -   **社交流量信号 → +2分**: `goods` 在 `comments` 中被直接提及（同款/相似款）或有多条求链接。
+        -   **品牌背书 → +1分**: `shopName` 含“官方/旗舰/直营”字样或为公认的知名品牌名。
+        -   **基础分**: 若无任何上述信号，则**基础分为 4 分**。
+        -   **计算方式**: 将上述各项得分相加，并**将最终结果裁剪到 0–10 的区间内**。
      * SocialProof（社证明，权重 20%）：优先依据 comments 中对该商品/相似品的正向提及数或 tags 中的好评关键词，若无则按文本线索估算（例如：若 comments 中 ≥2 条正面提及 → 7–9；1 条 → 5–6；0 条但tags含“推荐”→5）。
      * Diversity（差异化，权重 10%）：评估该商品在本次推荐池是否提供新角度/品类（首个推荐默认 10 分，品类重复则逐步递减）。
 
@@ -141,7 +145,7 @@ final_prompt = """
 5. **创作文案（必须为每件入选商品生成）**
     - **pinned_comment（置顶神评）**
       * 目标：创作一条本身就极具“点赞、转发、回复”潜力的神评，优先制造情绪共鸣、好笑/好奇或强烈认同感，不要直接以带货为主。带货意图应隐晦或完全不显现，留给下方的 shill_comments 逐步接力。
-      * 字数与风格：严格 ≤60 个中文字符（建议 20–55 字以提升易读与传播性）；第一人称或矿工式观察句；口语化、节奏感强；可使用 0–1 个 emoji，但避免多重广告语。
+      * 字数与风格：严格 ≤60 个中文字符（建议 40–55 字以提升易读与传播性）；第一人称或矿工式观察句；口语化、节奏感强；可使用 0–1 个 emoji，但避免多重广告语。
       * 结构建议（非机械公式，给创作灵感）：
         1. **钩子句（1-2 短句）**：一句让人停下来的观察或反转（惊讶/怀疑/自嘲/共鸣）。
         2. **个性化句（1 短句）**：用“我”或“我们”立场加强代入感（可以是夸张、凡尔赛或悔改式）。
@@ -354,7 +358,7 @@ def filter_property_good(property_goods, limit_count=40):
         return property_goods
     property_goods_list = []
     for key, good in property_goods.items():
-        if good.get('commissionRate', 0) and float(good.get('commissionRate', 0)) > 0:
+        if good.get('price', 0) and float(good.get('price', 0)) < 100:
             property_goods_list.append(good)
 
     # 按照commissionRate降序排序，取前20个
@@ -441,7 +445,7 @@ def send_good_comment(
     )
     sorted_recs = sorted(
         recommendations,
-        key=lambda item: item.get('estimated_ctr', 0),
+        key=lambda item: (float(item.get('estimated_ctr') or 0) * float(item.get('score') or 0)),
         reverse=True
     )
 
@@ -506,7 +510,7 @@ def add_good_comment_for_video(user_name='qiqi'):
     total_cookie = config_map[uid]['total_cookie']
     csrf_token = config_map[uid].get('BILI_JCT', '')
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
-    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=100)
+    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=50)
     metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     all_records = read_json(all_records_file)
     # success_bvids = read_json(success_bvids_file)
