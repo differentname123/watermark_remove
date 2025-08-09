@@ -1311,7 +1311,7 @@ def fun():
             all_found_videos.extend(temp_found_videos)
 
         all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
-        all_found_videos = all_found_videos[:150]
+        all_found_videos = all_found_videos[:100]
         print(f"共找到 {len(all_found_videos)} 个视频。")
         for video in all_found_videos:
             print(f"正在处理视频 BVID: {video.get('bvid', '未知')}...")

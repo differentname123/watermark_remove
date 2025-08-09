@@ -184,7 +184,7 @@ def simulate_watch_video(sessdata: str, bili_jct: str, bvid: str):
     logging.info("开始心跳模拟...")
     start_ts = int(time.time())
     played = 0
-    while played < duration and played < 300:
+    while played < duration and played < 150:
         try:
             payload = {
                 'aid': aid, 'cid': cid, 'bvid': bvid, 'mid': viewer_mid,

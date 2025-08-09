@@ -514,7 +514,7 @@ def add_good_comment_for_video(user_name='qiqi'):
     total_cookie = config_map[uid]['total_cookie']
     csrf_token = config_map[uid].get('BILI_JCT', '')
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
-    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=11)
+    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=50)
     metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     all_records = read_json(all_records_file)
     # success_bvids = read_json(success_bvids_file)
@@ -674,7 +674,7 @@ def auto_replay(user_name):
             exist_shill_users = record.get('exist_shill_users', [])
             last_processed_date = record.get('last_processed_date', '')
             if not rpid or not good_name or last_processed_date == today:
-                print(f"{user_name} 视频 {bvid} 没有 rpid，{rpid},  没有 good_name，{good_name}跳过。最近处理日期 {last_processed_date}，今天日期 {today}")
+                # print(f"{user_name} 视频 {bvid} 没有 rpid，{rpid},  没有 good_name，{good_name}跳过。最近处理日期 {last_processed_date}，今天日期 {today}")
                 continue
             product_recommendations = record.get('final_goods', {}).get('product_recommendations', [])
             # 遍历product_recommendations找到good_name对应的商品
