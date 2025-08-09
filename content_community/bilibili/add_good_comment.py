@@ -513,7 +513,8 @@ def add_good_comment_for_video(user_name='qiqi'):
     update_local_goods_info(user_name)
     total_cookie = config_map[uid]['total_cookie']
     csrf_token = config_map[uid].get('BILI_JCT', '')
-    commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
+    all_params = config_map[uid].get('all_params', {})
+    commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token,all_params=all_params)
     temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=50)
     metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     all_records = read_json(all_records_file)
@@ -660,9 +661,10 @@ def auto_replay(user_name):
         name = detail_config.get('name', key)
         if user_name == name:
             continue
+        all_params = detail_config.get('all_params', {})
         commenter_map[name] = BilibiliCommenter(
             total_cookie=detail_config.get('total_cookie', ''),
-            csrf_token=detail_config.get('BILI_JCT', '')
+            csrf_token=detail_config.get('BILI_JCT', ''),all_params=all_params
         )
         print(f"已创建评论者 {name} (UID: {key})")
     for bvid, record in all_records.items():
@@ -691,20 +693,18 @@ def auto_replay(user_name):
                 shill_comments = [comment for comment in shill_comments if comment not in exist_shill_comments]
             commenter_items = list(commenter_map.items())
             random.shuffle(commenter_items)
-            use_proxy = True
             for shill_comment in shill_comments:
                 if success_count > 3: # 单次回复数量限制
                     print(f"用户 {user_name} 已经成功回复 {success_count} 条评论，跳过剩余评论。")
-                    time.sleep(60)
+                    time.sleep(100)
                     break
                 for commenter_name, commenter in commenter_items:
                     if commenter_name in exist_shill_users:
                         continue
                     reply_rpid = commenter.reply_to_comment(
                         bvid=bvid, message_content=shill_comment,
-                        root_rpid=rpid, parent_rpid=rpid, use_proxy=use_proxy
+                        root_rpid=rpid, parent_rpid=rpid
                     )
-                    use_proxy = False
                     if reply_rpid:
                         success_count += 1
                         exist_shill_comments.append(shill_comment)
@@ -715,7 +715,7 @@ def auto_replay(user_name):
                         print(f"{commenter_name} 回复用户 {user_name} 成功: 视频 {bvid}，评论 {reply_rpid} 内容: {shill_comment}")
                         break
                     else:
-                        time.sleep(60)
+                        time.sleep(100)
         except Exception as e:
             print(f"用户 {user_name} 回复视频 {bvid} 时出错: {e}")
             traceback.print_exc()
@@ -727,7 +727,7 @@ def auto_replay(user_name):
 
 if __name__ == '__main__':
     username_list = ['cai', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru', 'xue']
-    # username_list = ['xue']
+    # username_list = ['tao']
     RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600
 
     print("--- 主进程启动，准备为每个用户创建独立的子进程 ---")

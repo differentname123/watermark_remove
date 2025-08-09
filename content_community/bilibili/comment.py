@@ -185,7 +185,7 @@ class BilibiliCommenter:
     _SHARE_API_URL = "https://api.bilibili.com/x/web-interface/share/add"
     _PIN_COMMENT_API_URL = "https://api.bilibili.com/x/v2/reply/top" # <-- 新增此行
 
-    def __init__(self, total_cookie: str, csrf_token: str):
+    def __init__(self, total_cookie: str, csrf_token: str, all_params={}):
         """
         初始化 BilibiliCommenter 实例。
         :param total_cookie: 包含 SESSDATA 和 bili_jct 的完整 Cookie 字符串。
@@ -194,6 +194,7 @@ class BilibiliCommenter:
         self.session = requests.Session()
         self.csrf_token = csrf_token
         self.total_cookie = total_cookie
+        self.all_params = all_params
 
         # 设置会话的默认头
         self.session.headers.update({
@@ -276,9 +277,12 @@ class BilibiliCommenter:
         self.session.headers.update({
             "Referer": f"https://www.bilibili.com/video/{bvid}/"
         })
-
+        proxies = self.all_params.get("proxies", {
+                "http": None,
+                "https": None
+            })
         try:
-            response = self.session.post(self._PIN_COMMENT_API_URL, data=signed_post_data)
+            response = self.session.post(self._PIN_COMMENT_API_URL, data=signed_post_data, proxies=proxies)
             response.raise_for_status()
             result = response.json()
 
@@ -572,7 +576,7 @@ class BilibiliCommenter:
             return False
 
     def reply_to_comment(self, bvid: str, message_content: str, root_rpid: int, parent_rpid: int,
-                         type_code: int = 1, use_proxy: bool = False) -> int | None:
+                         type_code: int = 1) -> int | None:
         """
         回复指定的 Bilibili 评论 (发送楼中楼评论)。
         在发送回复前，此方法会先尝试为被回复的评论（父评论）点赞。
@@ -631,10 +635,10 @@ class BilibiliCommenter:
         })
 
         # 根据 use_proxy 决定此次请求是否走代理
-        proxies = {"http": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"} if use_proxy else {
-            "http": None, "https": None
-        }
-
+        proxies = self.all_params.get("proxies", {
+                "http": None,
+                "https": None
+            })
         try:
             response = self.session.post(full_url, data=signed_post_body_data, proxies=proxies)
             response.raise_for_status()
@@ -672,8 +676,7 @@ class BilibiliCommenter:
                      type_code: int = 1,
                      forward_to_dynamic: bool = False,
                      like_video: bool = False,
-                     image_path: str = "",
-                     use_proxy: bool = False) -> int | None:
+                     image_path: str = "") -> int | None:
         """
         发送 Bilibili 评论，并可在内部上传图片。
         :param bvid: 视频 BV 号。
@@ -752,14 +755,10 @@ class BilibiliCommenter:
             self.session.headers.update({"Referer": f"https://www.bilibili.com/video/{bvid}/"})
 
             # 再次确保最终请求使用明确的代理策略
-            proxies = {
-                "http": "http://127.0.0.1:7890",
-                "https": "http://127.0.0.1:7890",
-            } if use_proxy else {
+            proxies = self.all_params.get("proxies", {
                 "http": None,
                 "https": None
-            }
-
+            })
             try:
                 resp = self.session.post(self._COMMENT_ADD_API_URL, data=signed_data, proxies=proxies)
                 resp.raise_for_status()

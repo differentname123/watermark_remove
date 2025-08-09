@@ -1545,30 +1545,63 @@ def init_config():
     # 账号配置：key 是 config_map 中的 UID，value 是账号的前缀（name）
     accounts = {
         '443415885': 'dahao',
-        '35891943': 'tao',
         '3546954575383021': 'mama',
-        '1223805908': 'ruru',
         '3546717871934392': 'nana',
+        '1223805908': 'ruru',
+        '35891943': 'tao',
+
         '202157045': 'jie',
         '131446458': 'qiqi',
         '477861377': 'yan',
-        '3546947310848473': 'hong',
-        '3546947566700892': 'su',
         '3546731853645896': 'xue',
         '336607792': 'cai',
+
+        '3546947310848473': 'hong',
+        '3546947566700892': 'su',
         # '3546909677455941': 'base'  # 如果需要恢复 base 账号，取消注释即可
     }
 
-    for uid, name in accounts.items():
+    # 三段代理：
+    # - 前5个账户使用 proxy_A
+    # - 中间5个账户为 None
+    # - 剩下的账户使用 last_proxy
+    proxy_A = {"http": "http://115.190.54.74:8888", "https": "http://115.190.54.74:8888"}
+    no_proxy = {"http": None,"https": None}
+    proxy_B = {"http": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"}
+
+    account_items = list(accounts.items())
+    n = len(account_items)
+
+    proxies_values = []
+    if n > 0:
+        proxies_values.extend([no_proxy] * min(5, n))
+    if n > 5:
+        proxies_values.extend([proxy_B] * min(5, n - 5))
+    if n > 10:
+        proxies_values.extend([proxy_A] * (n - 10))
+
+    for idx in range(n):
+        uid, name = account_items[idx]
         sessdata = get_config(f"{name}_bilibili_sessdata_cookie")
         bili_jct = get_config(f"{name}_bilibili_csrf_token")
         total_cookie = get_config(f"{name}_bilibili_total_cookie")
+        proxies = proxies_values[idx] if idx < len(proxies_values) else last_proxy
+
+        all_params = {
+            "uid": uid,
+            "name": name,
+            "SESSDATA": sessdata,
+            "BILI_JCT": bili_jct,
+            "total_cookie": total_cookie,
+            "proxies": proxies
+        }
 
         config_map[uid] = {
             "name": name,
             "SESSDATA": sessdata,
             "BILI_JCT": bili_jct,
-            "total_cookie": total_cookie
+            "total_cookie": total_cookie,
+            "all_params": all_params
         }
 
     return config_map
