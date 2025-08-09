@@ -1208,7 +1208,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 if posted_rpid:
                     comment_used_list.append(comment_text)
                     success_comment_count += 1
-                    print(f"评论发送流程成功完成！ {comment_text} BVID: {bvid} | UID: {uid}")
+                    print(f"评论发送流程成功完成！ {comment_text} BVID: {bvid} | UID: {uid} {success_comment_count}")
                 else:
                     print(f"评论发送流程失败。  {comment_text} BVID: {bvid} | UID: {uid}")
                 break
@@ -1227,7 +1227,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 if posted_rpid:
                     comment_used_list.append(comment_text)
                     success_comment_count += 1
-                    print(f"评论发送流程成功完成！ {comment_text} BVID: {bvid} | UID: {uid}")
+                    print(f"评论发送流程成功完成！ {comment_text} BVID: {bvid} | UID: {uid} {success_comment_count}")
                 else:
                     print(f"评论发送流程失败。  {comment_text} BVID: {bvid} | UID: {uid}")
                 break

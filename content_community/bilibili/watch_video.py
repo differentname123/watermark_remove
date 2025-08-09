@@ -183,7 +183,7 @@ def simulate_watch_video(sessdata: str, bili_jct: str, bvid: str):
         return
 
     # 2/3: 心跳
-    logging.info("开始心跳模拟...")
+    # logging.info("开始心跳模拟...")
     start_ts = int(time.time())
     played = 0
     while played < duration and played < 150:
@@ -200,7 +200,8 @@ def simulate_watch_video(sessdata: str, bili_jct: str, bvid: str):
                 data=payload, timeout=REQUEST_TIMEOUT
             ).json()
             if hb.get('code') == 0:
-                logging.info(f"心跳: {played}/{duration}s")
+                # logging.info(f"心跳: {played}/{duration}s")
+                pass
             else:
                 logging.warning(f"心跳失败: {hb}")
                 if hb.get('code') == -101:
