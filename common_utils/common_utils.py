@@ -1538,3 +1538,37 @@ def split_text(text: str, max_len: int) -> List[str]:
         start = cut
 
     return parts
+
+def init_config():
+    config_map = {}
+
+    # 账号配置：key 是 config_map 中的 UID，value 是账号的前缀（name）
+    accounts = {
+        '443415885': 'dahao',
+        '35891943': 'tao',
+        '3546954575383021': 'mama',
+        '1223805908': 'ruru',
+        '3546717871934392': 'nana',
+        '202157045': 'jie',
+        '131446458': 'qiqi',
+        '477861377': 'yan',
+        '3546947310848473': 'hong',
+        '3546947566700892': 'su',
+        '3546731853645896': 'xue',
+        '336607792': 'cai',
+        # '3546909677455941': 'base'  # 如果需要恢复 base 账号，取消注释即可
+    }
+
+    for uid, name in accounts.items():
+        sessdata = get_config(f"{name}_bilibili_sessdata_cookie")
+        bili_jct = get_config(f"{name}_bilibili_csrf_token")
+        total_cookie = get_config(f"{name}_bilibili_total_cookie")
+
+        config_map[uid] = {
+            "name": name,
+            "SESSDATA": sessdata,
+            "BILI_JCT": bili_jct,
+            "total_cookie": total_cookie
+        }
+
+    return config_map

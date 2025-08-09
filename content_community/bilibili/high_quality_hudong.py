@@ -14,7 +14,7 @@ import json
 import threading
 from queue import Queue, Empty
 from content_community.bilibili.get_comment import get_bilibili_comments
-from common_utils.common_utils import get_config
+from common_utils.common_utils import get_config, init_config
 # 评论相关代码保留，但暂时不使用
 from content_community.bilibili.comment import BilibiliCommenter
 from content_community.bilibili.get_danmu import gen_proper_comment
@@ -1181,8 +1181,14 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     comment_list = hudong_info.get('comment_list', [])
     comment_used_list = hudong_info.get('comment_used', [])
     comment_used_list.extend(exist_comment_text)
-
-    for commenter in commenter_map.values():
+    success_comment_count = 0
+    commenter_list = list(commenter_map.values())
+    # 打乱顺序
+    random.shuffle(commenter_list)
+    for commenter in commenter_list:
+        if success_comment_count > 5:
+            print("已达到最大成功评论数，停止处理。")
+            break
         for detail_comment in comment_list:
             comment_text = detail_comment[0]
             if comment_text in comment_used_list or len(comment_text) == 0:
@@ -1201,6 +1207,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
                 if posted_rpid:
                     comment_used_list.append(comment_text)
+                    success_comment_count += 1
                     print(f"评论发送流程成功完成！ {comment_text} BVID: {bvid} | UID: {uid}")
                 else:
                     print(f"评论发送流程失败。  {comment_text} BVID: {bvid} | UID: {uid}")
@@ -1219,6 +1226,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
                 if posted_rpid:
                     comment_used_list.append(comment_text)
+                    success_comment_count += 1
                     print(f"评论发送流程成功完成！ {comment_text} BVID: {bvid} | UID: {uid}")
                 else:
                     print(f"评论发送流程失败。  {comment_text} BVID: {bvid} | UID: {uid}")
@@ -1240,40 +1248,6 @@ def fix_metadata_cache_with_uploads(all_found_videos, metadata_cache_with_upload
                 print(f"修正视频标题 {title} 的 BVID: {video_info['upload_info']['upload_result']['bvid']} -> {bvid}")
                 video_info['upload_info']['upload_result']['bvid'] = bvid
                 save_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json', metadata_cache_with_uploads)
-
-def init_config():
-    config_map = {}
-
-    # 账号配置：key 是 config_map 中的 UID，value 是账号的前缀（name）
-    accounts = {
-        '443415885': 'dahao',
-        '35891943': 'tao',
-        '3546954575383021': 'mama',
-        '1223805908': 'ruru',
-        '3546717871934392': 'nana',
-        '202157045': 'jie',
-        '131446458': 'qiqi',
-        '477861377': 'yan',
-        '3546947310848473': 'hong',
-        '3546947566700892': 'su',
-        '3546731853645896': 'xue',
-        '336607792': 'cai',
-        # '3546909677455941': 'base'  # 如果需要恢复 base 账号，取消注释即可
-    }
-
-    for uid, name in accounts.items():
-        sessdata = get_config(f"{name}_bilibili_sessdata_cookie")
-        bili_jct = get_config(f"{name}_bilibili_csrf_token")
-        total_cookie = get_config(f"{name}_bilibili_total_cookie")
-
-        config_map[uid] = {
-            "name": name,
-            "SESSDATA": sessdata,
-            "BILI_JCT": bili_jct,
-            "total_cookie": total_cookie
-        }
-
-    return config_map
 
 
 stop_event = threading.Event()

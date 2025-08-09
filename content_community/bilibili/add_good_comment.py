@@ -6,12 +6,12 @@ import traceback
 from typing import Any, Dict, List, Optional
 
 from LLM.gemini import get_llm_content
-from common_utils.common_utils import read_json, get_config, save_json_safe
+from common_utils.common_utils import read_json, get_config, save_json_safe, init_config
 from content_community.bilibili.bili_utils import fetch_goods, update_short_url, list_selection_car_items
 from content_community.bilibili.comment import BilibiliCommenter
 from content_community.bilibili.get_comment import get_bilibili_comments
 from content_community.bilibili.get_danmu import string_to_list
-from content_community.bilibili.high_quality_hudong import init_config, find_video_by_bvid
+from content_community.bilibili.high_quality_hudong import find_video_by_bvid
 from common_utils.common_utils import string_to_object, save_json_safe, read_json
 
 BASE_DIR = 'goods_info'
@@ -673,9 +673,10 @@ def auto_replay(user_name):
             exist_shill_comments = record.get('exist_shill_comments', [])
             exist_shill_users = record.get('exist_shill_users', [])
             last_processed_date = record.get('last_processed_date', '')
-            if not rpid or not good_name or last_processed_date == today:
-                # print(f"{user_name} 视频 {bvid} 没有 rpid，{rpid},  没有 good_name，{good_name}跳过。最近处理日期 {last_processed_date}，今天日期 {today}")
-                continue
+            if len(exist_shill_comments) >= 2:
+                if not rpid or not good_name or last_processed_date == today:
+                    # print(f"{user_name} 视频 {bvid} 没有 rpid，{rpid},  没有 good_name，{good_name}跳过。最近处理日期 {last_processed_date}，今天日期 {today}")
+                    continue
             product_recommendations = record.get('final_goods', {}).get('product_recommendations', [])
             # 遍历product_recommendations找到good_name对应的商品
             target_product = None
@@ -694,7 +695,7 @@ def auto_replay(user_name):
             for shill_comment in shill_comments:
                 if success_count > 3: # 单次回复数量限制
                     print(f"用户 {user_name} 已经成功回复 {success_count} 条评论，跳过剩余评论。")
-                    time.sleep(10)
+                    time.sleep(60)
                     break
                 for commenter_name, commenter in commenter_items:
                     if commenter_name in exist_shill_users:
@@ -713,6 +714,8 @@ def auto_replay(user_name):
                         record['exist_shill_users'] = exist_shill_users
                         print(f"{commenter_name} 回复用户 {user_name} 成功: 视频 {bvid}，评论 {reply_rpid} 内容: {shill_comment}")
                         break
+                    else:
+                        time.sleep(60)
         except Exception as e:
             print(f"用户 {user_name} 回复视频 {bvid} 时出错: {e}")
             traceback.print_exc()
@@ -723,8 +726,8 @@ def auto_replay(user_name):
 
 
 if __name__ == '__main__':
-    username_list = ['cai', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru']
-    # username_list = ['ruru']
+    username_list = ['cai', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru', 'xue']
+    # username_list = ['xue']
     RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600
 
     print("--- 主进程启动，准备为每个用户创建独立的子进程 ---")

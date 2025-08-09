@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from common_utils.common_utils import get_config
+from common_utils.common_utils import get_config, init_config
 
 # 配置日志
 logging.basicConfig(
@@ -23,12 +23,14 @@ logging.basicConfig(
 # 心跳间隔时间（秒），Web 端默认为 15 秒
 HEARTBEAT_INTERVAL = 15
 REQUEST_TIMEOUT = 10  # seconds
+config_map = init_config()
 config_list = []
-for role in ["dahao_", "mama_", "nana_", "ruru_", ""]:
-    total = get_config(f"{role}bilibili_total_cookie")
-    csrf = get_config(f"{role}bilibili_csrf_token")
+for uid, info in config_map.items():
+    total = info.get("total_cookie")
+    csrf = info.get("BILI_JCT")
     if total and csrf:
         config_list.append((total, csrf))
+
 
 
 def create_session():
@@ -233,7 +235,7 @@ def simulate_watch_video_with_log(sessdata, bili_jct, bvid):
         logging.error(f"线程执行出错: {e}")
 
 
-def run_parallel_watch(config_list, bvid, max_workers=5):
+def run_parallel_watch(config_list, bvid, max_workers=15):
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
             executor.submit(simulate_watch_video_with_log, s, t, bvid)
