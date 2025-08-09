@@ -454,7 +454,7 @@ def send_good_comment(
         key=lambda item: float(item.get('estimated_ctr') or 0) * float(item.get('score') or 0),
         reverse=True
     )
-
+    print(f"找到 {len(sorted_recs)} 条商品推荐，按预估点击率和评分排序。过滤前推荐数量: {len(recommendations)}")
     # 2. 获取完整商品信息列表
     property_goods: List[Dict[str, Any]] = final_goods_record.get('property_goods', [])
 
