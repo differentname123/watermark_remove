@@ -110,6 +110,7 @@ API_KEY_chu2 = get_config("gemini_api_key_chu2")
 API_KEY_chu3 = get_config("gemini_api_key_chu3")
 API_KEY_chu4 = get_config("gemini_api_key_chu4")
 API_KEY_chu5 = get_config("gemini_api_key_chu5")
+API_KEY_chu6 = get_config("gemini_api_key_chu6")
 
 
 API_KEY_MAP = {
@@ -123,7 +124,8 @@ API_KEY_MAP = {
     'chu2': API_KEY_chu2,
     'chu3': API_KEY_chu3,
     'chu4': API_KEY_chu4,
-    'chu5': API_KEY_chu5
+    'chu5': API_KEY_chu5,
+    'chu6': API_KEY_chu6
 }
 
 # 创建一个全局的 Key Manager 实例

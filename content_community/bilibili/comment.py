@@ -916,7 +916,7 @@ if __name__ == "__main__":
         exit()
 
     target_bvid = "BV1c3t1zDEzw"
-    comment_text = f"这是一条由脚本发送的顶级评论! [{time.strftime('%Y-%m-%d %H:%M:%S')}]"
+    comment_text = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}]"
     comment_type = 1
 
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
@@ -929,23 +929,23 @@ if __name__ == "__main__":
         target_bvid, comment_text, comment_type,
         like_video=True    )
 
-    # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
-    if posted_rpid:
-        print("-" * 30)
-        print(f"步骤 2: 顶级评论发送成功，rpid 为 {posted_rpid}。现在尝试回复这条评论...")
-        time.sleep(3)
-        reply_text = f"这是对 rpid={posted_rpid} 的回复。[{time.strftime('%Y-%m-%d %H:%M:%S')}]"
-        reply_rpid = commenter.reply_to_comment(
-            bvid=target_bvid, message_content=reply_text,
-            root_rpid=posted_rpid, parent_rpid=posted_rpid, type_code=comment_type,use_proxy=True
-        )
-        if reply_rpid:
-            print("\n回复操作成功完成！")
-        else:
-            print("\n回复操作失败。")
-    else:
-        print("-" * 30)
-        print("顶级评论发送失败，无法进行回复操作。")
+    # # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
+    # if posted_rpid:
+    #     print("-" * 30)
+    #     print(f"步骤 2: 顶级评论发送成功，rpid 为 {posted_rpid}。现在尝试回复这条评论...")
+    #     time.sleep(3)
+    #     reply_text = f"这是对 rpid={posted_rpid} 的回复。[{time.strftime('%Y-%m-%d %H:%M:%S')}]"
+    #     reply_rpid = commenter.reply_to_comment(
+    #         bvid=target_bvid, message_content=reply_text,
+    #         root_rpid=posted_rpid, parent_rpid=posted_rpid, type_code=comment_type,use_proxy=True
+    #     )
+    #     if reply_rpid:
+    #         print("\n回复操作成功完成！")
+    #     else:
+    #         print("\n回复操作失败。")
+    # else:
+    #     print("-" * 30)
+    #     print("顶级评论发送失败，无法进行回复操作。")
     # #
     # # # --- 步骤 3: 发送一条弹幕 ---
     # # print("-" * 30)
