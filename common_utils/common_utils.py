@@ -1550,14 +1550,17 @@ def init_config():
         '1223805908': 'ruru',
         '35891943': 'tao',
 
+        '3546947310848473': 'hong',
+        '3546947566700892': 'su',
+
+
         '202157045': 'jie',
         '131446458': 'qiqi',
         '477861377': 'yan',
         '3546731853645896': 'xue',
         '336607792': 'cai',
 
-        '3546947310848473': 'hong',
-        '3546947566700892': 'su',
+
         # '3546909677455941': 'base'  # 如果需要恢复 base 账号，取消注释即可
     }
 
@@ -1572,20 +1575,27 @@ def init_config():
     account_items = list(accounts.items())
     n = len(account_items)
 
-    proxies_values = []
-    if n > 0:
-        proxies_values.extend([no_proxy] * min(5, n))
+    # n: 账户数量
+    proxies_values = [proxy_A] * n
+
+    # 前五个设为 no_proxy
+    for i in range(min(5, n)):
+        proxies_values[i] = no_proxy
+
+    # 第6个位置（索引 5）若存在，设为 proxy_B
     if n > 5:
-        proxies_values.extend([proxy_B] * min(5, n - 5))
-    if n > 10:
-        proxies_values.extend([proxy_A] * (n - 10))
+        proxies_values[5] = proxy_B
+
+    # 第7个位置（索引 6）若存在，设为 proxy_B
+    if n > 6:
+        proxies_values[6] = proxy_B
 
     for idx in range(n):
         uid, name = account_items[idx]
         sessdata = get_config(f"{name}_bilibili_sessdata_cookie")
         bili_jct = get_config(f"{name}_bilibili_csrf_token")
         total_cookie = get_config(f"{name}_bilibili_total_cookie")
-        proxies = proxies_values[idx] if idx < len(proxies_values) else last_proxy
+        proxies = proxies_values[idx] if idx < len(proxies_values) else no_proxy
 
         all_params = {
             "uid": uid,

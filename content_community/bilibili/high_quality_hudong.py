@@ -26,8 +26,8 @@ from content_community.bilibili.watch_video import watch_video
 URL_MODIFY_RELATION = "https://api.bilibili.com/x/relation/modify"
 
 # --- 2. 全局配置 ---
-total_cookie = get_config("bilibili_total_cookie")
-csrf_token = get_config("bilibili_csrf_token")
+total_cookie = get_config("dahao_bilibili_total_cookie")
+csrf_token = get_config("dahao_bilibili_csrf_token")
 
 CONFIG = {
     "STRATEGIES": {
