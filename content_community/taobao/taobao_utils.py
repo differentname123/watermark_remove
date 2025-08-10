@@ -1,9 +1,98 @@
+# -- coding: utf-8 --
+""":authors:
+    zhuxiaohu
+:create_date:
+    2025/8/11 3:59
+:last_date:
+    2025/8/11 3:59
+:description:
+    
+"""
 import requests
 import time
 import json
 import re
 from urllib.parse import quote  # <--- 1. 引入 quote 函数
 
+def create_favorites(cookie_string: str, search_keyword: str = "牛肉干"):
+    """
+    复制 Alimama 的 fetch 请求。
+
+    :param cookie_string: 从浏览器中获取的完整 cookie 字符串。
+    :param search_keyword: 你想要搜索的商品关键词。
+    :return: 成功时返回解析后的 JSON 数据 (dict)，失败时返回 None。
+    """
+
+    # 1. 构造请求头 (Headers)
+    # 尽可能与浏览器保持一致，包括添加一个匹配的 User-Agent
+    headers = {
+        "accept": "*/*",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "bx-v": "2.5.11",
+        "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "priority": "u=1, i",
+        "sec-ch-ua": "\"Not)A;Brand\";v=\"8\", \"Chromium\";v=\"138\", \"Google Chrome\";v=\"138\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "x-requested-with": "XMLHttpRequest",
+        # 从你的 fetch 请求中复制 Referer
+        "Referer": "https://pub.alimama.com/portal/v2/pages/promo/goods/index.htm?pageNum=1&pageSize=30&filters=%257B%257D&fn=search&q=%E7%89%9B%E8%82%89%E5%B9%B2&sort=max_tk_rate%3Ades&selected=%257B%257D&floorId=80674",
+        # 添加一个匹配的 User-Agent
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+        # 将你的 cookie 字符串放入请求头
+        "Cookie": cookie_string
+    }
+
+    # 2. 构造 URL 参数 (Query Parameters)
+
+    # 尝试从 cookie 中提取 _tb_token_
+    tb_token_match = re.search(r'_tb_token_=(\w+);?', cookie_string)
+    if not tb_token_match:
+        print("警告：无法从 Cookie 字符串中找到 '_tb_token_'。请求可能会失败。")
+        tb_token = "e0847b7001a9b"  # 使用你提供的默认值作为后备
+    else:
+        tb_token = tb_token_match.group(1)
+
+    # 准备 _data_ 参数的原始内容
+    data_payload = {
+        "floorId": 31401,
+        "refpid": "mm_328750149_0_0",
+        "variableMap": {
+            "title": search_keyword
+        }
+    }
+
+    # 将 data_payload 转换为紧凑的 JSON 字符串
+    data_json_string = json.dumps(data_payload, separators=(',', ':'))
+
+    params = {
+        "t": int(time.time() * 1000),  # 生成当前的13位毫秒时间戳
+        "_tb_token_": tb_token,
+        "_data_": data_json_string
+    }
+
+    # 3. 发送 GET 请求
+    base_url = "https://pub.alimama.com/openapi/json2/1/gateway.unionpub/xt.entry.json"
+
+    try:
+        response = requests.get(base_url, headers=headers, params=params, timeout=10)
+
+        # 检查请求是否成功
+        response.raise_for_status()  # 如果状态码不是 2xx，则会抛出异常
+
+        # 尝试解析 JSON 响应
+        return response.json()
+
+    except requests.exceptions.RequestException as e:
+        print(f"请求发生错误: {e}")
+    except json.JSONDecodeError:
+        print("解析 JSON 响应失败，返回原始文本内容:")
+        print(response.text)
+
+    return None
 
 def fetch_alimama_data(cookie_string: str, pid: str, search_query: str, target_num: int = 100):
     """
@@ -74,7 +163,7 @@ def fetch_alimama_data(cookie_string: str, pid: str, search_query: str, target_n
                 "q": search_query,
                 "curSelected": {},
                 "pubFloorId": 80674,
-                "sort": "default",
+                "sort": "max_tk_rate:des",
                 "tk_navigator": "true",
                 "union_lens": "b_pvid:a219t._portal_v2_pages_promo_goods_index_htm_1754819807788_16588432743269266_ccPDH",
                 "lensScene": "PUB",
@@ -130,10 +219,106 @@ def fetch_alimama_data(cookie_string: str, pid: str, search_query: str, target_n
 
     # --- 5. 返回最终结果 ---
     # 对结果进行切片，确保最多只返回 target_num 个商品
-    final_results = all_products[:target_num]
+    final_results = all_products
     print(f"\n抓取完成！共获取 {len(final_results)} 条商品。")
     return final_results
 
+
+def add_to_favorites_final(
+        cookie_string: str,
+        item_id_list,  # 接收加密的 itemID
+        union_lens_str: str,  # 新增：接收 union_lens 字符串
+        destination_folder_id: int,
+        destination_rule_id: int,
+        source_floor_id: int = 80674,
+        refpid: str = "mm_328750149_0_0"
+):
+    """
+    将一个或多个商品添加到淘宝联盟的收藏夹 (最终精确版)。
+    此版本完全模拟原始请求，包括所有跟踪参数。
+
+    :param cookie_string: 完整 cookie 字符串。
+    :param item_id_list: 需要收藏的商品【加密ID】列表。
+    :param union_lens_str: 从原始请求中复制的 union_lens 字符串。
+    :param destination_folder_id: 目标收藏夹的 ID (finalFloorId)。
+    :param destination_rule_id: 目标收藏夹配对的规则 ID (finalZsRuleId)。
+    :param source_floor_id: 商品来源的 floorId。
+    :param refpid: 你的推广位 ID。
+    :return: 成功时返回解析后的 JSON 数据 (dict)，失败时返回 None。
+    """
+    headers = {
+        "accept": "*/*",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "bx-v": "2.5.11",
+        "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "priority": "u=1, i",
+        "sec-ch-ua": "\"Not)A;Brand\";v=\"8\", \"Chromium\";v=\"138\", \"Google Chrome\";v=\"138\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "x-requested-with": "XMLHttpRequest",
+        "Referer": "https://pub.alimama.com/portal/v2/pages/promo/goods/index.htm",
+        "Origin": "https://pub.alimama.com",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+        "Cookie": cookie_string
+    }
+
+    tb_token_match = re.search(r'_tb_token_=(\w+);?', cookie_string)
+    if not tb_token_match:
+        print("错误：无法从 Cookie 字符串中找到 '_tb_token_'。请求中止。")
+        return None
+    tb_token = tb_token_match.group(1)
+
+    # 这里的 item_id 使用你提供的加密ID
+    item_list_for_json = [{"itemId": item_id, "floorId": source_floor_id} for item_id in item_id_list]
+    item_list_string = json.dumps(item_list_for_json, separators=(',', ':'))
+
+    # --- 关键修正：完整复制 variableMap 结构 ---
+    data_payload = {
+        "floorId": 70519,
+        "refpid": refpid,
+        "variableMap": {
+            "firstZsRuleId": [],
+            "firstFloorId": [],
+            "itemList": item_list_string,
+            "finalZsRuleIdList": [destination_rule_id],
+            "finalFloorIdList": [destination_folder_id],
+            # 将跟踪参数加回来
+            "union_lens": union_lens_str,
+            "lensScene": "PUB",
+            "spmB": "_portal_v2_pages_promo_goods_index_htm"
+        }
+    }
+
+    data_json_string = json.dumps(data_payload, separators=(',', ':'))
+
+    post_body = {
+        "t": int(time.time() * 1000),
+        "_tb_token_": tb_token,
+        "_data_": data_json_string
+    }
+
+    url = "https://pub.alimama.com/openapi/json2/1/gateway.unionpub/xt.entry.json"
+
+    try:
+        response = requests.post(url, headers=headers, data=post_body, timeout=10)
+        response.raise_for_status()
+        json_response = response.json()
+
+        if json_response.get("info", {}).get("ok"):
+            print(f"成功将 {len(item_id_list)} 个商品添加到收藏夹！消息: {json_response.get('info', {}).get('message')}")
+            return json_response
+        else:
+            print("添加到收藏夹操作失败。请检查所有参数，特别是 Cookie 和 union_lens 是否为最新。")
+            print("服务器响应:")
+            print(json.dumps(json_response, indent=2, ensure_ascii=False))
+            return None
+
+    except Exception as e:
+        print(f"请求或解析过程中发生严重错误: {e}")
+    return None
 
 # ==============================================================================
 # ---                        ↓↓↓ 在这里修改你的信息 ↓↓↓                         ---
@@ -153,22 +338,6 @@ if __name__ == "__main__":
     search_result = fetch_alimama_data(
         cookie_string=MY_COOKIE_STRING,
         pid=MY_PID,
-        search_query=search_term,
-        # page_num=page_to_fetch
+        search_query=search_term
     )
-
-    if search_result:
-        item_list = search_result.get('list', [])
-        if item_list:
-            print(f"\n成功获取到 {len(item_list)} 条商品信息。")
-            print("-" * 30)
-            print("第一个商品信息示例:")
-            first_item = item_list[0]
-            print(f"  商品标题: {first_item.get('title')}")
-            print(f"  券后价: {first_item.get('price')}")
-            print(f"  30天销量: {first_item.get('biz30day')}")
-            print(f"  佣金率: {first_item.get('commissionRate', 'N/A')}%")
-            print(f"  商品链接: {first_item.get('itemUrl')}")
-            print("-" * 30)
-        else:
-            print("请求成功，但返回数据中没有商品列表。可能是搜索结果为空或API返回的数据结构已改变。")
+    print(f"\n共获取到 {len(search_result)} 条商品数据。")

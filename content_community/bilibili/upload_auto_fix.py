@@ -86,9 +86,15 @@ def fetch_all_archives(cookie_str: str) -> List[Dict]:
 
 if __name__ == '__main__':
     # 示例调用
-    COOKIE_STRING = get_config("ruru_bilibili_total_cookie")
-    items = fetch_all_archives(COOKIE_STRING)
-    bvid_list = find_key_values(items, 'bvid')
+    name_list = ['ruru', 'qiqi', 'jie', 'yan', 'cai']
+    name_list = ['nana']
+
+    all_items = []
+    for name in name_list:
+        COOKIE_STRING = get_config(f"{name}_bilibili_total_cookie")
+        items = fetch_all_archives(COOKIE_STRING)
+        all_items.extend(items)
+    bvid_list = find_key_values(all_items, 'bvid')
     bvid_list = list(set(bvid_list))
     print(f'共获取 {len(bvid_list)} 个 BVID')
     metadata_cache_with_uploads = {}

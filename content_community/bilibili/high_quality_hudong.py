@@ -1066,7 +1066,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     # 打乱顺序
     random.shuffle(commenter_list)
     for commenter in commenter_list:
-        if success_comment_count > 5:
+        if success_comment_count > 15:
             print("已达到最大成功评论数，停止处理。")
             break
         for detail_comment in comment_list:
