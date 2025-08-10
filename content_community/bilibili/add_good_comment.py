@@ -449,7 +449,7 @@ def send_good_comment(
     sorted_recs = sorted(
         [
             item for item in recommendations
-            if (float(item.get('estimated_ctr') or 0) * float(item.get('score') or 0)) >= 1.3
+            if (float(item.get('estimated_ctr') or 0) * float(item.get('score') or 0)) >= 0
         ],
         key=lambda item: float(item.get('estimated_ctr') or 0) * float(item.get('score') or 0),
         reverse=True
