@@ -185,9 +185,9 @@ def auto_upload():
     # 1. 读取元数据 & 上传日志
     metadata_cache: dict = load_json(METADATA_FILE, default={})
     upload_log: dict = load_json(UPLOAD_LOG_FILE, default={})
-    if not upload_log:
-        print(f"❌ 上传日志文件 {UPLOAD_LOG_FILE} 不存在或为空，请检查。")
-        return
+    # if not upload_log:
+    #     print(f"❌ 上传日志文件 {UPLOAD_LOG_FILE} 不存在或为空，请检查。")
+    #     return
 
     if not metadata_cache:
         print(f"❌ 无可用任务：{METADATA_FILE} 为空或不存在。")

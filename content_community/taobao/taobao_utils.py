@@ -14,6 +14,9 @@ import json
 import re
 from urllib.parse import quote  # <--- 1. 引入 quote 函数
 
+from common_utils.common_utils import get_config
+
+
 def create_favorites(cookie_string: str, search_keyword: str = "牛肉干"):
     """
     复制 Alimama 的 fetch 请求。
@@ -94,7 +97,7 @@ def create_favorites(cookie_string: str, search_keyword: str = "牛肉干"):
 
     return None
 
-def fetch_alimama_data(cookie_string: str, pid: str, search_query: str, target_num: int = 100):
+def fetch_alimama_data( search_query: str,cookie_string=get_config("taobao_cookie"), pid='mm_328750149_3161250458_116106650269', target_num: int = 10):
     """
     模拟请求阿里妈妈商品搜索接口，并持续获取数据直到满足目标数量或无更多数据。
 
@@ -144,10 +147,10 @@ def fetch_alimama_data(cookie_string: str, pid: str, search_query: str, target_n
 
     # --- 4. 循环获取数据 ---
     all_products = []
-    current_page = 1
+    current_page = 0
 
     while len(all_products) < target_num:
-        print(f"\n正在尝试获取第 {current_page} 页的数据...")
+        # print(f"\n正在尝试获取第 {current_page} 页的数据...")
 
         # --- 4.1 准备每一页的动态Payload ---
         # 注意：extras_dict 必须在循环内部创建，因为 pageNum 在每次循环时都会改变
@@ -220,7 +223,7 @@ def fetch_alimama_data(cookie_string: str, pid: str, search_query: str, target_n
     # --- 5. 返回最终结果 ---
     # 对结果进行切片，确保最多只返回 target_num 个商品
     final_results = all_products
-    print(f"\n抓取完成！共获取 {len(final_results)} 条商品。")
+    # print(f"\n抓取完成！共获取 {len(final_results)} 条商品。")
     return final_results
 
 
@@ -325,12 +328,12 @@ def add_to_favorites_final(
 # ==============================================================================
 if __name__ == "__main__":
 
-    MY_COOKIE_STRING = "cna=ccPDH0JbtmsCAWckGUfpiloU; lid=%E4%B8%8D%E5%90%8C%E5%90%8D%E5%AD%97123; wk_unb=UNN79H%2FqRhK1kg%3D%3D; wk_cookie2=19ec7d0497f9c798f71663b36ddae082; dnk=%5Cu4E0D%5Cu540C%5Cu540D%5Cu5B57123; tracknick=%5Cu4E0D%5Cu540C%5Cu540D%5Cu5B57123; _l_g_=Ug%3D%3D; unb=3365477897; lgc=; cookie1=W5w2OF288oV%2BtWjJFbZNhuMaU%2FI4uoNXm4fklxnMplE%3D; login=true; cookie17=UNN79H%2FqRhK1kg%3D%3D; cookie2=2dbc15e660671f2e6ef995d9d1ac89d0; _nk_=%5Cu4E0D%5Cu540C%5Cu540D%5Cu5B57123; cancelledSubSites=empty; sg=378; t=01e52fbaf67e9ab5ec694e335e7bb09b; csg=8c0f6d3e; sn=; _tb_token_=e0847b7001a9b; t_alimama=f6e837d245b3665e74a1f618e66bc89c; cookie2_alimama=1034ab7bcacc95395cc4a348751af259; v_alimama=0; arms_uid=d0fc7bca-b8e0-4f34-bc04-958ce8a70029; uc1=cookie16; havana_lgc_exp=1785776618227; sgcookie=E100GW%2FifobMliykmYdTLoanZvPLj%2BJOjl3Q1K18TcEKSAy86U7DWYTr%2FWOKBF%2BRmZK5vIBG%2Fqc73v0bW1dY%2F%2BplqE%2FvYvTA27UtkM%2Ber1vRspGsokAV5Q8x0%2F9zoIRenFMR; _m_h5_c=df3f68f10dc7b692edfb8e4d70e40647_1754792928595%3B89a37c17732d4653247d2d435e439393; isg=BLa23dIvwpadRLbysLEeqtGNB-y41_oR8lBAniCfORkpY1b9iGPGIRkQfz8PS_Ip; rurl=aHR0cHM6Ly9wdWIuYWxpbWFtYS5jb20vP2ZvcndhcmQ9aHR0cCUzQSUyRiUyRnB1Yi5hbGltYW1hLmNvbSUyRnBvcnRhbCUyRnYyJTJGZWZmZWN0JTJGb3JkZXIlMkZvdmVydmlld09yZGVyJTJGcGFnZSUyRmluZGV4Lmh0bQ%3D%3D; JSESSIONID=254EFDF77205FAB8D537780731860AE0; x5sectag=513267; x5sec=7b22733b32223a2264633930366339373737303935363536222c22617365727665723b33223a22307c434b375a34635147454937327767556144444d7a4e6a55304e7a63344f5463374d7a43366e7650392b2f2f2f2f2f3842227d; xlly_s=1; tfstk=gCsE8AARNkEesFG_A1KrgcSWHU-pT3Pb-gOWETXkdBAHVpTP7_1Gdeadd37NZ1LBt3tBrLf5sB0WrHXk4sfqABxWP_SPsCCBOHNJZ15C1g_IVTDyE1tHywOWOQ-Pesy_GoZfp9KJZSNbclmFMAtjK0xoNAcMVLkh8s_Rp9K-BAGulNXKUyCM1LvkZR-MUp0kqemujFA9E3mHrD0isCpkq3AHKfDMFp0nr203QOA9E3AlZe2wjCpkqQfkqAgVqMowTe2i9i8fno3MJIXH_0mqHLL3GT0SmmjwLeSlTCJ6CGJe8IY9zE5fx16lAMLT5VKRCZ5Pr_UjWHWl-Hvfpkowm9b14ds7F4Rh9GWGAFknxe7kUExk7YmlQHbMoGK0mfJOS9_lv6krqpICcURv78mJPhjXoZfEe-BMxLfJkgNxvBXlHiQX0lgHmO7lgaSPUbpicRSR8b0y-dpwGRywz5XjolBcTn3-yF29QIw4343J-dpwGRyZy4LG6dRb3-5.."
+    MY_COOKIE_STRING = get_config("taobao_cookie")
 
     # 步骤 2: 将下面的字符串替换为你自己的【推广位ID】
     MY_PID = "mm_328750149_0_0"
 
-    search_term = "牛肉干"
+    search_term = "电竞零食"
     page_to_fetch = 1
 
     print(f"准备搜索 '{search_term}' 的第 {page_to_fetch} 页商品...")
@@ -338,6 +341,7 @@ if __name__ == "__main__":
     search_result = fetch_alimama_data(
         cookie_string=MY_COOKIE_STRING,
         pid=MY_PID,
-        search_query=search_term
+        search_query=search_term,
+        target_num=10
     )
     print(f"\n共获取到 {len(search_result)} 条商品数据。")
