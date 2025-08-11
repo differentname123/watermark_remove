@@ -13,6 +13,7 @@ from content_community.bilibili.get_comment import get_bilibili_comments
 from content_community.bilibili.get_danmu import string_to_list
 from content_community.bilibili.high_quality_hudong import find_video_by_bvid
 from common_utils.common_utils import string_to_object, save_json_safe, read_json
+from content_community.taobao.taobao_utils import add_to_favorites
 
 BASE_DIR = 'goods_info'
 
@@ -727,8 +728,7 @@ def auto_replay(user_name):
             all_records[bvid] = record
             save_json_safe(all_records_file, all_records)
 
-
-if __name__ == '__main__':
+def add_to_favorites_batch():
     all_goods_file = f"{BASE_DIR}/all_goods_info.json"
     all_goods = read_json(all_goods_file)
     goods = all_goods.values()
@@ -744,16 +744,23 @@ if __name__ == '__main__':
         else:
             good['score'] = 0
     # 过滤掉 score 小于等于 1000 的商品
-    goods = [good for good in goods if good.get('score', 0) > 2000]
+    goods = [good for good in goods if good.get('score', 0) > 200]
     # 过滤掉tkTotalSales为空的，且tkTotalSales要大于10
-    goods = [good for good in goods if good.get('tkTotalSales') and float(good.get('tkTotalSales', 0)) > 10]
-
-
-
-
+    goods = [good for good in goods if good.get('tkTotalSales') and float(good.get('tkTotalSales', 0)) > 10  and float(good.get('finalPromotionPrice', 0)) < 100]
     # 将goods按照calTkRate降序排序，注意先要尝试对calTkRate进行转换为float类型
-    goods = sorted(goods, key=lambda x: float(x.get('score', 0)), reverse=False)
+    goods = sorted(goods, key=lambda x: float(x.get('score', 0)), reverse=True)
+    sample_item_ids = [good['itemId'] for good in goods[:50]]
+    my_favorites_folder_id = 2147843042
+    my_favorites_rule_id = 2147854042
+    result = add_to_favorites(
+        item_id_list=sample_item_ids,
+        destination_folder_id=my_favorites_folder_id,
+        destination_rule_id=my_favorites_rule_id
+    )
 
+
+if __name__ == '__main__':
+    add_to_favorites_batch()
     username_list = ['cai', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru', 'xue']
     # username_list = ['tao']
     RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600

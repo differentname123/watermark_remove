@@ -228,28 +228,26 @@ def fetch_alimama_data( search_query: str,cookie_string=get_config("zhu_taobao_c
     return final_results
 
 
-def add_to_favorites_final(
-        cookie_string: str,
+def add_to_favorites(
         item_id_list,  # 接收加密的 itemID
-        union_lens_str: str,  # 新增：接收 union_lens 字符串
         destination_folder_id: int,
         destination_rule_id: int,
+        cookie_string=get_config("dahao_taobao_cookie"),
         source_floor_id: int = 80674,
         refpid: str = "mm_328750149_0_0"
 ):
     """
-    将一个或多个商品添加到淘宝联盟的收藏夹 (最终精确版)。
-    此版本完全模拟原始请求，包括所有跟踪参数。
+      将一个或多个商品添加到淘宝联盟的收藏夹 (修正版)。
 
-    :param cookie_string: 完整 cookie 字符串。
-    :param item_id_list: 需要收藏的商品【加密ID】列表。
-    :param union_lens_str: 从原始请求中复制的 union_lens 字符串。
-    :param destination_folder_id: 目标收藏夹的 ID (finalFloorId)。
-    :param destination_rule_id: 目标收藏夹配对的规则 ID (finalZsRuleId)。
-    :param source_floor_id: 商品来源的 floorId。
-    :param refpid: 你的推广位 ID。
-    :return: 成功时返回解析后的 JSON 数据 (dict)，失败时返回 None。
-    """
+      :param cookie_string: 完整 cookie 字符串。
+      :param item_id_list: 需要收藏的商品 ID 列表。
+      :param destination_folder_id: 目标收藏夹的 ID (finalFloorId)。
+      :param destination_rule_id: 目标收藏夹配对的规则 ID (finalZsRuleId)。
+      :param source_floor_id: 商品来源的 floorId。
+      :param refpid: 你的推广位 ID。
+      :return: 成功时返回解析后的 JSON 数据 (dict)，失败时返回 None。
+      """
+
     headers = {
         "accept": "*/*",
         "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
@@ -264,8 +262,8 @@ def add_to_favorites_final(
         "sec-fetch-site": "same-origin",
         "x-requested-with": "XMLHttpRequest",
         "Referer": "https://pub.alimama.com/portal/v2/pages/promo/goods/index.htm",
-        "Origin": "https://pub.alimama.com",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+        "Origin": "https://pub.alimama.com",  # POST 请求最好带上 Origin 头
         "Cookie": cookie_string
     }
 
@@ -275,11 +273,10 @@ def add_to_favorites_final(
         return None
     tb_token = tb_token_match.group(1)
 
-    # 这里的 item_id 使用你提供的加密ID
     item_list_for_json = [{"itemId": item_id, "floorId": source_floor_id} for item_id in item_id_list]
     item_list_string = json.dumps(item_list_for_json, separators=(',', ':'))
 
-    # --- 关键修正：完整复制 variableMap 结构 ---
+    # --- 关键修正点 ---
     data_payload = {
         "floorId": 70519,
         "refpid": refpid,
@@ -287,12 +284,10 @@ def add_to_favorites_final(
             "firstZsRuleId": [],
             "firstFloorId": [],
             "itemList": item_list_string,
+            # 确保 finalZsRuleIdList 和 finalFloorIdList 的值是配对的
             "finalZsRuleIdList": [destination_rule_id],
             "finalFloorIdList": [destination_folder_id],
-            # 将跟踪参数加回来
-            "union_lens": union_lens_str,
-            "lensScene": "PUB",
-            "spmB": "_portal_v2_pages_promo_goods_index_htm"
+            # 移除了会话特定的跟踪参数 (union_lens, lensScene, spmB)，提高通用性
         }
     }
 
@@ -309,19 +304,27 @@ def add_to_favorites_final(
     try:
         response = requests.post(url, headers=headers, data=post_body, timeout=10)
         response.raise_for_status()
+
         json_response = response.json()
 
-        if json_response.get("info", {}).get("ok"):
-            print(f"成功将 {len(item_id_list)} 个商品添加到收藏夹！消息: {json_response.get('info', {}).get('message')}")
-            return json_response
-        else:
-            print("添加到收藏夹操作失败。请检查所有参数，特别是 Cookie 和 union_lens 是否为最新。")
-            print("服务器响应:")
-            print(json.dumps(json_response, indent=2, ensure_ascii=False))
+        # 增加对空字典的判断
+        if not json_response:
+            print("请求失败：服务器返回了空响应 {}，请检查 Cookie 和各项 ID 是否正确。")
             return None
 
-    except Exception as e:
-        print(f"请求或解析过程中发生严重错误: {e}")
+        if json_response.get("success", 'False') == True:
+            print(f"成功将 {len(item_id_list)} 个商品添加到收藏夹！")
+        else:
+            print(f"添加到收藏夹操作失败。服务器响应: {json_response}")
+
+        return json_response
+
+    except requests.exceptions.RequestException as e:
+        print(f"请求发生错误: {e}")
+    except json.JSONDecodeError:
+        print("解析 JSON 响应失败，返回原始文本内容:")
+        print(response.text)
+
     return None
 
 # ==============================================================================
@@ -329,20 +332,37 @@ def add_to_favorites_final(
 # ==============================================================================
 if __name__ == "__main__":
 
-    MY_COOKIE_STRING = get_config("zhu_taobao_cookie")
+    # MY_COOKIE_STRING = get_config("zhu_taobao_cookie")
+    #
+    # # 步骤 2: 将下面的字符串替换为你自己的【推广位ID】
+    # MY_PID = "mm_328750149_0_0"
+    #
+    # search_term = "电竞零食"
+    # page_to_fetch = 1
+    #
+    # print(f"准备搜索 '{search_term}' 的第 {page_to_fetch} 页商品...")
+    #
+    # search_result = fetch_alimama_data(
+    #     cookie_string=MY_COOKIE_STRING,
+    #     pid=MY_PID,
+    #     search_query=search_term,
+    #     target_num=10
+    # )
+    # print(f"\n共获取到 {len(search_result)} 条商品数据。")
 
-    # 步骤 2: 将下面的字符串替换为你自己的【推广位ID】
-    MY_PID = "mm_328750149_0_0"
-
-    search_term = "电竞零食"
-    page_to_fetch = 1
-
-    print(f"准备搜索 '{search_term}' 的第 {page_to_fetch} 页商品...")
-
-    search_result = fetch_alimama_data(
-        cookie_string=MY_COOKIE_STRING,
-        pid=MY_PID,
-        search_query=search_term,
-        target_num=10
+    my_favorites_folder_id = 2147843042
+    my_favorites_rule_id = 2147854042
+    sample_item_ids = [
+        "pQjoGWYS2C6ZdA7b4rtA4uptm-kGwk5r2sgORpBD5Wu5a"
+    ]
+    # 4. 调用修正后的函数
+    result = add_to_favorites(
+        item_id_list=sample_item_ids,
+        destination_folder_id=my_favorites_folder_id,
+        destination_rule_id=my_favorites_rule_id
     )
-    print(f"\n共获取到 {len(search_result)} 条商品数据。")
+    print("\n完整响应内容：")
+    if result:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    else:
+        print("没有获取到任何响应，可能是请求失败或数据为空。")

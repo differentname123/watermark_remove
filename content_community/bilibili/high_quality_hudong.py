@@ -978,7 +978,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     exist_comment_text = [comment[0] for comment in exist_comment]
     exist_danmu = result.get('已有弹幕', [])
     exist_danmu_text = [danmu[0] for danmu in exist_danmu]
-
+    max_success_comment_count = 5
+    if uid in ['443415885','3546954575383021','3546717871934392','1223805908','3546947310848473','3546947566700892', '477861377']:
+        max_success_comment_count = 100
 
     print(f"获得到已有评论：{len(exist_comment_text)} 条，已有弹幕：{len(exist_danmu_text)} 条。| BVID: {bvid}")
     owner_commenter = commenter_map.get(uid, None)
@@ -1066,7 +1068,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     # 打乱顺序
     random.shuffle(commenter_list)
     for commenter in commenter_list:
-        if success_comment_count > 15:
+        if success_comment_count > max_success_comment_count:
             print("已达到最大成功评论数，停止处理。")
             break
         for detail_comment in comment_list:
