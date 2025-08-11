@@ -2212,3 +2212,85 @@ def apply_all_subtle_tweaks(input_path: str, output_path: str, show_progress: bo
     ])
 
     return _run_command(cmd, output_path, show_progress)
+
+
+def transform_voice_identity(
+        input_path: str,
+        output_path: str,
+        mode: str = "male_to_female",
+        show_progress: bool = True
+) -> bool:
+    """
+    【方案一实现】彻底改变视频中人声的身份，让观众无法识别出是同一个人。
+    此函数使用高质量的 `rubberband` 滤波器同时调整音高(Pitch)和共振峰(Formant)。
+
+    核心功能:
+    - 视频流: 直接复制，不重新编码，速度极快且无质量损失。
+    - 音频流: 根据预设模式（或自定义参数）进行变声处理。
+    - 预设模式: 包含多种常见变声场景，如 "male_to_female"。
+    - 元数据: 清除所有元数据。
+
+    :param input_path: 输入视频路径。
+    :param output_path: 输出视频路径。
+    :param mode: 变声模式。可选:
+                 - 'male_to_female': 自然的男声变女声。
+                 - 'male_to_deep_male': 男声变更低沉、有磁性的男声。
+                 - 'female_to_male': 自然的女声变男声。
+                 - 'custom': 使用自定义的音高和共振峰参数。
+    :param custom_pitch: 当 mode='custom' 时，自定义音高系数 (e.g., 1.5)。
+    :param custom_formant: 当 mode='custom' 时，自定义共振峰系数 (e.g., 1.15)。
+    :param show_progress: 是否显示 FFmpeg 处理进度。
+    :return: bool, True 表示成功, False 表示失败。
+    """
+    # 探测音频流
+    try:
+        probe_info = ffmpeg.probe(input_path)
+        if not any(s['codec_type'] == 'audio' for s in probe_info.get('streams', [])):
+            print(f"⚠️ 视频 '{input_path}' 中没有音频流，无法变声。将直接复制文件。", file=sys.stderr)
+            import shutil
+            shutil.copy(input_path, output_path)
+            return True
+    except ffmpeg.Error as e:
+        print(f"❌ 探测文件信息失败: {e.stderr.decode('utf-8', errors='ignore')}", file=sys.stderr)
+        return False
+
+    print(f"🎤 开始声音身份转换任务 (精简模式: {mode}): '{input_path}' -> '{output_path}'")
+
+    # 1. 根据模式确定音高和共振峰参数 (与 V2/V3 相同)
+    pitch_factor, formant_factor = 1.0, 1.0
+    if mode == "male_to_female_natural":
+        pitch_factor, formant_factor = random.uniform(1.35, 1.45), random.uniform(1.08, 1.15)
+    elif mode == "male_to_younger_male":
+        pitch_factor, formant_factor = random.uniform(1.08, 1.15), random.uniform(1.03, 1.08)
+    elif mode == "male_to_deeper_male":
+        pitch_factor, formant_factor = random.uniform(0.85, 0.92), random.uniform(0.96, 0.99)
+    elif mode == "female_to_male_natural":
+        pitch_factor, formant_factor = random.uniform(0.65, 0.75), random.uniform(0.90, 0.96)
+    elif mode == "female_to_younger_female":
+        pitch_factor, formant_factor = random.uniform(1.1, 1.2), random.uniform(1.02, 1.06)
+    elif mode == "subtle_shift":
+        pitch_factor = random.uniform(0.98, 1.02)
+        formant_factor = random.choice([random.uniform(0.92, 0.96), random.uniform(1.04, 1.08)])
+    else:
+        print(f"❌ 未知的模式: '{mode}'.", file=sys.stderr)
+        return False
+
+    # 2. 构建最基础、兼容性最好的音频滤镜链
+    audio_filter_str = f"rubberband=pitch={pitch_factor:.4f}:formant={formant_factor:.4f}:tempo=1.0"
+
+    # 3. 构建并执行 FFmpeg 命令
+    cmd = [
+        "ffmpeg", "-hide_banner", "-v", "error",
+        "-i", input_path,
+        "-c:v", "copy",
+        "-af", audio_filter_str,
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-map", "0",
+        "-sn",
+        "-map_chapters", "-1",
+        "-map_metadata", "-1",
+        "-y", output_path
+    ]
+
+    return _run_command(cmd, output_path, show_progress)

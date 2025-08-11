@@ -313,7 +313,7 @@ def add_to_favorites(
             return None
 
         if json_response.get("success", 'False') == True:
-            print(f"成功将 {len(item_id_list)} 个商品添加到收藏夹！")
+            print(f"成功将 {len(json_response.get('data', {}).get('resultList'))} 个商品添加到收藏夹！")
         else:
             print(f"添加到收藏夹操作失败。服务器响应: {json_response}")
 

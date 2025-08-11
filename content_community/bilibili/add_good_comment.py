@@ -736,6 +736,7 @@ def add_to_favorites_batch():
     for good in goods:
         calTkRate = good.get('calTkRate', 0)
         calTkCommission = good.get('calTkCommission', 0)
+        good['unique'] = f'{good.get('shopTitle', "")}-{calTkRate}-{calTkCommission}'
         if calTkRate and calTkCommission:
             try:
                 good['score'] = float(calTkRate) * float(calTkCommission)
@@ -743,13 +744,20 @@ def add_to_favorites_batch():
                 good['score'] = 0
         else:
             good['score'] = 0
+    # 按照unique去重
+    unique_goods = {}
+    for good in goods:
+        unique_key = good['unique']
+        if unique_key not in unique_goods:
+            unique_goods[unique_key] = good
+    goods = list(unique_goods.values())
     # 过滤掉 score 小于等于 1000 的商品
     goods = [good for good in goods if good.get('score', 0) > 200]
     # 过滤掉tkTotalSales为空的，且tkTotalSales要大于10
     goods = [good for good in goods if good.get('tkTotalSales') and float(good.get('tkTotalSales', 0)) > 10  and float(good.get('finalPromotionPrice', 0)) < 100]
     # 将goods按照calTkRate降序排序，注意先要尝试对calTkRate进行转换为float类型
     goods = sorted(goods, key=lambda x: float(x.get('score', 0)), reverse=True)
-    sample_item_ids = [good['itemId'] for good in goods[:50]]
+    sample_item_ids = [good['itemId'] for good in goods[:200]]
     my_favorites_folder_id = 2147843042
     my_favorites_rule_id = 2147854042
     result = add_to_favorites(
@@ -757,6 +765,7 @@ def add_to_favorites_batch():
         destination_folder_id=my_favorites_folder_id,
         destination_rule_id=my_favorites_rule_id
     )
+    print()
 
 
 if __name__ == '__main__':

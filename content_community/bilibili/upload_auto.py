@@ -257,7 +257,7 @@ def auto_upload():
 
         current_video_path = video_path  # 默认新视频路径为原视频路径
         generation_options = value.get('generation_options', {})
-        if generation_options.get('remake_video', False):
+        if generation_options.get('remake_video', False) and False:
             # 如果需要重制视频，则调用重制函数
             print(f"🔄 重制视频 {video_path}... userName: {userName}")
             try:
