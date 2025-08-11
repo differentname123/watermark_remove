@@ -729,6 +729,31 @@ def auto_replay(user_name):
 
 
 if __name__ == '__main__':
+    all_goods_file = f"{BASE_DIR}/all_goods_info.json"
+    all_goods = read_json(all_goods_file)
+    goods = all_goods.values()
+    # 计算薪资的score逻辑为 (float(good.get('calTkRate', 0)) * float(good.get('calTkCommission', 0)))
+    for good in goods:
+        calTkRate = good.get('calTkRate', 0)
+        calTkCommission = good.get('calTkCommission', 0)
+        if calTkRate and calTkCommission:
+            try:
+                good['score'] = float(calTkRate) * float(calTkCommission)
+            except ValueError:
+                good['score'] = 0
+        else:
+            good['score'] = 0
+    # 过滤掉 score 小于等于 1000 的商品
+    goods = [good for good in goods if good.get('score', 0) > 2000]
+    # 过滤掉tkTotalSales为空的，且tkTotalSales要大于10
+    goods = [good for good in goods if good.get('tkTotalSales') and float(good.get('tkTotalSales', 0)) > 10]
+
+
+
+
+    # 将goods按照calTkRate降序排序，注意先要尝试对calTkRate进行转换为float类型
+    goods = sorted(goods, key=lambda x: float(x.get('score', 0)), reverse=False)
+
     username_list = ['cai', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru', 'xue']
     # username_list = ['tao']
     RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600

@@ -97,7 +97,7 @@ def create_favorites(cookie_string: str, search_keyword: str = "牛肉干"):
 
     return None
 
-def fetch_alimama_data( search_query: str,cookie_string=get_config("taobao_cookie"), pid='mm_328750149_3161250458_116106650269', target_num: int = 10):
+def fetch_alimama_data( search_query: str,cookie_string=get_config("zhu_taobao_cookie"), pid='mm_328750149_3161250458_116106650269', target_num: int = 10):
     """
     模拟请求阿里妈妈商品搜索接口，并持续获取数据直到满足目标数量或无更多数据。
 
@@ -158,7 +158,7 @@ def fetch_alimama_data( search_query: str,cookie_string=get_config("taobao_cooki
             "sceneCode": "pub_selection_navigation",
             "floorId": 80674,
             "pageNum": current_page,  # API的页码是从1开始的 (经测试确认)
-            "pageSize": "30",  # 每页获取30个
+            "pageSize": "60",  # 每页获取30个
             "pid": pid,
             "variableMap": {
                 "fn": "search",
@@ -167,6 +167,7 @@ def fetch_alimama_data( search_query: str,cookie_string=get_config("taobao_cooki
                 "curSelected": {},
                 "pubFloorId": 80674,
                 "sort": "max_tk_rate:des",
+                "biz30day": "10~",
                 "tk_navigator": "true",
                 "union_lens": "b_pvid:a219t._portal_v2_pages_promo_goods_index_htm_1754819807788_16588432743269266_ccPDH",
                 "lensScene": "PUB",
@@ -197,7 +198,7 @@ def fetch_alimama_data( search_query: str,cookie_string=get_config("taobao_cooki
                     break  # 退出while循环
 
                 all_products.extend(resultList)
-                print(f"成功获取 {len(resultList)} 条商品。当前总数: {len(all_products)} / {target_num}")
+                # print(f"成功获取 {len(resultList)} 条商品。当前总数: {len(all_products)} / {target_num}")
 
                 # 准备请求下一页
                 current_page += 1
@@ -210,7 +211,7 @@ def fetch_alimama_data( search_query: str,cookie_string=get_config("taobao_cooki
                 print(f"请求失败，API返回信息：{error_message}")
                 if "login" in error_message.lower():
                     print("提示：您的Cookie可能已过期，请从浏览器重新获取并更新到代码中。")
-                break  # 发生API错误，退出while循环
+                return None
 
         except requests.exceptions.RequestException as e:
             print(f"网络请求发生异常: {e}")
@@ -328,7 +329,7 @@ def add_to_favorites_final(
 # ==============================================================================
 if __name__ == "__main__":
 
-    MY_COOKIE_STRING = get_config("taobao_cookie")
+    MY_COOKIE_STRING = get_config("zhu_taobao_cookie")
 
     # 步骤 2: 将下面的字符串替换为你自己的【推广位ID】
     MY_PID = "mm_328750149_0_0"
