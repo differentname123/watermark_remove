@@ -780,7 +780,7 @@ def add_to_favorites_batch():
     goods = list(unique_goods.values())
 
     # 保留 score > 200
-    goods = [g for g in goods if g.get('score', 0) > 200]
+    goods = [g for g in goods if g.get('score', 0) > 1000]
 
     # 过滤掉 unique 已存在于 all_favorites 的商品
     goods = [g for g in goods if g.get('unique') not in all_favorites]
@@ -803,7 +803,7 @@ def add_to_favorites_batch():
     goods = [g for g in goods if passes_sales_and_price(g)]
 
     # 按 score 降序排列（score 已为 float 或可转 float）
-    goods = sorted(goods, key=lambda x: float(x.get('score', 0)), reverse=True)
+    goods = sorted(goods, key=lambda x: float(x.get('score', 0)), reverse=False)
 
     print(f"过滤后商品信息，共有 {len(goods)} 条商品信息。")
 

@@ -50,6 +50,7 @@ accounts = {
     'yan': 'yan',
     'xue': 'xue',
     'cai': 'cai',
+    'jun': 'jun',
 }
 
 for name, map_key in accounts.items():
