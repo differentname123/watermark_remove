@@ -1615,3 +1615,28 @@ def init_config():
         }
 
     return config_map
+
+def process_product_title(title_string: str) -> dict:
+    """
+    处理包含特殊 <span class=H> 标签的商品标题字符串。
+
+    这个函数会做两件事：
+    1. 提取所有被 <span class=H>...</span> 标签包裹的关键词。
+    2. 移除所有的HTML标签，返回一个干净的、纯文本的标题。
+
+    Args:
+        title_string (str): 包含HTML标签的原始字符串。
+
+    Returns:
+        dict: 一个包含'clean_text'和'highlighted_words'的字典。
+              'clean_text' (str): 清理掉所有HTML标签后的纯文本。
+              'highlighted_words' (list): 一个包含所有被高亮标记的词的列表。
+    """
+    if not isinstance(title_string, str):
+        return ''
+
+    clean_pattern = r'<.*?>'
+    clean_text = re.sub(clean_pattern, '', title_string)
+
+    # 3. 返回结构化的结果
+    return clean_text

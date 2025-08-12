@@ -17,7 +17,7 @@ from urllib.parse import quote  # <--- 1. 引入 quote 函数
 from common_utils.common_utils import get_config
 
 
-def create_favorites(cookie_string: str, search_keyword: str = "牛肉干"):
+def create_favorites(title, cookie_string=get_config("dahao_taobao_cookie")):
     """
     复制 Alimama 的 fetch 请求。
 
@@ -64,7 +64,7 @@ def create_favorites(cookie_string: str, search_keyword: str = "牛肉干"):
         "floorId": 31401,
         "refpid": "mm_328750149_0_0",
         "variableMap": {
-            "title": search_keyword
+            "title": title
         }
     }
 
@@ -327,6 +327,29 @@ def add_to_favorites(
 
     return None
 
+def creat_and_favorite(title, item_id_list):
+    """
+    创建收藏夹并保存商品信息
+    """
+    favorite_info = create_favorites(title)
+    if not favorite_info or not favorite_info.get('success', False):
+        print(f"创建收藏夹失败，请检查 Cookie 是否正确。{favorite_info}")
+        return False
+    folder_id = favorite_info.get('data', {}).get('result', {}).get('floorId')
+    rule_id = favorite_info.get('data', {}).get('result', {}).get('id')
+
+    result = add_to_favorites(
+        item_id_list=item_id_list,
+        destination_folder_id=folder_id,
+        destination_rule_id=rule_id
+    )
+    if result:
+        # print(json.dumps(result, indent=2, ensure_ascii=False))
+        return True
+    else:
+        print("没有获取到任何响应，可能是请求失败或数据为空。")
+        return False
+
 # ==============================================================================
 # ---                        ↓↓↓ 在这里修改你的信息 ↓↓↓                         ---
 # ==============================================================================
@@ -350,19 +373,25 @@ if __name__ == "__main__":
     # )
     # print(f"\n共获取到 {len(search_result)} 条商品数据。")
 
-    my_favorites_folder_id = 2147843042
-    my_favorites_rule_id = 2147854042
+    # my_favorites_folder_id = 2147843042
+    # my_favorites_rule_id = 2147854042
     sample_item_ids = [
         "pQjoGWYS2C6ZdA7b4rtA4uptm-kGwk5r2sgORpBD5Wu5a"
     ]
-    # 4. 调用修正后的函数
-    result = add_to_favorites(
-        item_id_list=sample_item_ids,
-        destination_folder_id=my_favorites_folder_id,
-        destination_rule_id=my_favorites_rule_id
-    )
-    print("\n完整响应内容：")
+    # # 4. 调用修正后的函数
+    # result = add_to_favorites(
+    #     item_id_list=sample_item_ids,
+    #     destination_folder_id=my_favorites_folder_id,
+    #     destination_rule_id=my_favorites_rule_id
+    # )
+    # print("\n完整响应内容：")
+    # if result:
+    #     print(json.dumps(result, indent=2, ensure_ascii=False))
+    # else:
+    #     print("没有获取到任何响应，可能是请求失败或数据为空。")
+
+    result = creat_and_favorite('w21w', sample_item_ids)
     if result:
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        print("收藏夹创建并商品添加成功！")
     else:
-        print("没有获取到任何响应，可能是请求失败或数据为空。")
+        print("收藏夹创建或商品添加失败。请检查日志以获取更多信息。")
