@@ -471,7 +471,7 @@ class BilibiliCommenter:
             elif result.get("code") == 65006:  # 65006 代表已经点赞过
                 return True
             else:
-                print(f"视频点赞失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}")
+                print(f"视频点赞失败，错误码：{result.get('code')}, 错误信息：{result.get('message')} {self.all_params}")
                 return False
         except requests.exceptions.RequestException as e:
             print(f"请求视频点赞时发生错误：{e}")
@@ -566,7 +566,7 @@ class BilibiliCommenter:
                 print("视频分享成功（今日已分享过）。")
                 return True
             else:
-                print(f"视频分享失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}")
+                print(f"视频分享失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}{self.all_params}")
                 return False
         except requests.exceptions.RequestException as e:
             print(f"请求分享视频时发生错误：{e}")
