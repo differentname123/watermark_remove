@@ -728,125 +728,26 @@ def auto_replay(user_name):
             all_records[bvid] = record
             save_json_safe(all_records_file, all_records)
 
-def add_to_favorites_batch():
-    """
-    批量将商品加入收藏（保持原有逻辑不变）：
-    - 从 all_goods_info.json 加载商品
-    - 计算 unique、score（calTkRate * calTkCommission）
-    - 按 unique 去重、筛选 score > 200、tkTotalSales > 10、finalPromotionPrice < 100
-    - 排序（score 降序），按最多 200 个分批创建收藏夹并添加商品
-    - 已存在于 all_favorites 的 unique 会被跳过
-    """
-    all_goods_file = f"{BASE_DIR}/all_goods_info.json"
-    all_favorites_file = f"{BASE_DIR}/all_favorites_info.json"
 
-    # 读取已有收藏（可能来自 list 或其他，可安全转为 list）
-    all_favorites = read_json(all_favorites_file)
-    all_favorites = list(all_favorites)
-
-    # 读取所有商品（可能为 dict），统一为 list
-    all_goods = read_json(all_goods_file)
-    goods_iterable = all_goods.values() if isinstance(all_goods, dict) else all_goods
-    goods: List[Dict[str, Any]] = list(goods_iterable)
-
-    print(f"开始处理商品信息，共有 {len(goods)} 条商品信息。已有收藏夹商品 {len(all_favorites)} 条。")
-
-    # 计算 unique 和 score（保留你的逻辑与阈值）
-    for good in goods:
-        itemName = process_product_title(good.get('itemName', ""))
-        calTkRate = good.get('calTkRate', 0)
-        calTkCommission = good.get('calTkCommission', 0)
-
-        # 注意避免 f-string 引号冲突（保持原来 unique 格式）
-        shop_title = good.get('shopTitle', "")
-        final_price = good.get('finalPromotionPrice', "")
-        good['unique'] = f"{shop_title}-{itemName}-{final_price}"
-
-        # 计算 score，保持原有 behavior（异常时设为 0）
-        try:
-            if calTkRate and calTkCommission:
-                good['score'] = float(calTkRate) * float(calTkCommission)
-            else:
-                good['score'] = 0
-        except (ValueError, TypeError):
-            good['score'] = 0
-
-    # 按 unique 去重（保留首次出现的 entry）
-    unique_goods: Dict[str, Dict[str, Any]] = {}
-    for good in goods:
-        unique_key = good.get('unique')
-        if unique_key and unique_key not in unique_goods:
-            unique_goods[unique_key] = good
-    goods = list(unique_goods.values())
-
-    # 保留 score > 200
-    goods = [g for g in goods if g.get('score', 0) > 1000]
-
-    # 过滤掉 unique 已存在于 all_favorites 的商品
-    goods = [g for g in goods if g.get('unique') not in all_favorites]
-
-    # 过滤 tkTotalSales 非空且 >10，并且 finalPromotionPrice < 100
-    def passes_sales_and_price(g: Dict[str, Any]) -> bool:
-        try:
-            tk_sales = g.get('tkTotalSales')
-            if not tk_sales:
-                return False
-            if float(tk_sales) <= 10:
-                return False
-            final_price_val = float(g.get('finalPromotionPrice', 0))
-            if final_price_val >= 100:
-                return False
-            return True
-        except (ValueError, TypeError):
-            return False
-
-    goods = [g for g in goods if passes_sales_and_price(g)]
-
-    # 按 score 降序排列（score 已为 float 或可转 float）
-    goods = sorted(goods, key=lambda x: float(x.get('score', 0)), reverse=False)
-
-    print(f"过滤后商品信息，共有 {len(goods)} 条商品信息。")
-
-    # 分批处理，每批最多 batch_size 个
-    batch_size = 200
-    batches = [goods[i:i + batch_size] for i in range(0, len(goods), batch_size)]
-    batch_number = 0
-    current_human_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    for batch in batches:
-        batch_number += 1
-        title = f"{current_human_time}_{batch_number}"
-        item_ids = [good['itemId'] for good in batch]
-        unique_list = [good['unique'] for good in batch]
-
-        result = creat_and_favorite(title, item_ids)
-        if result:
-            all_favorites.extend(unique_list)
-            save_json_safe(all_favorites_file, all_favorites)
-            print(f"收藏夹创建成功，标题: {title}，商品数量: {len(batch)}，批次号: {batch_number}/{len(batches)}")
-        else:
-            print("收藏夹创建或商品添加失败。请检查日志以获取更多信息。")
-            break
 
 if __name__ == '__main__':
-    add_to_favorites_batch()
-    # username_list = ['cai', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru', 'xue']
-    # # username_list = ['tao']
-    # RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600
-    #
-    # print("--- 主进程启动，准备为每个用户创建独立的子进程 ---")
-    #
-    # processes = []
-    # # 遍历用户列表，为每个用户创建一个进程
-    # for user in username_list:
-    #     p = multiprocessing.Process(target=worker_process_loop, args=(user, RUN_INTERVAL_SECONDS))
-    #     processes.append(p)
-    #     p.start()  # 启动进程
-    #     print(f"已为用户 <{user}> 启动进程，PID: {p.pid}")
-    #
-    # # 主进程等待所有子进程结束。
-    # # 因为子进程是无限循环，所以主进程会一直在这里等待，直到您手动停止程序 (例如按 Ctrl+C)。
-    # for p in processes:
-    #     p.join()
-    #
-    # print("--- 所有子进程已终止 ---")
+    username_list = ['cai', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru', 'xue']
+    # username_list = ['tao']
+    RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600
+
+    print("--- 主进程启动，准备为每个用户创建独立的子进程 ---")
+
+    processes = []
+    # 遍历用户列表，为每个用户创建一个进程
+    for user in username_list:
+        p = multiprocessing.Process(target=worker_process_loop, args=(user, RUN_INTERVAL_SECONDS))
+        processes.append(p)
+        p.start()  # 启动进程
+        print(f"已为用户 <{user}> 启动进程，PID: {p.pid}")
+
+    # 主进程等待所有子进程结束。
+    # 因为子进程是无限循环，所以主进程会一直在这里等待，直到您手动停止程序 (例如按 Ctrl+C)。
+    for p in processes:
+        p.join()
+
+    print("--- 所有子进程已终止 ---")

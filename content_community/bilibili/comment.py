@@ -23,7 +23,7 @@ import json
 # 确保您的 common_utils.common_utils 模块和 get_config 函数可用
 # 如果没有，请替换为实际获取配置的方法，例如从文件读取或直接硬编码(不推荐敏感信息)
 try:
-    from common_utils.common_utils import get_config
+    from common_utils.common_utils import get_config, init_config
 except ImportError:
     print("警告: 未找到 common_utils.common_utils 模块。请确保该模块存在或手动设置配置。")
 
@@ -906,19 +906,20 @@ class BilibiliCommenter:
 
 # --- 主逻辑 ---
 if __name__ == "__main__":
-    csrf_token = get_config("ruru_bilibili_csrf_token")
-    total_cookie = get_config("ruru_bilibili_total_cookie")
+    config_map = init_config()
+    user_name = 'qiqi'
+    target_value = None
+    for uid, value in config_map.items():
+        if value.get('name') == user_name:
+            target_value = value
+            break
 
-    if not csrf_token or not total_cookie or "YOUR_CSRF_TOKEN" in csrf_token or "YOUR_SESSDATA" in total_cookie:
-        print("\n!!!!!!!!! 配置错误 !!!!!!!!!")
-        print("请编辑脚本，替换 YOUR_CSRF_TOKEN 和 YOUR_SESSDATA 为您的实际信息。")
-        exit()
 
     target_bvid = "BV1c3t1zDEzw"
     comment_text = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}]"
     comment_type = 1
 
-    commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token)
+    commenter = BilibiliCommenter(total_cookie=target_value['total_cookie'], csrf_token=target_value['BILI_JCT'],all_params=target_value['all_params'])
     # commenter.pin_comment(target_bvid, 271871684816)
     #
     # --- 步骤 1: 发送一条顶级评论 (现在会先点赞视频) ---
