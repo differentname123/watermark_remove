@@ -1073,7 +1073,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
             break
         for detail_comment in comment_list:
             comment_text = detail_comment[0]
-            if comment_text in comment_used_list or len(comment_text) == 0:
+            if comment_text in comment_used_list or len(comment_text) <= 1:
                 continue
             image_path = detail_comment[2] if len(detail_comment) > 2 else None
             if path_exists(image_path):

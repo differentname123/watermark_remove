@@ -19,8 +19,95 @@ from content_community.bilibili.get_danmu import string_to_list
 from content_community.bilibili.high_quality_hudong import find_video_by_bvid
 from common_utils.common_utils import string_to_object, save_json_safe, read_json
 from content_community.taobao.taobao_utils import fetch_alimama_data, creat_and_favorite
+from sentence_transformers import SentenceTransformer
+import chromadb
+from tqdm import tqdm
 
 BASE_DIR = 'goods_info'
+
+def init_model_and_db(
+    model_name="BAAI/bge-base-zh-v1.5",
+    db_path="./product_db",
+    collection_name="my_products",
+    device="cpu",
+    proxy=None
+):
+    """初始化模型与数据库集合"""
+    if proxy:
+        os.environ['HTTP_PROXY'] = proxy
+        os.environ['HTTPS_PROXY'] = proxy
+
+    print(f"正在加载语义模型: {model_name}...")
+    model = SentenceTransformer(model_name, device=device)
+    print("模型加载完成。")
+
+    client = chromadb.PersistentClient(path=db_path)
+    collection = client.get_or_create_collection(
+        name=collection_name,
+        metadata={"hnsw:space": "cosine"}
+    )
+    return model, collection
+
+
+def add_products_from_csv(csv_file_path, model, collection, price_field="promo_price"):
+    """从CSV文件添加商品到向量数据库"""
+    print(f"\n--- 开始处理CSV文件: {csv_file_path} ---")
+    if not os.path.exists(csv_file_path):
+        print(f"错误: 文件 '{csv_file_path}' 不存在。")
+        return
+
+    try:
+        df = pd.read_csv(csv_file_path)
+        df.fillna('', inplace=True)
+    except Exception as e:
+        print(f"错误: 读取或解析CSV文件失败: {e}")
+        return
+
+    required_columns = ['outerId', 'all_str', 'goodsName']
+    if not all(col in df.columns for col in required_columns):
+        print(f"错误: CSV文件缺少必要的列。需要包含: {required_columns}")
+        return
+
+    ids_to_add, documents_to_add, metadatas_to_add = [], [], []
+    existing_ids = set(collection.get(include=[])['ids'])
+    print(f"数据库中已有 {len(existing_ids)} 个商品。")
+
+    for _, row in tqdm(df.iterrows(), total=df.shape[0], desc="处理CSV行"):
+        product_id = str(row['outerId'])
+        if product_id in existing_ids:
+            continue
+
+        document = str(row['all_str'])
+        metadata = {
+            key: (float(value) if key == price_field and isinstance(value, (int, float)) else str(value))
+            for key, value in row.items()
+            if key != "all_str"
+        }
+
+        ids_to_add.append(product_id)
+        documents_to_add.append(document)
+        metadatas_to_add.append(metadata)
+
+    if not ids_to_add:
+        print("没有新的商品需要添加。")
+        return
+
+    print(f"发现 {len(ids_to_add)} 个新商品，正在生成向量并存入数据库...")
+    embeddings = model.encode(
+        documents_to_add,
+        batch_size=32,
+        show_progress_bar=True,
+        normalize_embeddings=True
+    )
+
+    collection.add(
+        embeddings=embeddings.tolist(),
+        documents=documents_to_add,
+        metadatas=metadatas_to_add,
+        ids=ids_to_add
+    )
+    print(f"成功添加 {len(ids_to_add)} 个新商品！当前总数: {collection.count()}")
+
 
 def add_to_favorites_batch():
     """
@@ -281,21 +368,65 @@ def merge_all_goods(base_dir=BASE_DIR) -> str:
     merged.to_csv(output_path, index=False)
     return output_path
 
+def search_products(query, model, collection, top_n=5):
+    """执行语义搜索"""
+    print(f"\n--- 正在搜索: '{query}' ---")
+    query_embedding = model.encode(query, normalize_embeddings=True).tolist()
+
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=top_n
+    )
+
+    formatted_results = []
+    if results and results['ids'][0]:
+        for i, item_id in enumerate(results['ids'][0]):
+            distance = results['distances'][0][i]
+            metadata = results['metadatas'][0][i]
+            formatted_results.append({
+                "id": item_id,
+                "metadata": metadata,
+                "similarity": 1 - distance
+            })
+
+    return formatted_results
+
 def search_goods(key_word_list=['零食']):
     """
     根据关键词搜索商品并返回商品列表。
     """
-    all_goods = pd.read_csv(f"{BASE_DIR}/all_goods_info.csv")
-    filtered_goods = all_goods[all_goods['all_str'].str.contains('|'.join(key_word_list), na=False, case=False)]
-    print(f"根据关键词 {key_word_list} 过滤后，找到 {len(filtered_goods)} 条商品信息。")
-    return filtered_goods
+    result_list = []
+    proxy = "http://127.0.0.1:7890"
+    model_name = "BAAI/bge-base-zh-v1.5"
+    db_path = "./product_db"
+    collection_name = "my_products"
+    base_dir = "goods_info"
+    csv_path = f"{base_dir}/all_goods_info.csv"
+
+    model, collection = init_model_and_db(
+        model_name=model_name,
+        db_path=db_path,
+        collection_name=collection_name,
+        device="cpu",
+        proxy=proxy
+    )
+
+    add_products_from_csv(csv_path, model, collection)
+
+    for q in key_word_list:
+        search_results = search_products(q, model, collection, top_n=5)
+        print(f"{q} 搜索结果:\n{search_results}")
+        result_list.extend(search_results if search_results else [])
+    return result_list
+
 
 
 if __name__ == "__main__":
     # merge_all_goods()
-    search_goods([
+    result_list = search_goods([
                         "电竞零食",
                         "开黑必备",
                         "游戏夜宵",
                         "懒人速食"
                     ])
+    print(result_list)

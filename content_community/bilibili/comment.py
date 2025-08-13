@@ -907,7 +907,7 @@ class BilibiliCommenter:
 # --- 主逻辑 ---
 if __name__ == "__main__":
     config_map = init_config()
-    user_name = 'qiqi'
+    user_name = 'hong'
     target_value = None
     for uid, value in config_map.items():
         if value.get('name') == user_name:
