@@ -346,6 +346,8 @@ def auto_upload():
             print(f"⚠️  封面处理失败：{e}")
 
         origin_tag = metadata[0].get('tag', [])
+        if userName == 'ruru':
+            origin_tag.append('娱乐盘点')
         origin_tag.extend(metadata[0].get('text_extra', []))
         title = best_scheme.get('标题', '欢迎来看我的视频！')
         # title最长只能够 80 个字符
@@ -383,6 +385,8 @@ def auto_upload():
         origin_tag.extend(tags)  # 保留原始标签
         # 去重origin_tag
         tags = list(set(origin_tag))
+        # 删除长度超过20的标签
+        tags = [tag for tag in tags if len(tag) <= 18]
         tags = tags[:12]
         tags_str = ",".join(tags) if isinstance(tags, list) else str(tags)
         dynamic = best_scheme.get('简介', {}).get('互动引导', '希望大家喜欢')

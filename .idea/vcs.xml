@@ -4,6 +4,7 @@
     <mapping directory="" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/LLM/LatentSync" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/LLM/MediaCrawler" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/LLM/RobustVideoMatting" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/LLM/TikTokDownloader" vcs="Git" />
   </component>
 </project>
