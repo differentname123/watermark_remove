@@ -49,7 +49,7 @@ accounts = {
     # 'su': 'su',
     'yan': 'yan',
     'xue': 'xue',
-    'cai': 'cai',
+    # 'cai': 'cai',
     'jun': 'jun',
     'xiaosu': 'xiaosu',
 }

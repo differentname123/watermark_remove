@@ -123,7 +123,7 @@ API_KEY_MAP = {
     'chu1':API_KEY_chu1,
     'chu2': API_KEY_chu2,
     'chu3': API_KEY_chu3,
-    'chu4': API_KEY_chu4,
+    # 'chu4': API_KEY_chu4,
     'chu5': API_KEY_chu5,
     'chu6': API_KEY_chu6
 }
@@ -338,7 +338,7 @@ def get_llm_content_gemini2flash(prompt: str = '你好，Gemini！请介绍一�
 
 
 def get_llm_content_sub(prompt: str = '你好，Gemini！请介绍一下你自己。',
-                        model_name: str = "gemini-2.5-flash-preview-04-17") -> str:
+                        model_name: str = "gemini-2.5-flash") -> str:
     print(f"[INFO] 使用模型: {model_name}")
     last_error = None
     ordered_keys = api_key_manager.get_ordered_keys()
@@ -372,7 +372,7 @@ def get_llm_content(prompt: str = '你好，Gemini！请介绍一下你自己。
         except Exception as e1:
             print(f"[WARN] 主模型失败: {e1}")
             try:
-                return get_llm_content_sub(prompt, "gemini-2.5-flash-lite")
+                return get_llm_content_sub(prompt, "gemini-2.5-flash")
             except Exception as e2:
                 print(f"[WARN] 备用模型失败: {e2}")
                 return get_llm_content_gemini2flash(prompt)
