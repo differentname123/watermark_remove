@@ -227,7 +227,7 @@ def auto_upload():
             continue
         if userName not in config_map.keys():
             print(f"⚠️ 跳过 {userName} 用户上传 请检查配置数据。")
-            error_count += 1
+            # error_count += 1
             userName = 'base'
             continue
         config = config_map.get(userName, config_map['base'])
@@ -346,8 +346,8 @@ def auto_upload():
             print(f"⚠️  封面处理失败：{e}")
 
         origin_tag = metadata[0].get('tag', [])
-        if userName == 'ruru':
-            origin_tag.append('娱乐盘点')
+        if userName == 'ruru' and '娱乐盘点' not in origin_tag:
+            origin_tag.insert(0, '娱乐盘点')  # 放最前面
         origin_tag.extend(metadata[0].get('text_extra', []))
         title = best_scheme.get('标题', '欢迎来看我的视频！')
         # title最长只能够 80 个字符
