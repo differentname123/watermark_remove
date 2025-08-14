@@ -334,7 +334,7 @@ def auto_upload():
             else best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
         )
         addPrologue_video_path = video_path.replace('.mp4', '_prologue.mp4')
-        if generation_options.get('addPrologue', False):
+        if generation_options.get('add_prologue', False):
             print(f"🔄 添加开场白到 {video_path}... userName: {userName}")
             try:
                 width, height = _get_video_resolution(video_path)  # 确保视频路径有效
