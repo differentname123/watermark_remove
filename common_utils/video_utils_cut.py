@@ -1,8 +1,16 @@
+import pathlib
 import random
+import shutil
 import subprocess
 import os
 from PIL import Image
 import math  # 需要导入 math 模块以使用 PI
+
+from common_utils.common_utils import ms_to_time
+from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
+from common_utils.video_utils import add_subtitles_to_video
+from common_utils.video_utils1 import redub_video_with_ffmpeg
+from common_utils.video_utils2 import add_bgm_to_video
 
 
 # ==============================================================================
@@ -276,6 +284,170 @@ def create_video_from_image_auto_select(
             zoom_factor=zoom_factor, use_background_fill=use_background_fill
         )
 
+
+def text_image_to_video_with_subtitles(
+    text: str,
+    image_path: str,
+    output_path: str,
+    short_text: str = "",
+    voice_name: str = "",
+    bgm_path: str = "",
+    cleanup: bool = True,
+    resolution: tuple = (1920, 1080)
+) -> str:
+    """
+    根据文本和图片生成带字幕的视频，并可选添加背景音乐（bgm），并自动清理中间视频文件。
+
+    参数:
+        text: 完整文案
+        image_path: 图片路径
+        output_path: 输出视频路径
+        short_text: 简略文案（可选）
+        voice_name: 语音合成声音
+        bgm_path: 背景音乐文件路径（可选，若存在则在生成最终视频后添加）
+        cleanup: 是否在生成最终视频后清理中间视频文件
+
+    返回:
+        最终视频路径（若提供了 bgm_path，返回带 bgm 的视频路径；否则返回无 bgm 的视频路径）
+    """
+    if not voice_name:
+        voice_name = random.choice([
+            "zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural","zh-CN-YunjianNeural","zh-CN-YunxiNeural",
+            "zh-CN-YunxiaNeural", "zh-CN-YunyangNeural"
+        ])
+    if not bgm_path:
+        bgm_id = random.choice(['1212a7cf29e09ef63e689cb23b1b6fed.wav', '0671d099e221faf1b77922fa08ade356.wav', '428eaba81088bd92cbc5a6a273dbf873.wav', '8dfb680196265fcafe4cc19ce6e75ffe.wav', '9d34a87ec50e5bf577f1405f1475ec7f.wav'])
+        bgm_path = r"W:\project\python_project\watermark_remove\content_community\app\bgm_audio" + os.sep + bgm_id
+
+    if not os.path.exists(image_path):
+        raise FileNotFoundError(f"图片文件不存在: {image_path}")
+
+    output_path = pathlib.Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # 1. 文本转语音
+    audio_path = output_path.with_suffix(".mp3")
+    duration = generate_audio_and_get_duration_sync(
+        text=text,
+        output_filename=str(audio_path),
+        voice_name=voice_name,
+        trim_silence=False,
+        # rate="+15%",
+        # pitch='+10Hz',
+    )
+
+    # 2. 图片转视频
+    image_video_path = output_path.with_name(output_path.stem + "_img.mp4")
+    create_video_from_image_auto_select(
+        image_path=image_path,
+        output_path=str(image_video_path),
+        duration=duration,
+        resolution=resolution
+    )
+
+    # 3. 合成语音
+    audio_video_path = output_path.with_name(output_path.stem + "_audio.mp4")
+    segments_info = [{
+        'startTime': "00:00:00.000",
+        'endTime': ms_to_time(duration * 1000),
+        'outputPath': str(audio_path),
+        'trimmedDuration': duration,
+    }]
+    redub_video_with_ffmpeg(str(image_video_path), segments_info, output_path=str(audio_video_path))
+
+    # 4. 添加字幕
+    subtitle_data = [{
+        'startTime': "00:00:00.000",
+        'endTime': ms_to_time(duration * 1000),
+        'optimizedText': text
+    }]
+    subtitle_video_path = output_path.with_name(output_path.stem + "_sub.mp4")
+    add_subtitles_to_video(
+        video_path=str(audio_video_path),
+        subtitles_info=subtitle_data,
+        output_path=str(subtitle_video_path),
+        font_size=70,
+        bottom_margin=30
+    )
+
+    # 5. 如果有简略文案，加第二层字幕
+    if short_text and len(text) > 30:
+        subtitle_data = [{
+            'startTime': ms_to_time(duration * 500),
+            'endTime': ms_to_time(duration * 1000),
+            'optimizedText': short_text
+        }]
+        add_subtitles_to_video(
+            video_path=str(subtitle_video_path),
+            subtitles_info=subtitle_data,
+            output_path=str(output_path),
+            font_color='#FFD700',
+            font_size=80,
+            bottom_margin=1000
+        )
+    else:
+        shutil.copy(str(subtitle_video_path), str(output_path))
+
+    final_video_path = str(output_path.resolve())
+
+    # 6. 可选：为最终视频添加背景音乐
+    final_with_bgm_path = None
+    if bgm_path and os.path.exists(bgm_path):
+        # print(f"正在为视频添加背景音乐: {bgm_path}")
+        final_with_bgm_path = output_path.parent / f"{output_path.stem}_bgm.mp4"
+        add_bgm_to_video(final_video_path, bgm_path, str(final_with_bgm_path))
+        # print(f"背景音乐已添加，输出视频: {final_with_bgm_path.resolve()}")
+
+    # 7. 清理中间视频文件
+    if cleanup:
+        # 确定需要保留哪一个最终文件
+        kept_final_paths = set()
+        if final_with_bgm_path:
+            kept_final_paths.add(str(final_with_bgm_path.resolve()))
+            # 如果存在无 bgm 的最终视频，也可以选择删掉
+        else:
+            kept_final_paths.add(final_video_path)
+
+        # 需要清理的中间视频路径
+        intermediates = [
+            str(audio_path),
+            str(image_video_path),
+            str(audio_video_path),
+            str(subtitle_video_path),
+        ]
+
+        # 如果存在无 bgm 的最终视频且仍然存在，且不是要保留的最终视频，则删除它
+        if final_with_bgm_path:
+            # 删除无 bgm 的最终视频（因为已经有带 bgm 的最终版本）
+            if os.path.exists(final_video_path) and final_video_path not in kept_final_paths:
+                intermediates.append(final_video_path)
+
+        # 删除中间视频文件
+        for p in intermediates:
+            if p and os.path.exists(p) and p not in kept_final_paths:
+                try:
+                    os.remove(p)
+                    # print(f"已清理中间视频：{p}")
+                except Exception as e:
+                    print(f"警告：无法清理中间视频 {p}，原因: {e}")
+
+        # 如果最终带 bgm，则删除未保留的最终无 bgm 视频
+        if final_with_bgm_path:
+            if os.path.exists(final_video_path) and final_video_path not in kept_final_paths:
+                try:
+                    os.remove(final_video_path)
+                    # print(f"已清理无 BGm 的最终视频：{final_video_path}")
+                except Exception as e:
+                    print(f"警告：无法清理无 BGm 的最终视频 {final_video_path}，原因: {e}")
+
+        # 如果希望在清理后仅保留最终版本，可以确保最终版本路径被返回
+        if final_with_bgm_path:
+            return str(final_with_bgm_path.resolve())
+        else:
+            return final_video_path
+
+    # 未开启清理，返回最终视频路径
+    return final_with_bgm_path.resolve() if final_with_bgm_path else final_video_path
 
 # ... (示例使用部分保持不变) ...
 if __name__ == '__main__':

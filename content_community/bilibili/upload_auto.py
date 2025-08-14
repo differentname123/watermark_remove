@@ -20,7 +20,8 @@ import traceback
 
 from common_utils.common_utils import get_config, format_seconds_to_mmss
 from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover, \
-    merge_videos_ffmpeg, apply_all_subtle_tweaks
+    merge_videos_ffmpeg, apply_all_subtle_tweaks, _get_video_resolution
+from common_utils.video_utils_cut import text_image_to_video_with_subtitles
 from content_community.app.remake_video import remake_video_robust
 
 config_map = {}
@@ -283,6 +284,7 @@ def auto_upload():
                 print(f"❌ 重制视频失败：{e}")
                 error_count += 1
                 continue
+
         # ---------- 预处理：在尾部插入引导图片 ----------
         new_video_path = current_video_path.replace('.mp4', '_new.mp4')
         try:
@@ -327,13 +329,34 @@ def auto_upload():
         except Exception as e:
             print(f"⚠️ 合并视频失败：{e}")
 
+        cover_path = (
+            metadata[0].get('abs_cover_path') if os.path.exists(metadata[0].get('abs_cover_path', ''))
+            else best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
+        )
+        addPrologue_video_path = video_path.replace('.mp4', '_prologue.mp4')
+        if generation_options.get('addPrologue', False):
+            print(f"🔄 添加开场白到 {video_path}... userName: {userName}")
+            try:
+                width, height = _get_video_resolution(video_path)  # 确保视频路径有效
+                resolution = (width, height)
+                addPrologueStr = best_scheme.get('开场白', {}).get('脚本', '')
+                if not addPrologueStr:
+                    print(f"⚠️ 开场白脚本为空，跳过添加开场白。")
+
+                temp_video_path = text_image_to_video_with_subtitles(text=addPrologueStr, image_path=cover_path, output_path=addPrologue_video_path,resolution=resolution)
+                if os.path.exists(temp_video_path):
+                    print(f"✅ 添加开场白成功，保存为 {temp_video_path}")
+                    merge_videos_ffmpeg([temp_video_path, video_path], output_path=addPrologue_video_path)
+                    if os.path.exists(addPrologue_video_path):
+                        video_path = addPrologue_video_path
+                        print(f"✅ 合并开场白视频成功，保存为 {addPrologue_video_path}")
+            except Exception as e:
+                print(f"⚠️ 添加开场白失败：{e}")
+
 
         try:
             # ---------- 准备投稿参数 ----------
-            cover_path = (
-                metadata[0].get('abs_cover_path') if os.path.exists(metadata[0].get('abs_cover_path', ''))
-                else best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
-            )
+
             output_image_path = cover_path.replace('.jpg', '_enhanced.jpg')
             create_enhanced_cover(
                 input_image_path=cover_path,
@@ -447,6 +470,8 @@ def auto_upload():
                     os.remove(temp_video_path)
                 if tweak_video_path and os.path.exists(tweak_video_path):
                     os.remove(tweak_video_path)
+                if addPrologue_video_path and os.path.exists(addPrologue_video_path):
+                    os.remove(addPrologue_video_path)
             except Exception as e:
                 print(f"⚠️ 删除视频文件失败：{e}")
 
