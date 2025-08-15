@@ -534,7 +534,7 @@ def send_good_comment(
             continue
         pinned_text: str = rec.get('pinned_comment', '').strip()
 
-        comment_body = f"{pinned_text}                   {kouling}整段内容復制，然后去 👉【🍑宝】就能直达。"
+        comment_body = f"{pinned_text}//{kouling}整段内容復制，然后去 👉【🍑宝】就能直达。"
 
         # 4. 发布评论
         print(f"正在发布商品评论: 视频 {bvid}，商品 {outer_id} “{rec.get('goodsName', '')}” comment_body: {comment_body}")
