@@ -930,13 +930,10 @@ def read_json(json_path):
 def save_json(json_path, data):
     """
     将数据保存为 JSON 文件。如果路径不存在则自动创建。
-
-    Args:
-        json_path (str): 要保存的 JSON 文件路径。
-        data (dict): 要保存的数据。
     """
-    # 确保目录存在
-    os.makedirs(os.path.dirname(json_path), exist_ok=True)
+    dir_path = os.path.dirname(json_path)
+    if dir_path:  # 只有在有实际目录时才创建
+        os.makedirs(dir_path, exist_ok=True)
 
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
@@ -1512,14 +1509,14 @@ def init_config():
         '1223805908': 'ruru',
         '35891943': 'tao',
 
-        '3546947310848473': 'hong',
+        # '3546947310848473': 'hong',
         # '3546947566700892': 'su',
 
 
         '202157045': 'jie',
         '131446458': 'qiqi',
         '477861377': 'yan',
-        '3546731853645896': 'xue',
+        # '3546731853645896': 'xue',
         # '336607792': 'cai',
         '3493263231158598':'jun',
         # '1768990597':'lin',

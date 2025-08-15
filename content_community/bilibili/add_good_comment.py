@@ -534,7 +534,7 @@ def send_good_comment(
             continue
         pinned_text: str = rec.get('pinned_comment', '').strip()
 
-        comment_body = f"{pinned_text}//{kouling}整段内容復制，然后去 👉【🍑宝】就能直达。"
+        comment_body = f"{pinned_text}\n//{rec.get('goodsName', '')}//\n{kouling}整段内容復制，然后去 👉【🍑宝】就能直达。"
 
         # 4. 发布评论
         print(f"正在发布商品评论: 视频 {bvid}，商品 {outer_id} “{rec.get('goodsName', '')}” comment_body: {comment_body}")
@@ -574,7 +574,7 @@ def add_good_comment_for_video(user_name='qiqi'):
     csrf_token = config_map[uid].get('BILI_JCT', '')
     all_params = config_map[uid].get('all_params', {})
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token,all_params=all_params)
-    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=10)
+    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=20)
     metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     all_records = read_json(all_records_file)
     # success_bvids = read_json(success_bvids_file)
@@ -787,8 +787,8 @@ def auto_replay(user_name):
 
 if __name__ == '__main__':
     username_list = ['mama', 'nana', 'ruru', 'tao', 'hong', 'jie', 'qiqi', 'yan', 'xue', 'jun', 'xiaosu']
-    username_list = ['qiqi', 'xue', 'mama', 'nana', 'ruru', 'tao', 'jie']
-    username_list = ['jie']
+    username_list = ['qiqi', 'mama', 'nana', 'ruru', 'tao', 'jie']
+    # username_list = ['jie']
 
     # config_map = init_config()
     # username_list = []
@@ -808,7 +808,7 @@ if __name__ == '__main__':
         processes.append(p)
         p.start()  # 启动进程
         print(f"已为用户 <{user}> 启动进程，PID: {p.pid}")
-        time.sleep(10)
+        # time.sleep(10)
 
 
     # 主进程等待所有子进程结束。

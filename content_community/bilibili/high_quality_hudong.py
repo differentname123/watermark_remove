@@ -979,7 +979,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     exist_comment_text = [comment[0] for comment in exist_comment]
     exist_danmu = result.get('已有弹幕', [])
     exist_danmu_text = [danmu[0] for danmu in exist_danmu]
-    max_success_comment_count = 100
+    max_success_comment_count = 5
     # if uid in ['443415885','3546954575383021','3546717871934392','1223805908','3546947310848473','3546947566700892', '477861377', '3493263231158598']:
     #     max_success_comment_count = 100
 
@@ -1198,19 +1198,20 @@ def fun():
         stop_event.set()  # 标记任务结束
 
 def run_periodically():
-    start_time = time.time()  # 记录程序开始的基准时间
     while True:
-        stop_event.set()  # 每次开始时设定停止标志
+        loop_start = time.time()  # 记录本轮 fun 开始时间
+
+        stop_event.set()
         fun_thread = threading.Thread(target=fun)
         fun_thread.start()
-        fun_thread.join()  # 等待当前线程执行完毕
+        fun_thread.join()
 
-        elapsed = time.time() - start_time
-        if elapsed >= 30 * 60:  # 已经使用了30分钟，不再等待
-            break
+        elapsed = time.time() - loop_start
+        remaining = max(0, 30*60 - elapsed)  # 剩余等待时间
+        if remaining > 0:
+            print(f"fun 执行耗时 {elapsed:.2f} 秒，等待 {remaining:.2f} 秒后再执行下一轮...")
+            time.sleep(remaining)
 
-        remaining = max(0, 30 * 60 - elapsed)
-        time.sleep(remaining)  # 仅睡眠剩余的时间，保持总时长不超过30分钟
 
 if __name__ == '__main__':
     # 启动定时任务线程
