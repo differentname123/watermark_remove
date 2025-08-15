@@ -802,19 +802,20 @@ def filter_danmu(danmu_list, duration):
         过滤后的弹幕列表。
     """
     total_seconds = time_str_to_seconds(duration)
-    if total_seconds is None:
-        return danmu_list  # 如果无法解析时长，则不进行过滤
+    if total_seconds is None or total_seconds <= 0:
+        return danmu_list
 
-    filtered_list = []
     for item in danmu_list:
-        timestamp = item.get('建议时间戳')
-        if timestamp:
-            seconds = time_str_to_seconds(timestamp)
-            item['建议时间戳'] = seconds
-            if seconds is not None and 0 <= seconds <= total_seconds:
-                filtered_list.append(item)
+        ts = item.get('建议时间戳')
+        seconds = time_str_to_seconds(ts) if ts else None
 
-    return filtered_list
+        # 如果时间戳无法解析或超出范围，则随机分配
+        if seconds is None or seconds < 0 or seconds > total_seconds:
+            seconds = random.randint(0, total_seconds)
+
+        item['建议时间戳'] = seconds
+
+    return danmu_list
 
 
 def extract_guides(data):
@@ -1040,6 +1041,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     for detail_danmu in danmu_list:
         danmaku_time_ms = detail_danmu['建议时间戳'] * 1000
         danmu_text_list = detail_danmu['推荐弹幕内容']
+        random.shuffle(other_commenters)  # 在循环前打乱顺序
         for commenter in other_commenters:
             for danmu_text in danmu_text_list:
                 if danmu_text in danmu_used_list or len(danmu_text) == 0:
@@ -1136,6 +1138,7 @@ stop_event = threading.Event()
 
 def fun():
     try:
+        print("开始执行 fun 函数...当前时间:", datetime.datetime.now().isoformat())
         stop_event.clear()  # 清除停止事件
         today = datetime.date.today().isoformat()
         # 加载all_emote.json

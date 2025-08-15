@@ -84,65 +84,27 @@ def download_public_video(url: str, output_path: str, retries: int = 3, chunk_si
     print(f"❌ 多次重试失败，未能下载：{url}")
     return False
 
-async def download_cover_minimal(url: str, save_path) -> bool:
-    """
-    一个最小化的异步函数，用于下载单个图片 URL 并保存到本地。
-
-    :param url: 要下载的图片的 URL。
-    :param save_path: 完整的本地保存路径 (包括文件名和后缀)。
-    :return: 下载成功返回 True，失败返回 False。
-    """
-    # 伪造一个常见的浏览器 User-Agent，有些服务器会检查这个
+def download_cover_sync(url: str, save_path) -> bool:
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
-    connector = aiohttp.TCPConnector(ssl=False)
-
-    print(f"[*] 准备下载封面...")
-    print(f"    - URL: {url}")
-    print(f"    - 保存至: {save_path.resolve()}")
-
     try:
-        # 使用 async with 来确保 session 和 response 能被正确关闭
-        async with aiohttp.ClientSession(headers=headers, connector=connector) as session:
-            async with session.get(url, timeout=30) as response:
-                # raise_for_status() 会检查 HTTP 状态码，如果不是 2xx (如 404, 500)，则会抛出异常
-                response.raise_for_status()
-
-                print("[+] 服务器响应成功 (状态码: 200)")
-
-                # 确保保存文件的目录存在
-                save_path.parent.mkdir(parents=True, exist_ok=True)
-
-                # 使用 aiofiles 异步写入文件，避免阻塞
-                async with aiofiles.open(save_path, 'wb') as f:
-                    # response.read() 一次性读取所有内容，适合图片等大小可控的文件
-                    await f.write(await response.read())
-
-                print(f"[SUCCESS] 封面已成功下载到: {save_path.resolve()}")
-                return True
-
-    except aiohttp.ClientConnectorCertificateError as e:
-        print(f"[ERROR] SSL 证书验证失败: {e}")
-        print("      这很常见。上面的代码已尝试禁用SSL验证，但可能仍有问题。")
-        return False
-    except aiohttp.ClientError as e:
-        print(f"[ERROR] 下载时发生网络错误: {e}")
-        return False
-    except asyncio.TimeoutError:
-        print("[ERROR] 下载超时 (超过 30 秒)。")
-        return False
+        resp = requests.get(url, headers=headers, timeout=30, verify=False)
+        resp.raise_for_status()
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        save_path.write_bytes(resp.content)
+        print(f"[SUCCESS] 封面已下载到: {save_path.resolve()}")
+        return True
     except Exception as e:
-        print(f"[ERROR] 发生未知错误: {e}")
+        print(f"[ERROR] 下载失败: {e}")
         return False
-
 
 def download_public_image(url: str, save_path) -> bool:
     """
     同步包装 download_cover_minimal，让调用方像普通函数一样使用。
     """
     # asyncio.run 会创建一个新的事件循环、跑完 coro，再关闭循环
-    return asyncio.run(download_cover_minimal(url, save_path))
+    return download_cover_sync(url, save_path)
 
 def string_to_object(input_str: str):
     """
@@ -1560,7 +1522,7 @@ def init_config():
         '3546731853645896': 'xue',
         # '336607792': 'cai',
         '3493263231158598':'jun',
-        '1768990597':'lin',
+        # '1768990597':'lin',
         '3546951513541346':'xiaosu'
 
 

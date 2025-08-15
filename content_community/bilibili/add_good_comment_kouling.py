@@ -2,6 +2,7 @@ import datetime
 import glob
 import multiprocessing
 import os
+import pathlib
 import random
 import time
 import traceback
@@ -11,7 +12,7 @@ import pandas as pd
 
 from LLM.gemini import get_llm_content
 from common_utils.common_utils import read_json, get_config, save_json_safe, init_config, find_key_values, \
-    process_product_title
+    process_product_title, download_public_image
 from content_community.bilibili.bili_utils import fetch_goods, update_short_url, list_selection_car_items
 from content_community.bilibili.comment import BilibiliCommenter
 from content_community.bilibili.get_comment import get_bilibili_comments
@@ -46,6 +47,10 @@ def init_model_and_db(
         name=collection_name,
         metadata={"hnsw:space": "cosine"}
     )
+    # 清除系统代理，防止影响其它请求
+    if proxy:
+        del os.environ['HTTP_PROXY']
+        del os.environ['HTTPS_PROXY']
     return model, collection
 
 
@@ -370,7 +375,7 @@ def merge_all_goods(base_dir=BASE_DIR) -> str:
 
 def search_products(query, model, collection, top_n=5):
     """执行语义搜索"""
-    print(f"\n--- 正在搜索: '{query}' ---")
+    # print(f"\n--- 正在搜索: '{query}' ---")
     query_embedding = model.encode(query, normalize_embeddings=True).tolist()
 
     results = collection.query(
@@ -415,14 +420,88 @@ def search_goods(key_word_list=['零食']):
 
     for q in key_word_list:
         search_results = search_products(q, model, collection, top_n=5)
-        print(f"{q} 搜索结果:\n{search_results}")
+        # print(f"{q} 搜索结果:\n{search_results}")
         result_list.extend(search_results if search_results else [])
-    return result_list
+    final_result_list = [result['metadata'] for result in result_list if 'metadata' in result]
+    # 按照outerId进行去重
+    unique_outer_ids = set()
+    final_result_list = [item for item in final_result_list if item['outerId'] not in unique_outer_ids and not unique_outer_ids.add(item['outerId'])]
 
+    return final_result_list
+
+
+def add_image_info():
+    """
+    下载商品图片，如果成功，则将图片的绝对路径更新到CSV文件中。
+    """
+    base_dir = "goods_info"
+    csv_path = f"{base_dir}/all_goods_info.csv"
+    images_dir = os.path.join(base_dir, "images")
+
+    # 1. 确保图片存储目录存在
+    os.makedirs(images_dir, exist_ok=True)
+
+    try:
+        df = pd.read_csv(csv_path)
+    except FileNotFoundError:
+        print(f"错误: CSV文件未找到于 '{csv_path}'")
+        return
+
+    # 2. 检查并添加 abd_image_path 列（如果不存在）
+    if 'abd_image_path' not in df.columns:
+        df['abd_image_path'] = pd.NA
+
+    # 3. 遍历每一行，下载图片并更新路径
+    print("开始处理图片下载和路径更新...")
+    for index, row in df.iterrows():
+        image_url = row.get('main_image')
+        outer_id = row.get('outerId', f'行_{index}')  # 获取outerId用于命名，如果不存在则用行号
+
+        if pd.isna(image_url) or not image_url:
+            continue
+
+        try:
+            # 修正协议头
+            if not image_url.startswith(('http:', 'https:')):
+                image_url = f'https:{image_url}'
+
+            image_name = f"{outer_id}.jpg"
+            # 这里创建的是相对路径
+            relative_image_path = os.path.join(images_dir, image_name)
+            if os.path.exists(relative_image_path):
+                print(f"跳过: {image_name} 已存在。")
+                continue
+
+            # 下载图片 (将路径字符串转换为Path对象)
+            response = download_public_image(image_url, pathlib.Path(relative_image_path))
+
+            # 4. 如果下载成功，更新DataFrame中的绝对路径
+            if response is True:
+                # 获取文件的绝对路径
+                absolute_path = os.path.abspath(relative_image_path)
+                # 使用 .at 高效地为单元格赋值
+                df.at[index, 'abd_image_path'] = absolute_path
+                print(f"成功: {image_name} 的路径已更新。")
+            else:
+                print(f"失败: {image_name}, URL: {image_url}, 原因: {response}")
+
+        except Exception as e:
+            print(f"处理商品 {outer_id} 时发生未知错误: {e}")
+
+    # 5. 所有行处理完毕后，将更新后的DataFrame保存回原文件
+    try:
+        df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+        print(f"\n处理完成！已将更新后的数据保存回: {csv_path}")
+    except Exception as e:
+        print(f"保存CSV文件时发生错误: {e}")
 
 
 if __name__ == "__main__":
+    # add_image_info()
+
     # merge_all_goods()
+
+
     result_list = search_goods([
                         "电竞零食",
                         "开黑必备",
@@ -430,3 +509,5 @@ if __name__ == "__main__":
                         "懒人速食"
                     ])
     print(result_list)
+    # print(goods_infos)
+

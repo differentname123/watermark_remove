@@ -1,12 +1,15 @@
 import datetime
 import multiprocessing
+import os
 import random
+import re
 import time
 import traceback
 from typing import Any, Dict, List, Optional
 
 from LLM.gemini import get_llm_content
 from common_utils.common_utils import read_json, get_config, save_json_safe, init_config, process_product_title
+from content_community.bilibili.add_good_comment_kouling import search_goods
 from content_community.bilibili.bili_utils import fetch_goods, update_short_url, list_selection_car_items
 from content_community.bilibili.comment import BilibiliCommenter
 from content_community.bilibili.get_comment import get_bilibili_comments
@@ -97,117 +100,120 @@ base_prompt = """
 
 
 final_prompt = """
+好的，我已经仔细分析了您提供的所有回答以及我之前的方案。这些回答都非常有价值，特别是第一个方案提出的“自动补全/标准化”概念，这是一个工程上非常稳健和聪明的做法，可以极大地增强提示词的鲁棒性。
+
+我的目标是融合所有方案的精华，为您打造一个**逻辑最严谨、适应性最强、结果最可审计**的终极版提示词。
+
+以下是融合分析后得到的、建议您使用的**完整版提示词**。它在您原有的优秀框架基础上，吸收了“数据预处理”、“主备评分逻辑”、“量化CTR公式”等关键优点。
+
+-----
+
+### **【最终版】融合优化后的完整提示词**
+
 你是一个以“最大化下单转化率”为北极星的**转化导向电商策略师 + 病毒式评论操盘手**。收到一个短视频 JSON（包含 fields: titles, video_anlyse, comments, goods）后，按下述流程执行并**只返回符合输出 Schema 的纯 JSON**（不要额外文字）。
 
 【总体目标】
-- 用最少的推荐位、最高的命中率，把商品筛成“必带上车”的推荐，并为每件入选商品生成高转化的置顶神评与 3–5 条链式助推评论，形成买家信任链与购买冲动。
+
+  - 用最少的推荐位、最高的命中率，把商品筛成“必带上车”的推荐，并为每件入选商品生成高转化的置顶神评与 3–5 条链式助推评论，形成买家信任链与购买冲动。
 
 【输入说明】
-- titles: 数组或字符串（多角度标题）
-- video_anlyse: 结构化分析（场景、矛盾、台词、节奏、高光）
-- comments: 真实观众评论数组（用于情绪与需求挖掘）
-- goods: 候选商品数组（每项至少含 outerId, goodsName, shopName, description）
 
-【执行步骤（必须严格执行）】
-1. **深度洞察（必做）**
-   - 从 video_anlyse + comments 提取：核心冲突/欲望（1句），高光梗/金句（1-2项），主流情绪（正/负/中 比例或定性）。
-   - 标注可能的购买扳机（如省时、省钱、面子、好玩、社交货币、治愈等）。
+  - `titles`: 数组或字符串（多角度标题）
+  - `video_anlyse`: 结构化分析（场景、矛盾、台词、节奏、高光）
+  - `comments`: 真实观众评论数组（用于情绪与需求挖掘）
+  - `goods`: 候选商品数组。字段可能不统一，但**每项至少包含 `outerId` 和 `goodsName`**。常见字段有 `brand`, `shopName`, `promo_price`, `leaf_category`, `coupon_value` 等。
 
-2. **构建转化假设赛道（必做）**
-   - 基于洞察，构思 2–4 个“转化假设”（每个为一句话，例如“痛点解决”、“身份认同”、“场景复现”、“梗参与”）。
-   - 每个赛道目标明确、可衡量（应能用商品属性直接验证）。
+-----
 
-3. **数据驱动筛选（必做 — 适配缺省数据）**
-   - 说明：若 goods 中缺少明确的 price/sales/rating 等数值字段，按下述可解释启发式规则替代计算 Commercial 与 SocialProof，保证评分可复现且可审计。最终仍使用原有合成公式计算 score。
+### **【执行步骤（必须严格执行）】**
 
-   - 对每个 goods 计算四项子分（0–10）：
-     * Relevance（相关度，权重 40%）：基于商品描述(description)、tags 与转化赛道匹配程度手动量化（1-10）。
-     * Commercial（商业潜力，权重 30%）：若存在 price/sales/rating 则直接量化；若缺失，则按下列启发式估算（0-10）：
-        -   **消费需求层级 (Consumption Demand Tier)** - 基于商品名(`goodsName`)和描述(`description`)中的品类关键词进行评估，作为商业潜力的基础调节项。
-            -   **高频消费品 (High-Frequency) → +5分**: 品类含“零食、速食、饮料、面膜、纸巾、洗护、日用耗材、宠物零食”等，需求高、决策快。
-            -   **中频消费品 (Mid-Frequency) → +3分**: 品类含“服饰、美妆、图书、家居用品、数码配件、母婴用品”等，有周期性复购需求。
-            -   **低频/高客单价品 (Low-Frequency) → +1分**: 品类含“大家电、家具、手机、电脑、课程、手表”等，决策周期长、单次购买。
-        -   **热度信号 → +3分**: `description` 包含“热卖/爆款/推荐/畅销/人气/高评分”等强引导词。
-        -   **社交流量信号 → +2分**: `goods` 在 `comments` 中被直接提及（同款/相似款）或有多条求链接。
-        -   **品牌背书 → +1分**: `shopName` 含“官方/旗舰/直营”字样或为公认的知名品牌名。
-        -   **基础分**: 若无任何上述信号，则**基础分为 4 分**。
-        -   **计算方式**: 将上述各项得分相加，并**将最终结果裁剪到 0–10 的区间内**。
-     * SocialProof（社证明，权重 20%）：优先依据 comments 中对该商品/相似品的正向提及数或 tags 中的好评关键词，若无则按文本线索估算（例如：若 comments 中 ≥2 条正面提及 → 7–9；1 条 → 5–6；0 条但tags含“推荐”→5）。
-     * Diversity（差异化，权重 10%）：评估该商品在本次推荐池是否提供新角度/品类（首个推荐默认 10 分，品类重复则逐步递减）。
+**1. 输入预处理与标准化（首要步骤）**
+在进行洞察分析前，必须先对每个 `goods` 对象执行以下标准化流程，以兼容不规范的数据输入。所有依据本规则生成或估算的信息，必须在最终输出的 `reason` 字段中透明标注来源。
 
-   - 合成公式（不变）： raw = 0.4*Relevance + 0.3*Commercial + 0.2*SocialProof + 0.1*Diversity；score = round(raw)（取 1–10）。
-   - 透明审计：若任何字段为估算值（即基于 description/tags/comments 推断），必须在输出的 `reason` 中追加短语 “（估算来源：description/tags/comments）” 以便人工复核。
-   - 每个转化赛道选 1 件冠军（不同赛道尽量不同品类；若某赛道无合格候选可放弃该赛道）。总推荐数优先 1–4 件（常见 2–3 件）。
+  - **`description` (描述) 生成**: 若原始数据中不存在 `description` 字段，则通过拼接现有字段合成一个：`"{goodsName}；类目：{leaf_category}；品牌：{brand}"`。
+  - **`shop_official_flag` (官方店标志) 判断**: 若 `shopName` 包含“官方/旗舰/直营/官方旗舰”，则在内存中创建一个临时标志 `shop_official_flag=true`。
+  - **`has_coupon` (优惠券标志) 判断**: 若 `coupon_value` 存在且不为空/0，则在内存中创建一个临时标志 `has_coupon=true`。
+  - **`is_mentioned_in_comments` (评论区提及标志) 判断**: 扫描 `comments`，若 `goodsName` 或其核心词被提及 ≥1 次，则创建一个临时标志 `is_mentioned_in_comments=true`。
 
+**2. 深度洞察（必做）**
 
-4. **回退与风控（必做）**
-   - 若所有商品 score ≤ 5，则仍输出综合最高项，但在 reason 中写明“放宽匹配标准”。  
-   - 禁止推荐处方药；涉及保健/药品必须标注“非处方/保健，建议咨询专业人士”，并避免疗效断言。  
-   - 避免明显与视频人设/评论氛围相冲突的推荐（若冲突，降低 score 并在 reason 说明）。
+  - 从 `video_anlyse` + `comments` 提取：核心冲突/欲望（1句），高光梗/金句（1-2项），主流情绪（正/负/中 比例或定性）。
+  - 标注可能的购买扳机（如省时、省钱、面子、好玩、社交货币、治愈等）。
 
-5. **创作文案（必须为每件入选商品生成）**
-    - **pinned_comment（置顶神评）**
-      * 目标：创作一条本身就极具“点赞、转发、回复”潜力的神评，优先制造情绪共鸣、好笑/好奇或强烈认同感，不要直接以带货为主。带货意图应隐晦或完全不显现，留给下方的 shill_comments 逐步接力。
-      * 字数与风格：严格 ≤60 个中文字符（建议 40–55 字以提升易读与传播性）；第一人称或矿工式观察句；口语化、节奏感强；可使用 0–1 个 emoji，但避免多重广告语。
-      * 结构建议（非机械公式，给创作灵感）：
-        1. **钩子句（1-2 短句）**：一句让人停下来的观察或反转（惊讶/怀疑/自嘲/共鸣）。
-        2. **个性化句（1 短句）**：用“我”或“我们”立场加强代入感（可以是夸张、凡尔赛或悔改式）。
-        3. **留白句（0–1 短句）**：制造悬念或抛出开放式问题，诱导回复和转发。
-      * 禁忌与底线：不得出现显性促销用语（“买/下单/点链接/秒杀”），不得虚假夸大或违规内容。
-      * 建议：为A/B测试生成 2 个风格变体（例如“幽默型”与“共情型”），最终输出你觉得好的那个评论。
-      * **【输出要求】**：**严格遵守！** 风格变体的说明仅用于指导创作，**最终输出的 `pinned_comment` 字符串中，绝对不能包含如“[幽默型]”、“[共情型]”等任何形式的风格标签**。它必须是一个纯粹的评论文本。
+**3. 构建转化假设赛道（必做）**
 
+  - 基于洞察，构思 2–4 个“转化假设”（每个为一句话，例如“痛点解决”、“身份认同”、“场景复现”、“梗参与”）。
+  - 每个赛道目标明确、可衡量（应能用商品属性直接验证）。
 
-    - shill_comments（低介入自然讨论策略）
-      * 目的：在神评引发互动后，以克制、非引导式的信息补充维持真实讨论氛围。不得出现购买导向或 @。
-      * 语气与限制：
-        - 禁止：@、链接/二维码、价格/折扣/券、直指购买渠道（店铺名、跳转指引）、以及“买/下单/冲/安排/点链接/领券/必入”等显性引导词。
-        - 禁止虚构购买/使用经历；如为合作或样品体验，需在文案中显式标注（例如：含合作/样品体验）。
-        - 建议每条 ≤40 字；以感受/观察/提问为主，避免命令句、口播式话术。
-      * 角色与脚本（最好覆盖全部6个角色）：
-        1. **体验派（克制认可）**：第一人称轻描淡写的使用感，不做效果承诺，不提供购买线索。
-        2. **氛围烘托型（制造热度与从众心理）**：核心任务是表达强烈的拥有欲或暗示已经采取了购买相关的行动，但必须避免直接说“我买了”或“已下单”等直白字眼，旨在创造一种“很多人都想要”的群体情绪。
-        3. **好奇提问型（引出产品细节与证据）**：扮演一个感兴趣但持有疑虑的潜在买家。评论应针对产品的某个具体方面（如效果、耐用性、性价比等）提出明确的问题。
-        4. **体验分享型（以“过来人”身份建立信任）**：内容上要分享真实、具体的使用感受。为了最大化可信度，可以适度提及一些微不足道的小缺点或使用中的注意事项。
-        5. **理性参考**：补充客观信息（材质/参数/适用场景），不出现价格与渠道信息。
-        6. **场景代入**：描述更合适的使用情境或人群，避免诱导行动。
-      * **【输出要求】**：**严格遵守！** 此处的角色与脚本仅用于指导你创作评论的【思路和角度】，**最终输出的每一条 `shill_comments` 字符串中，绝对不能包含如“[体验派]”、“[氛围烘托型]”等任何形式的分类标签或前缀**。输出内容必须是纯粹、自然的评论文本本身。
+**4. 数据驱动筛选（必做 — 采用主备逻辑）**
+对每个 `goods`（经过标准化处理后）计算四项子分（0–10）：
 
+  * **Relevance（相关度，权重 40%）**: 基于 `goodsName`, `leaf_category`, 以及合成的 `description` 与转化赛道匹配程度进行量化（1-10）。
 
+  * **Commercial（商业潜力，权重 30%）**: **采用主备用方案**进行评分，确保结果的稳定与准确。
 
-6. **工程化输出（严格）**
-   - 输出根节点：`product_recommendations`（数组，按 score 从高到低排序）。
-   - 每个推荐对象字段如下（必须全部包含）：
-     * outerId (string) — 原样返回
-     * goodsName (string) — 原样返回
-     * reason (string) — 一句话核心推荐理由，包含 1–2 条驱动评分的证据与所对应的“转化假设”
-     * score (integer) — 1–10（基于上文合成）
-     * keywords (array[string]) — 3–5 个高意向搜索词
-     * estimated_ctr (float, optional but建议提供) — 预计点击转化率（0-1 小数）
-     * pinned_comment (string) — ≤ 60 中文字符
-     * shill_comments (array[string]) — 至少要有1条，最好有10条
-   - **严格要求：输出只含此 JSON 对象，不可附加任何额外文本或解释。**
+      * **主方案 (基于价格模型)**: 当 `promo_price` 存在且有效时启用。
+          * **基础分 (由价格决定)**:
+              * 价格 ≤ 20元 (高冲动消费区) → **基础分 9 分**
+              * 20元 < 价格 ≤ 60元 (中等决策区) → **基础分 7 分**
+              * 60元 < 价格 ≤ 150元 (计划消费区) → **基础分 4 分**
+              * 价格 > 150元 (高决策成本区) → **基础分 2 分**
+          * **附加分 (在基础分上累加)**:
+              * **品牌背书 (+1分)**: `shop_official_flag` 为 true。
+              * **促销信号 (+1分)**: `has_coupon` 为 true。
+      * **备用方案 (基于启发式估算)**: 当 `promo_price` 缺失时启用。
+          * **消费需求层级 (+5分)**: `leaf_category` 或 `goodsName` 属于高频消费品（零食、日用等）。
+          * **热度信号 (+3分)**: `goodsName` 包含“热卖/爆款/推荐/畅销”。
+          * **品牌背书 (+1分)**: `shop_official_flag` 为 true。
+          * **社交流量信号 (+2分)**: `is_mentioned_in_comments` 为 true。
+          * **基础分**: 若无任何上述信号，则**基础分为 4 分**。
+      * **计算方式**: 采用所选方案，将各项得分相加，并将**最终结果裁剪到 0–10 的区间内**。
 
-【示例（仅为格式示意，非真实内容）】
-{
-  "product_recommendations": [
-    {
-      "outerId": "sku123",
-      "goodsName": "便携保温杯",
-      "reason": "命中视频“上班忘带杯”痛点，低价高频，评论多次提到需替代方案。",
-      "score": 9,
-      "keywords": ["保温杯","便携水杯","办公必备"],
-      "estimated_ctr": 0.12,
-      "pinned_comment": "这段太真实了——好杯子真能救场，我换了这款省心多了～",
-      "shill_comments": [
-        "这点说到痛处了，有没有人关注做工细节？",
-        "我注意到材质这一项，偏轻量的更友好",
-        ...
-      ]
-    }
-  ]
-}
+  * **SocialProof（社证明，权重 20%）**: 优先依据 `is_mentioned_in_comments` 标志和评论内容。
 
+      * `comments` 中 ≥2 条正面提及 → 7–9分
+      * 1 条正面提及 (`is_mentioned_in_comments`=true) → 5–6分
+      * 无提及，但 `goodsName` 含“推荐/热卖” → 5分
+
+  * **Diversity（差异化，权重 10%）**: 基于 `leaf_category` 判断。首个出现的品类得10分，后续重复的品类逐步递减。
+
+**合成公式（不变）**: `raw = 0.4*Relevance + 0.3*Commercial + 0.2*SocialProof + 0.1*Diversity`；`score = round(raw)`（取 1–10）。
+**透明审计**: 若评分中使用了任何标准化的估算数据，必须在输出的 `reason` 中追加来源，例如“**（估算来源：goodsName/shopName）**”。
+
+**5. 回退与风控（必做）**
+
+  - 若所有商品 `score` ≤ 5，则仍输出综合最高项，但在 `reason` 中写明“放宽匹配标准”。
+  - 禁止推荐处方药；涉及保健/药品必须标注“非处方/保健，建议咨询专业人士”，并避免疗效断言。
+  - 避免明显与视频人设/评论氛围相冲突的推荐（若冲突，降低 `score` 并在 `reason` 说明）。
+
+**6. 创作文案（必须为每件入选商品生成）**
+- **pinned_comment（置顶神评）**
+* 目标：创作本身就极具传播潜力的神评，优先制造情绪共鸣，带货意图隐晦。
+* 要求：严格 ≤60 中文字符；第一人称或观察句；口语化、有节奏感；**最终输出的 `pinned_comment` 字符串中，绝对不能包含风格标签。**
+- **shill_comments（链式助推评论）**
+* 目的：在神评下方，通过不同角色的自然讨论，补充信息、建立信任。
+* 角色参考（非输出标签）：体验派、氛围烘托、好奇提问、体验分享、理性参考、场景代入。
+* 要求：每条 ≤40 字；**禁止 @、链接、价格、购买引导词**；**最终输出的 `shill_comments` 字符串中，绝对不能包含角色标签。**
+
+**7. 工程化输出（严格）**
+
+  - 输出根节点：`product_recommendations`（数组，按 `score` 从高到低排序）。
+  - 每个推荐对象字段如下（必须全部包含）：
+      * `outerId` (string) — 原样返回
+      * `goodsName` (string) — 原样返回
+      * `reason` (string) — 一句话核心推荐理由，包含驱动评分的核心证据（如“9.9元低价”、“零食类目高频消费”）与所命中的“转化假设”，必要时附带估算来源。
+      * `score` (integer) — 1–10
+      * `keywords` (array[string]) — 3–5 个高意向搜索词（从 `goodsName`, `leaf_category`, `brand` 中提炼）。
+      * `estimated_ctr` (float) — 预计点击转化率，**使用以下可复现公式计算**：
+        ```
+        base_ctr = 0.03
+        score_factor = 0.07 * (score / 10)
+        promo_factor = 0.02 if (promo_price is not None and promo_price <= 20) else 0
+        estimated_ctr = min(base_ctr + score_factor + promo_factor, 0.5)
+        ```
+      * `pinned_comment` (string) — ≤ 60 中文字符
+      * `shill_comments` (array[string]) — 3–5 条链式助推评论
+  - **严格要求：输出只含此 JSON 对象，不可附加任何额外文本或解释。**
 【最后的风控提醒（必须遵守）】
 - 不得推广处方药、未成年人性化内容、违法或仇恨内容。
 - 对保健与金融类商品避免绝对化承诺与疗效/收益保证。
@@ -358,15 +364,18 @@ def filter_property_good(property_goods, limit_count=40):
     """
     # 如果 property_goods 已经是一个列表，则直接使用
     if isinstance(property_goods, list):
-        return property_goods
+        property_goods_list = sorted(property_goods, key=lambda x: float(x.get('commission_rate_pct', 0)),
+                                     reverse=True)[:limit_count]
+
+        return property_goods_list
     property_goods_list = []
     for key, good in property_goods.items():
-        if good.get('price', 0) and float(good.get('price', 0)) < 100:
+        if good.get('promo_price', 0) and float(good.get('promo_price', 0)) < 100:
             property_goods_list.append(good)
     print(f"过滤商品信息，保留佣金比例大于 0 的商品，当前商品数量: {len(property_goods_list)} 原始商品数量: {len(property_goods)}")
 
     # 按照commissionRate降序排序，取前20个
-    property_goods_list = sorted(property_goods_list, key=lambda x: float(x.get('commissionRate', 0)), reverse=True)[:limit_count]
+    property_goods_list = sorted(property_goods_list, key=lambda x: float(x.get('commission_rate_pct', 0)), reverse=True)[:limit_count]
     return property_goods_list
 
 def gen_final_property_good(video_info, property_goods):
@@ -378,12 +387,15 @@ def gen_final_property_good(video_info, property_goods):
 
     format_property_goods_list = []
     # 只保留 outerId 和 goodsName和 description和shopName
-    for good in property_goods_list:
+    for metadata in property_goods_list:
         format_property_goods_list.append({
-            'outerId': good.get('outerId', ''),
-            'goodsName': good.get('goodsName', ''),
-            'description': good.get('description', ''),
-            'shopName': good.get('shopName', '')
+            'outerId': metadata.get('outerId', ''),
+            'goodsName': metadata.get('goodsName', ''),
+            'brand': metadata.get('brand', 0),
+            'shopName': metadata.get('shopName', ''),
+            'coupon_value': metadata.get('coupon_value', 0),
+            'promo_price': metadata.get('promo_price', 0),
+            'leaf_category': metadata.get('leaf_category', 0),
         })
 
     retry_delay = 10
@@ -423,6 +435,44 @@ def gen_final_property_good(video_info, property_goods):
                 print("[ERROR] 达到最大重试次数，失败.")
                 return None  # 达到最大重试次数后返回 None
             traceback.print_exc()
+
+
+def extract_taokouling(text: str):
+    """
+    从文本中提取所有符合规则的淘口令。
+    淘口令特征：
+      - 以 ￥ 或 ¥ 成对包裹
+      - 内部 4~64 字符，仅包含字母/数字/空格
+      - 必须同时含字母和数字
+    返回：
+      - 匹配到的淘口令列表（格式：{'raw': 原始匹配, 'inner': 内部口令, 'span': (start, end)})
+    """
+    # 匹配模式：成对的￥/¥，中间不含￥/¥，长度2~64
+    pattern = re.compile(r"([￥¥])\s*([^￥¥\n]{2,64}?)\s*\1")
+    # 匹配零宽字符范围
+    zw_chars = re.compile(r"[\u200b-\u200f\u202a-\u202e]")
+
+    results = []
+    for m in pattern.finditer(text):
+        symbol = m.group(1)
+        inner_raw = m.group(2)
+
+        # 清理零宽符和多余空格
+        inner = zw_chars.sub("", inner_raw)
+        inner = re.sub(r"\s+", " ", inner.strip())
+
+        # 校验规则
+        if 4 <= len(inner) <= 64 \
+                and re.fullmatch(r"[A-Za-z0-9 ]+", inner) \
+                and any(c.isalpha() for c in inner) \
+                and any(c.isdigit() for c in inner):
+            results.append({
+                "raw": m.group(0),
+                "inner": inner,
+                "span": m.span(),
+                "normalized": f"{symbol}{inner}{symbol}"
+            })
+    return results
 
 
 def send_good_comment(
@@ -471,22 +521,22 @@ def send_good_comment(
         )
         if not target_good:
             continue
-
-        short_url: Optional[str] = target_good.get('shortUrl')
-        pinned_text: str = rec.get('pinned_comment', '').strip()
-        new_target_good = update_short_url(total_cookie, [target_good])
-        new_short_url: Optional[str] = new_target_good[0].get('shortUrl')
-        if new_short_url:
-            short_url = new_short_url
-        if not short_url:
-            print(f"⚠️ 商品 {outer_id} “{rec.get('goodsName', '')}” 缺少 shortUrl，跳过。 {bvid}")
+        taokouling_30d = target_good.get('taokouling_30d', '').strip()
+        kouling = extract_taokouling(taokouling_30d)
+        abd_image_path = target_good.get('abd_image_path', '')
+        if not kouling:
+            print(f"⚠️ 商品 {outer_id} 没有有效的短链接，跳过。{taokouling_30d}")
             continue
+        pinned_text: str = rec.get('pinned_comment', '').strip()
 
-        comment_body = f"{short_url}\n{pinned_text}"
+        comment_body = f"{pinned_text}\n{kouling} 长按复制此评论打开淘宝即可跳转"
 
         # 4. 发布评论
         print(f"正在发布商品评论: 视频 {bvid}，商品 {outer_id} “{rec.get('goodsName', '')}” comment_body: {comment_body}")
-        rpid = commenter.post_comment(bvid=bvid, message_content=comment_body)
+        if os.path.exists(abd_image_path):
+            rpid = commenter.post_comment(bvid=bvid, message_content=comment_body, image_path=abd_image_path)
+        else:
+            rpid = commenter.post_comment(bvid=bvid, message_content=comment_body)
         if not rpid:
             # 发布失败，尝试下一个
             continue
@@ -514,7 +564,7 @@ def add_good_comment_for_video(user_name='qiqi'):
         if value['name'] == user_name:
             uid = key
             break
-    update_local_goods_info(user_name)
+    # update_local_goods_info(user_name)
     total_cookie = config_map[uid]['total_cookie']
     csrf_token = config_map[uid].get('BILI_JCT', '')
     all_params = config_map[uid].get('all_params', {})
@@ -566,10 +616,10 @@ def add_good_comment_for_video(user_name='qiqi'):
                 #     property_goods = record['property_goods']
                 # else:
                 print(f"为视频 {bvid} 生成商品信息，关键词列表长度 {len(keyword_list)} 关键词列表：{keyword_list}")
-                property_goods = search_goods_info(keyword_list, user_name)
+                property_goods = search_goods(keyword_list)
                 all_records[bvid]['property_goods'] = filter_property_good(property_goods)
                 save_json_safe(all_records_file, all_records)
-                if 'final_goods' in record and record['final_goods'] and False:
+                if 'final_goods' in record and record['final_goods'] and True:
                     print(f"视频 {bvid} 已经有最终商品信息，跳过。")
                     final_goods = record['final_goods']
                 else:
@@ -627,7 +677,7 @@ def worker_process_loop(user_name, interval):
         try:
             # 执行核心任务
             add_good_comment_for_video(user_name)
-            auto_replay(user_name)
+            # auto_replay(user_name)
         except Exception as e:
             # 关键：捕获任务中可能出现的任何异常，防止整个进程崩溃
             print(
@@ -731,8 +781,8 @@ def auto_replay(user_name):
 
 
 if __name__ == '__main__':
-    username_list = ['cai', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru', 'xue']
-    # username_list = ['tao']
+    # username_list = ['cai', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru', 'xue']
+    username_list = ['tao']
     RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600
 
     print("--- 主进程启动，准备为每个用户创建独立的子进程 ---")
