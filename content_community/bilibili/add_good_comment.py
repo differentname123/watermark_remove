@@ -711,11 +711,16 @@ def auto_replay(user_name):
     """
     自动扫描进行置顶文案的回复增加购买的几率
     """
+    print(f"\n\n开始为用户 {user_name} 的视频增加置顶文案回复...")
     all_records_file = f"{BASE_DIR}/{user_name}_record_info.json"
     all_records = read_json(all_records_file)
     config_map = init_config()
     commenter_map = {}
     today = datetime.date.today().isoformat()
+
+    # 新增：最大处理次数（可按需调整）
+    max_process_times = 10
+
     for key, detail_config in config_map.items():
         name = detail_config.get('name', key)
         if user_name == name:
@@ -723,21 +728,34 @@ def auto_replay(user_name):
         all_params = detail_config.get('all_params', {})
         commenter_map[name] = BilibiliCommenter(
             total_cookie=detail_config.get('total_cookie', ''),
-            csrf_token=detail_config.get('BILI_JCT', ''),all_params=all_params
+            csrf_token=detail_config.get('BILI_JCT', ''), all_params=all_params
         )
         print(f"已创建评论者 {name} (UID: {key})")
+
     for bvid, record in all_records.items():
+        # 标记：是否因为达到上限而跳过（用于 finally 中是否自增）
+        skip_due_to_limit = False
         try:
             success_count = 0
+
+            # 新增：读取并判断处理次数是否超限
+            process_count = record.get('process_count', 0)
+            if process_count >= max_process_times:
+                print(f"用户 {user_name} 的记录 {bvid} 处理次数已达上限 ({process_count}/{max_process_times})，跳过处理。")
+                skip_due_to_limit = True
+                continue
+
             rpid = record.get('rpid')
             good_name = record.get('good_name', '')
             exist_shill_comments = record.get('exist_shill_comments', [])
             exist_shill_users = record.get('exist_shill_users', [])
             last_processed_date = record.get('last_processed_date', '')
+
             if len(exist_shill_comments) >= 2:
                 if not rpid or not good_name or last_processed_date == today:
                     # print(f"{user_name} 视频 {bvid} 没有 rpid，{rpid},  没有 good_name，{good_name}跳过。最近处理日期 {last_processed_date}，今天日期 {today}")
                     continue
+
             product_recommendations = record.get('final_goods', {}).get('product_recommendations', [])
             # 遍历product_recommendations找到good_name对应的商品
             target_product = None
@@ -745,15 +763,18 @@ def auto_replay(user_name):
                 if product.get('goodsName') == good_name:
                     target_product = product
                     break
+
             shill_comments = []
             if target_product:
                 shill_comments = target_product.get('shill_comments', [])
                 # 去除已经存在的评论
                 shill_comments = [comment for comment in shill_comments if comment not in exist_shill_comments]
+
             commenter_items = list(commenter_map.items())
             random.shuffle(commenter_items)
+
             for shill_comment in shill_comments:
-                if success_count > 3: # 单次回复数量限制
+                if success_count > 3:  # 单次回复数量限制
                     print(f"用户 {user_name} 已经成功回复 {success_count} 条评论，跳过剩余评论。")
                     time.sleep(100)
                     break
@@ -775,11 +796,15 @@ def auto_replay(user_name):
                         break
                     else:
                         time.sleep(100)
+
         except Exception as e:
             print(f"用户 {user_name} 回复视频 {bvid} 时出错: {e}")
             traceback.print_exc()
         finally:
             record['last_processed_date'] = today
+            # 新增：仅当未因超限跳过时才累计处理次数
+            if not skip_due_to_limit:
+                record['process_count'] = record.get('process_count', 0) + 1
             all_records[bvid] = record
             save_json_safe(all_records_file, all_records)
 

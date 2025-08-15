@@ -24,7 +24,7 @@ base_prompt = """
             判断标准不是要求所有字段都100%完全相同，而是基于以下逻辑进行综合判断：
             1.  **标题 (title)**: 核心内容一致或高度相似。请忽略前后缀、空格、标点符号、大小写等微小差异。例如，“我的VLOG日常” 和 “【VLOG】我的日常！” 应被视为相似。
             2.  **作者 (author)**: 应基本一致。这是个非常强的匹配信号。
-            3.  **时长 (duration)**: 应该非常接近，允许有几秒钟的误差（例如在 ±5 秒内），因为视频转码或添加片头片尾可能导致微小变化。
+            3.  **时长 (duration)**: 应该非常接近，允许有几秒钟的误差（例如在 ±1 秒内），因为视频转码或添加片头片尾可能导致微小变化。
             4.  **判定规则**: 一个可靠的匹配，通常需要 **至少满足上述两条标准**。例如，“标题和时长都高度吻合” 或 “标题和作者都高度吻合”。如果只满足一项，则不算匹配。请在找到第一个最可靠的匹配项后立即停止搜索并返回结果。
             
             # 输出要求
@@ -393,6 +393,8 @@ def check_duplicate_video(meta_data):
             douyin_full_title = meta_data.get("full_title", "")
             douyin_duration = meta_data.get("duration", '0:0')
             douyin_duration = time_to_ms(douyin_duration) / 1000
+            if douyin_duration < 30:
+                return False
             user_map_file = "douyin_bilibili_user_map.json"
             user_map_info = read_json(user_map_file)
 
@@ -453,52 +455,48 @@ def check_duplicate_video(meta_data):
                 return False
 
 if __name__ == '__main__':
-    meta_data = {
-  "collection_time": "2025-08-15 17:32:43",
-  "id": "7535033987593440527",
-  "desc": "kpl历史最贵的一箭，价值350万，一诺季赛 #AG战胜狼队 #一诺 #巅峰对决",
-  "full_title": "kpl历史最贵的一箭，价值350万，一诺黄牌射手加身，昭君王诞生，ag战胜狼队，#成都AG超玩会 #2025KPL夏季赛 #AG战胜狼队 #一诺 #巅峰对决",
-  "create_timestamp": 1754386826,
-  "create_time": "2025-08-05 17:40:26",
-  "text_extra": [
-    "成都AG超玩会",
-    "2025KPL夏季赛",
-    "AG战胜狼队",
-    "一诺",
-    "巅峰对决"
-  ],
-  "type": "视频",
-  "height": 2160,
-  "width": 3840,
-  "downloads": "https://www.douyin.com/aweme/v1/play/?video_id=v0200fg10000d28srffog65p5jo24g10&line=0&file_id=b150de3c54344f7cad9680f27845298e&sign=7b2fce5b22729e9292545e78aac26805&is_play_url=1&source=PackSourceEnum_AWEME_DETAIL",
-  "duration": "00:04:04",
-  "uri": "v0200fg10000d28srffog65p5jo24g10",
-  "dynamic_cover": "https://p9-pc-sign.douyinpic.com/obj/tos-cn-i-dy/8e8b8c05ce924c3794cf89daa9bfa167?lk3s=138a59ce&x-expires=1756458000&x-signature=Ny5mLlXH2uxlLU3N0lB1Db9BjwI%3D&from=327834062_large&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=dynamic_cover&biz_tag=pcweb_cover&l=20250815173241F6379A2DB08EF5553359",
-  "static_cover": "https://p9-pc-sign.douyinpic.com/image-cut-tos-priv/f9905d41f8910211abc51416a3222641~tplv-dy-resize-origshort-autoq-75:330.jpeg?lk3s=138a59ce&x-expires=2070608400&x-signature=SR5ow8kTklKtG84HlYz78RJsZBg%3D&from=327834062&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=cover&biz_tag=pcweb_cover&l=20250815173241F6379A2DB08EF5553359",
-  "uid": "2848214190926880",
-  "sec_uid": "MS4wLjABAAAANFpaR5OMSmEOzSw3AhoaSB0I0qJFfOApIyVLMno3gJnFve32R8DJ7eZhluCc4_KO",
-  "unique_id": "62304446290",
-  "signature": "各路顶尖高手操作意识讲解\n王者荣耀各大赛事精彩剪辑解说\nKpl官方合作账号\n新人博主，欢迎大家的关注",
-  "user_age": 23,
-  "nickname": "小璇超燃王者解说",
-  "mark": "小璇超燃王者解说",
-  "music_author": "小璇超燃王者解说",
-  "music_title": "@小璇超燃王者解说创作的原声",
-  "music_url": "https://sf5-hl-cdn-tos.douyinstatic.com/obj/ies-music/7535034122350430986.mp3",
-  "digg_count": 26162,
-  "comment_count": 642,
-  "collect_count": 1322,
-  "share_count": 497,
-  "play_count": -1,
-  "tag": [
-    "游戏",
-    "竞技游戏",
-    ""
-  ],
-  "extra": "",
-  "share_url": "https://www.douyin.com/video/7535033987593440527",
-  "abs_cover_path": "W:\\project\\python_project\\watermark_remove\\LLM\\TikTokDownloader\\Download\\cover\\7535033987593440527.jpg"
-}
+    meta_data =       {
+        "collection_time": "2025-08-15 21:20:13",
+        "id": "7532010636424006964",
+        "desc": "#萌宠出道计划 小飞狗",
+        "full_title": "#萌宠出道计划 小飞狗",
+        "create_timestamp": 1753682887,
+        "create_time": "2025-07-28 14:08:07",
+        "text_extra": [
+          "萌宠出道计划"
+        ],
+        "type": "视频",
+        "height": 1920,
+        "width": 1080,
+        "downloads": "https://www.douyin.com/aweme/v1/play/?video_id=v0d00fg10000d23h7b7og65jt9oejnhg&line=0&file_id=a0469539fbd44216ab35d96a8a616357&sign=706f5f3fb329bd6b6f55d011f38aa8ce&is_play_url=1&source=PackSourceEnum_AWEME_DETAIL",
+        "duration": "00:00:08",
+        "uri": "v0d00fg10000d23h7b7og65jt9oejnhg",
+        "dynamic_cover": "https://p3-pc-sign.douyinpic.com/obj/tos-cn-p-0015/o8k42irUHQ4gDnffCAAV8f64zdeAMsBYKO0EZE?lk3s=138a59ce&x-expires=1756472400&x-signature=ZpB7gWYTKzmjAI9AThgOGQMf2dw%3D&from=327834062_large&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=dynamic_cover&biz_tag=pcweb_cover&l=20250815212010AE750F9B06E0CE7D1BFC",
+        "static_cover": "https://p9-pc-sign.douyinpic.com/image-cut-tos-priv/a9224fa04790e46a3430364d07e1ac4e~tplv-dy-resize-origshort-autoq-75:330.jpeg?lk3s=138a59ce&x-expires=2070622800&x-signature=ASQV6lHVjXokBB7h7kmxxWkDS6c%3D&from=327834062&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=cover&biz_tag=pcweb_cover&l=20250815212010AE750F9B06E0CE7D1BFC",
+        "uid": "84423878465",
+        "sec_uid": "MS4wLjABAAAAxmQgzx59KVDZSjZucdTpCs9JR1TpKQ2Mk9xjrcGXXnk",
+        "unique_id": "15935720c",
+        "signature": "大家好我是小飞狗：小五🦮\n     生日是2025.5.20♉️👼\n在这里先谢谢姨姨们的喜欢.",
+        "user_age": -1,
+        "nickname": "小五",
+        "mark": "小五",
+        "music_author": "椰汁汁汁汁汁",
+        "music_title": "@椰汁汁汁汁汁创作的原声",
+        "music_url": "https://sf5-hl-ali-cdn-tos.douyinstatic.com/obj/ies-music/7321677233532259109.mp3",
+        "digg_count": 5521315,
+        "comment_count": 74533,
+        "collect_count": 167065,
+        "share_count": 2501791,
+        "play_count": -1,
+        "tag": [
+          "萌宠",
+          "宠物猫",
+          "猫vlog日常"
+        ],
+        "extra": "{\n  \"content\": \"{}\",\n  \"extra\": \"{\\\"base\\\":{\\\"client_key\\\":\\\"aw7c4z4ej0o3efzd\\\",\\\"app_name\\\":\\\"剪映\\\",\\\"app_icon\\\":\\\"https://p11-sign.douyinpic.com/obj/douyin-open-platform/b22313de3911b1169d1064198d589bc1?lk3s=4ced739e\\\\u0026x-expires=1770814800\\\\u0026x-signature=NieP9ckYaPG7SYs82cWVxm%2Fe7JM%3D\\\\u0026from=1290630046\\\"},\\\"anchor\\\":{\\\"name\\\":\\\"一键做出抖音热爆大片\\\",\\\"icon\\\":\\\"https://p3-sign.douyinpic.com/obj/douyin-web-image/b54d7ae38b1ea033b610bf53cf53ae76?lk3s=9e7df69c\\\\u0026x-expires=1755284400\\\\u0026x-signature=%2BGEem11bhpa0aBGk%2BSBUP9TD%2FpU%3D\\\\u0026from=2659055260\\\",\\\"url\\\":\\\"https://lv.ulikecam.com/act/lv-feed?app_id=6383\\\\u0026aweme_item_id=7532010636424006964\\\\u0026capabilities=general_1\\\\u0026capability_effect_id=%7B%7D\\\\u0026effect_id=general_1\\\\u0026effect_type=tool\\\\u0026hide_nav_bar=1\\\\u0026lv_log_extra=%7B%22anchor_type%22%3A%22edit_general%22%7D\\\\u0026new_style_id=\\\\u0026new_template_id=\\\\u0026should_full_screen=true\\\\u0026template_music_id=\\\\u0026type=0\\\",\\\"new_url\\\":\\\"https://api.amemv.com/magic/eco/runtime/release/6461f944e84c15036369f2a8?appType=douyinpc\\\\u0026call_link=vega%3A%2F%2Fcom.ies.videocut%2Fmain%2Fdraft%2Fnew_draft%3Ffrom%3Ddouyin_anchor_middle_page\\\\u0026lv_log_extra=%7B%22anchor_type%22%3A%22edit_general%22%7D\\\\u0026magic_page_no=1\\\\u0026server_jump_lv_params=%7B%22ug_open_third_app_cert_id%22%3A%221023913986%22%7D\\\",\\\"icon_uri\\\":\\\"aweme-jupiter/18c4cde71e518e1c319cfadb5e140ed7.png\\\",\\\"title_tag\\\":\\\"剪映\\\",\\\"is_template\\\":false,\\\"log_extra\\\":\\\"{\\\\\\\"author_id\\\\\\\":84423878465,\\\\\\\"image_anchor_extra\\\\\\\":\\\\\\\"{\\\\\\\\\\\\\\\"anchor_type\\\\\\\\\\\\\\\":\\\\\\\\\\\\\\\"edit_general\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"anchor_key\\\\\\\\\\\\\\\":\\\\\\\\\\\\\\\"general_1\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"anchor_name\\\\\\\\\\\\\\\":\\\\\\\\\\\\\\\"capcut_app\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"app_name\\\\\\\\\\\\\\\":\\\\\\\\\\\\\\\"lv\\\\\\\\\\\\\\\"}\\\\\\\",\\\\\\\"new_anchor_type\\\\\\\":\\\\\\\"edit_general\\\\\\\",\\\\\\\"group_id\\\\\\\":\\\\\\\"7532010636424006964\\\\\\\",\\\\\\\"anchor_key\\\\\\\":\\\\\\\"general_1\\\\\\\",\\\\\\\"anchor_type\\\\\\\":\\\\\\\"edit_general\\\\\\\",\\\\\\\"is_sdk\\\\\\\":\\\\\\\"0\\\\\\\",\\\\\\\"image_anchor_type\\\\\\\":\\\\\\\"edit_general\\\\\\\"}\\\"},\\\"share\\\":{\\\"share_id\\\":\\\"1838869741932560\\\",\\\"style_id\\\":\\\"1834532105434170\\\"}}\",\n  \"icon\": {\n    \"height\": 720,\n    \"uri\": \"aweme-jupiter/18c4cde71e518e1c319cfadb5e140ed7.png\",\n    \"url_key\": \"https://p26-sign.douyinpic.com/obj/aweme-jupiter/18c4cde71e518e1c319cfadb5e140ed7.png?x-expires=1755522000&x-signature=ayLQVCMuUIh%2FK8Co31Wb3Y54isY%3D&from=2347263168\",\n    \"url_list\": [\n      \"https://p3-pc-sign.douyinpic.com/obj/aweme-jupiter/18c4cde71e518e1c319cfadb5e140ed7.png?lk3s=138a59ce&x-expires=1756472400&x-signature=Z7s1JXYwumTG4pOVDqNF1fX4X5k%3D&from=327834062\",\n      \"https://p9-pc-sign.douyinpic.com/obj/aweme-jupiter/18c4cde71e518e1c319cfadb5e140ed7.png?lk3s=138a59ce&x-expires=1756472400&x-signature=QeeHaX%2F91tg2K3dmQizkCkH%2FCwQ%3D&from=327834062\"\n    ],\n    \"width\": 720\n  },\n  \"id\": \"aw7c4z4ej0o3efzd\",\n  \"log_extra\": \"{\\\"author_id\\\":84423878465,\\\"image_anchor_extra\\\":\\\"{\\\\\\\"anchor_type\\\\\\\":\\\\\\\"edit_general\\\\\\\",\\\\\\\"anchor_key\\\\\\\":\\\\\\\"general_1\\\\\\\",\\\\\\\"anchor_name\\\\\\\":\\\\\\\"capcut_app\\\\\\\",\\\\\\\"app_name\\\\\\\":\\\\\\\"lv\\\\\\\"}\\\",\\\"new_anchor_type\\\":\\\"edit_general\\\",\\\"group_id\\\":\\\"7532010636424006964\\\",\\\"anchor_key\\\":\\\"general_1\\\",\\\"anchor_type\\\":\\\"edit_general\\\",\\\"is_sdk\\\":\\\"0\\\",\\\"image_anchor_type\\\":\\\"edit_general\\\"}\",\n  \"style_info\": {\n    \"default_icon\": \"https://p26-sign.douyinpic.com/obj/aweme-jupiter/18c4cde71e518e1c319cfadb5e140ed7.png?x-expires=1755522000&x-signature=ayLQVCMuUIh%2FK8Co31Wb3Y54isY%3D&from=2347263168\",\n    \"extra\": \"{}\",\n    \"scene_icon\": \"{\\\"feed\\\":\\\"https://p26-sign.douyinpic.com/obj/aweme-jupiter/18c4cde71e518e1c319cfadb5e140ed7.png?x-expires=1755522000&x-signature=ayLQVCMuUIh%2FK8Co31Wb3Y54isY%3D&from=2347263168\\\"}\"\n  },\n  \"title\": \"\",\n  \"title_tag\": \"剪映\",\n  \"type\": 15\n}",
+        "share_url": "https://www.douyin.com/video/7532010636424006964",
+        "abs_cover_path": "W:\\project\\python_project\\watermark_remove\\LLM\\TikTokDownloader\\Download\\cover\\7532010636424006964.jpg"
+      }
 
     result = check_duplicate_video(meta_data)
     print(f"检查结果: {'重复' if result else '不重复'}")

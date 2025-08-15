@@ -15,12 +15,13 @@
 import json
 import os
 import copy
+import random
 import time
 import traceback
 
 from common_utils.common_utils import get_config, format_seconds_to_mmss
 from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover, \
-    merge_videos_ffmpeg, apply_all_subtle_tweaks, _get_video_resolution
+    merge_videos_ffmpeg, apply_all_subtle_tweaks, _get_video_resolution, process_video_with_template
 from common_utils.video_utils_cut import text_image_to_video_with_subtitles
 from content_community.app.remake_video import remake_video_robust
 
@@ -92,6 +93,31 @@ def _deep_update(orig: dict, new: dict):
             _deep_update(orig[k], v)
         else:
             orig[k] = v
+
+
+def add_template(video_path, output_video_path, user_name):
+    """
+    增加框信息，大大提高通过率
+    """
+    try:
+        width, height = _get_video_resolution(video_path)  # 确保视频路径有效
+
+        if width > height:
+            image_key = 'height'
+            left_up_point = (0, 416)
+            box_info = (768, 576)
+        else:
+            image_key = 'width'
+            left_up_point = (416, 0)
+            box_info = (576, 768)
+
+        # 随机生成1-3的一个数字
+        random_number = str(random.randint(1, 3))
+        template_image = f"template_images/{image_key}{random_number}_transparent.png"
+        process_video_with_template(input_video=video_path, template_image=template_image, output_video=output_video_path, left_up_point=left_up_point, box_info=box_info)
+    except Exception as e:
+        print(f"⚠️ 添加模板失败：{e}")
+        return False
 
 def save_json(path: str, data):
     """
@@ -353,6 +379,16 @@ def auto_upload():
             except Exception as e:
                 print(f"⚠️ 添加开场白失败：{e}")
 
+        template_video_path = video_path.replace('.mp4', '_template.mp4')
+        if generation_options.get('need_template', False):
+            try:
+                add_template(video_path, template_video_path, userName)
+                if os.path.exists(template_video_path):
+                    video_path = template_video_path
+                    print(f"✅ 添加模板成功，保存为 {template_video_path}")
+            except Exception as e:
+                print(f"⚠️ 添加模板失败：{e}")
+
 
         try:
             # ---------- 准备投稿参数 ----------
@@ -472,6 +508,8 @@ def auto_upload():
                     os.remove(tweak_video_path)
                 if addPrologue_video_path and os.path.exists(addPrologue_video_path):
                     os.remove(addPrologue_video_path)
+                if template_video_path and os.path.exists(template_video_path):
+                    os.remove(template_video_path)
             except Exception as e:
                 print(f"⚠️ 删除视频文件失败：{e}")
 
