@@ -415,9 +415,12 @@ def check_duplicate_video(meta_data):
             for data in data_list:
                 # 只保留指定的键
                 filtered_data = {key: data.get(key, '') for key in bilibili_key_list}
-                filtered_data['duration'] = time_to_ms(filtered_data.get('duration', '0:0')) / 1000
-                result_list.append(filtered_data)
-
+                temp_duration = time_to_ms(filtered_data.get('duration', '0:0')) / 1000
+                if abs(temp_duration - douyin_duration) <= 1:
+                    filtered_data['duration'] = temp_duration
+                    result_list.append(filtered_data)
+            if not result_list:
+                return False
             prompt = base_prompt
             prompt = f'{prompt}原始视频元数据:{douyin_info}\n目标视频列表:{result_list}'
             raw = get_llm_content(prompt=prompt, model_name="gemini-2.5-flash")
@@ -456,46 +459,50 @@ def check_duplicate_video(meta_data):
 
 if __name__ == '__main__':
     meta_data =       {
-        "collection_time": "2025-08-15 21:20:13",
-        "id": "7532010636424006964",
-        "desc": "#萌宠出道计划 小飞狗",
-        "full_title": "#萌宠出道计划 小飞狗",
-        "create_timestamp": 1753682887,
-        "create_time": "2025-07-28 14:08:07",
+        "collection_time": "2025-08-15 22:10:58",
+        "id": "7538810947314453769",
+        "desc": "IG被AL零封 朱开怒喷丹尼BP 朱开：IG #AL #IG #LPL #2025lpl第三赛段",
+        "full_title": "IG被AL零封 朱开怒喷丹尼BP 朱开：这看两看两波就知道结果了，这游戏看什么东西啊，IG你在玩什么东西啊，准备让谁C啊这BP，自己能C的英雄自己Ban，今天这比赛就是在通便。#AL战胜IG #AL #IG #LPL #2025lpl第三赛段",
+        "create_timestamp": 1755266216,
+        "create_time": "2025-08-15 21:56:56",
         "text_extra": [
-          "萌宠出道计划"
+          "AL战胜IG",
+          "AL",
+          "IG",
+          "LPL",
+          "2025lpl第三赛段"
         ],
         "type": "视频",
-        "height": 1920,
-        "width": 1080,
-        "downloads": "https://www.douyin.com/aweme/v1/play/?video_id=v0d00fg10000d23h7b7og65jt9oejnhg&line=0&file_id=a0469539fbd44216ab35d96a8a616357&sign=706f5f3fb329bd6b6f55d011f38aa8ce&is_play_url=1&source=PackSourceEnum_AWEME_DETAIL",
-        "duration": "00:00:08",
-        "uri": "v0d00fg10000d23h7b7og65jt9oejnhg",
-        "dynamic_cover": "https://p3-pc-sign.douyinpic.com/obj/tos-cn-p-0015/o8k42irUHQ4gDnffCAAV8f64zdeAMsBYKO0EZE?lk3s=138a59ce&x-expires=1756472400&x-signature=ZpB7gWYTKzmjAI9AThgOGQMf2dw%3D&from=327834062_large&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=dynamic_cover&biz_tag=pcweb_cover&l=20250815212010AE750F9B06E0CE7D1BFC",
-        "static_cover": "https://p9-pc-sign.douyinpic.com/image-cut-tos-priv/a9224fa04790e46a3430364d07e1ac4e~tplv-dy-resize-origshort-autoq-75:330.jpeg?lk3s=138a59ce&x-expires=2070622800&x-signature=ASQV6lHVjXokBB7h7kmxxWkDS6c%3D&from=327834062&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=cover&biz_tag=pcweb_cover&l=20250815212010AE750F9B06E0CE7D1BFC",
-        "uid": "84423878465",
-        "sec_uid": "MS4wLjABAAAAxmQgzx59KVDZSjZucdTpCs9JR1TpKQ2Mk9xjrcGXXnk",
-        "unique_id": "15935720c",
-        "signature": "大家好我是小飞狗：小五🦮\n     生日是2025.5.20♉️👼\n在这里先谢谢姨姨们的喜欢.",
-        "user_age": -1,
-        "nickname": "小五",
-        "mark": "小五",
-        "music_author": "椰汁汁汁汁汁",
-        "music_title": "@椰汁汁汁汁汁创作的原声",
-        "music_url": "https://sf5-hl-ali-cdn-tos.douyinstatic.com/obj/ies-music/7321677233532259109.mp3",
-        "digg_count": 5521315,
-        "comment_count": 74533,
-        "collect_count": 167065,
-        "share_count": 2501791,
+        "height": 720,
+        "width": 1280,
+        "downloads": "https://www.douyin.com/aweme/v1/play/?video_id=v0200fg10000d2fjmmvog65k9au2reeg&line=0&file_id=a159fbbc0e62471d8332990af07fc02d&sign=1b034022497cb16eaf1f9ea52be11fb4&is_play_url=1&source=PackSourceEnum_AWEME_DETAIL",
+        "duration": "00:02:08",
+        "uri": "v0200fg10000d2fjmmvog65k9au2reeg",
+        "dynamic_cover": "https://p9-pc-sign.douyinpic.com/obj/tos-cn-i-dy/63fcec72aede4a1a9a7b75815fa562c4?lk3s=138a59ce&x-expires=1756476000&x-signature=O7hGRMdGh7GG6yhz0MBEHjnqiKs%3D&from=327834062_large&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=dynamic_cover&biz_tag=pcweb_cover&l=20250815221055BA9A43A5FDDD5A308FF1",
+        "static_cover": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/63fcec72aede4a1a9a7b75815fa562c4~tplv-dy-resize-origshort-autoq-75:330.jpeg?lk3s=138a59ce&x-expires=2070626400&x-signature=4QFJWy76uXcSLdj%2Fe2pozEZHQFg%3D&from=327834062&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=cover&biz_tag=pcweb_cover&l=20250815221055BA9A43A5FDDD5A308FF1",
+        "uid": "4076634204016388",
+        "sec_uid": "MS4wLjABAAAASGBhmFeozhHMp_SU3Bd-btmN7t7FV7VRet10KRmSZACF85mWGJt7RtLO-Chrtzau",
+        "unique_id": "dypeai25wgyl",
+        "signature": "❤每天分享好玩的游戏内容",
+        "user_age": 23,
+        "nickname": "付小凡",
+        "mark": "付小凡",
+        "music_author": "DiCrow",
+        "music_title": "22 22",
+        "music_url": "",
+        "digg_count": 3,
+        "comment_count": -1,
+        "collect_count": 2,
+        "share_count": 2,
         "play_count": -1,
         "tag": [
-          "萌宠",
-          "宠物猫",
-          "猫vlog日常"
+          "游戏",
+          "竞技游戏",
+          ""
         ],
-        "extra": "{\n  \"content\": \"{}\",\n  \"extra\": \"{\\\"base\\\":{\\\"client_key\\\":\\\"aw7c4z4ej0o3efzd\\\",\\\"app_name\\\":\\\"剪映\\\",\\\"app_icon\\\":\\\"https://p11-sign.douyinpic.com/obj/douyin-open-platform/b22313de3911b1169d1064198d589bc1?lk3s=4ced739e\\\\u0026x-expires=1770814800\\\\u0026x-signature=NieP9ckYaPG7SYs82cWVxm%2Fe7JM%3D\\\\u0026from=1290630046\\\"},\\\"anchor\\\":{\\\"name\\\":\\\"一键做出抖音热爆大片\\\",\\\"icon\\\":\\\"https://p3-sign.douyinpic.com/obj/douyin-web-image/b54d7ae38b1ea033b610bf53cf53ae76?lk3s=9e7df69c\\\\u0026x-expires=1755284400\\\\u0026x-signature=%2BGEem11bhpa0aBGk%2BSBUP9TD%2FpU%3D\\\\u0026from=2659055260\\\",\\\"url\\\":\\\"https://lv.ulikecam.com/act/lv-feed?app_id=6383\\\\u0026aweme_item_id=7532010636424006964\\\\u0026capabilities=general_1\\\\u0026capability_effect_id=%7B%7D\\\\u0026effect_id=general_1\\\\u0026effect_type=tool\\\\u0026hide_nav_bar=1\\\\u0026lv_log_extra=%7B%22anchor_type%22%3A%22edit_general%22%7D\\\\u0026new_style_id=\\\\u0026new_template_id=\\\\u0026should_full_screen=true\\\\u0026template_music_id=\\\\u0026type=0\\\",\\\"new_url\\\":\\\"https://api.amemv.com/magic/eco/runtime/release/6461f944e84c15036369f2a8?appType=douyinpc\\\\u0026call_link=vega%3A%2F%2Fcom.ies.videocut%2Fmain%2Fdraft%2Fnew_draft%3Ffrom%3Ddouyin_anchor_middle_page\\\\u0026lv_log_extra=%7B%22anchor_type%22%3A%22edit_general%22%7D\\\\u0026magic_page_no=1\\\\u0026server_jump_lv_params=%7B%22ug_open_third_app_cert_id%22%3A%221023913986%22%7D\\\",\\\"icon_uri\\\":\\\"aweme-jupiter/18c4cde71e518e1c319cfadb5e140ed7.png\\\",\\\"title_tag\\\":\\\"剪映\\\",\\\"is_template\\\":false,\\\"log_extra\\\":\\\"{\\\\\\\"author_id\\\\\\\":84423878465,\\\\\\\"image_anchor_extra\\\\\\\":\\\\\\\"{\\\\\\\\\\\\\\\"anchor_type\\\\\\\\\\\\\\\":\\\\\\\\\\\\\\\"edit_general\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"anchor_key\\\\\\\\\\\\\\\":\\\\\\\\\\\\\\\"general_1\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"anchor_name\\\\\\\\\\\\\\\":\\\\\\\\\\\\\\\"capcut_app\\\\\\\\\\\\\\\",\\\\\\\\\\\\\\\"app_name\\\\\\\\\\\\\\\":\\\\\\\\\\\\\\\"lv\\\\\\\\\\\\\\\"}\\\\\\\",\\\\\\\"new_anchor_type\\\\\\\":\\\\\\\"edit_general\\\\\\\",\\\\\\\"group_id\\\\\\\":\\\\\\\"7532010636424006964\\\\\\\",\\\\\\\"anchor_key\\\\\\\":\\\\\\\"general_1\\\\\\\",\\\\\\\"anchor_type\\\\\\\":\\\\\\\"edit_general\\\\\\\",\\\\\\\"is_sdk\\\\\\\":\\\\\\\"0\\\\\\\",\\\\\\\"image_anchor_type\\\\\\\":\\\\\\\"edit_general\\\\\\\"}\\\"},\\\"share\\\":{\\\"share_id\\\":\\\"1838869741932560\\\",\\\"style_id\\\":\\\"1834532105434170\\\"}}\",\n  \"icon\": {\n    \"height\": 720,\n    \"uri\": \"aweme-jupiter/18c4cde71e518e1c319cfadb5e140ed7.png\",\n    \"url_key\": \"https://p26-sign.douyinpic.com/obj/aweme-jupiter/18c4cde71e518e1c319cfadb5e140ed7.png?x-expires=1755522000&x-signature=ayLQVCMuUIh%2FK8Co31Wb3Y54isY%3D&from=2347263168\",\n    \"url_list\": [\n      \"https://p3-pc-sign.douyinpic.com/obj/aweme-jupiter/18c4cde71e518e1c319cfadb5e140ed7.png?lk3s=138a59ce&x-expires=1756472400&x-signature=Z7s1JXYwumTG4pOVDqNF1fX4X5k%3D&from=327834062\",\n      \"https://p9-pc-sign.douyinpic.com/obj/aweme-jupiter/18c4cde71e518e1c319cfadb5e140ed7.png?lk3s=138a59ce&x-expires=1756472400&x-signature=QeeHaX%2F91tg2K3dmQizkCkH%2FCwQ%3D&from=327834062\"\n    ],\n    \"width\": 720\n  },\n  \"id\": \"aw7c4z4ej0o3efzd\",\n  \"log_extra\": \"{\\\"author_id\\\":84423878465,\\\"image_anchor_extra\\\":\\\"{\\\\\\\"anchor_type\\\\\\\":\\\\\\\"edit_general\\\\\\\",\\\\\\\"anchor_key\\\\\\\":\\\\\\\"general_1\\\\\\\",\\\\\\\"anchor_name\\\\\\\":\\\\\\\"capcut_app\\\\\\\",\\\\\\\"app_name\\\\\\\":\\\\\\\"lv\\\\\\\"}\\\",\\\"new_anchor_type\\\":\\\"edit_general\\\",\\\"group_id\\\":\\\"7532010636424006964\\\",\\\"anchor_key\\\":\\\"general_1\\\",\\\"anchor_type\\\":\\\"edit_general\\\",\\\"is_sdk\\\":\\\"0\\\",\\\"image_anchor_type\\\":\\\"edit_general\\\"}\",\n  \"style_info\": {\n    \"default_icon\": \"https://p26-sign.douyinpic.com/obj/aweme-jupiter/18c4cde71e518e1c319cfadb5e140ed7.png?x-expires=1755522000&x-signature=ayLQVCMuUIh%2FK8Co31Wb3Y54isY%3D&from=2347263168\",\n    \"extra\": \"{}\",\n    \"scene_icon\": \"{\\\"feed\\\":\\\"https://p26-sign.douyinpic.com/obj/aweme-jupiter/18c4cde71e518e1c319cfadb5e140ed7.png?x-expires=1755522000&x-signature=ayLQVCMuUIh%2FK8Co31Wb3Y54isY%3D&from=2347263168\\\"}\"\n  },\n  \"title\": \"\",\n  \"title_tag\": \"剪映\",\n  \"type\": 15\n}",
-        "share_url": "https://www.douyin.com/video/7532010636424006964",
-        "abs_cover_path": "W:\\project\\python_project\\watermark_remove\\LLM\\TikTokDownloader\\Download\\cover\\7532010636424006964.jpg"
+        "extra": "",
+        "share_url": "https://www.douyin.com/video/7538810947314453769",
+        "abs_cover_path": "W:\\project\\python_project\\watermark_remove\\LLM\\TikTokDownloader\\Download\\cover\\7538810947314453769.jpg"
       }
 
     result = check_duplicate_video(meta_data)
