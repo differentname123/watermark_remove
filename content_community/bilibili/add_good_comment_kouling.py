@@ -54,6 +54,28 @@ def init_model_and_db(
     return model, collection
 
 
+def init_model_and_db_local(local_model_dir, db_path="./product_db", collection_name="my_products", device="cpu"):
+    # 确保没有代理变量影响加载（若你需要代理可按需设置）
+    for var in ('HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy'):
+        os.environ.pop(var, None)
+
+    # 可选：开启离线模式，确保只从本地加载
+    os.environ['TRANSFORMERS_OFFLINE'] = '1'
+
+    model_dir = pathlib.Path(local_model_dir)
+    if not model_dir.exists():
+        raise FileNotFoundError(f"本地模型目录不存在: {local_model_dir}")
+
+    print(f"从本地加载模型: {local_model_dir}")
+    model = SentenceTransformer(str(model_dir), device=device)
+
+    client = chromadb.PersistentClient(path=db_path)
+    collection = client.get_or_create_collection(
+        name=collection_name,
+        metadata={"hnsw:space": "cosine"}
+    )
+    return model, collection
+
 def add_products_from_csv(csv_file_path, model, collection, price_field="promo_price"):
     """从CSV文件添加商品到向量数据库"""
     print(f"\n--- 开始处理CSV文件: {csv_file_path} ---")
@@ -408,13 +430,15 @@ def search_goods(key_word_list=['零食']):
     base_dir = "goods_info"
     csv_path = f"{base_dir}/all_goods_info.csv"
 
-    model, collection = init_model_and_db(
-        model_name=model_name,
-        db_path=db_path,
-        collection_name=collection_name,
-        device="cpu",
-        proxy=proxy
-    )
+    # model, collection = init_model_and_db(
+    #     model_name=model_name,
+    #     db_path=db_path,
+    #     collection_name=collection_name,
+    #     device="cpu",
+    #     proxy=proxy
+    # )
+    local_model_dir = r"C:\Users\zxh\.cache\huggingface\hub\models--BAAI--bge-base-zh-v1.5\snapshots\f03589ceff5aac7111bd60cfc7d497ca17ecac65"
+    model, collection = init_model_and_db_local(local_model_dir)
 
     add_products_from_csv(csv_path, model, collection)
 
