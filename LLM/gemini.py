@@ -365,10 +365,10 @@ def get_llm_content_sub(prompt: str = '你好，Gemini！请介绍一下你自�
 
 
 @with_proxy
-def get_llm_content(prompt: str = '你好，Gemini！请介绍一下你自己。') -> str | None:
+def get_llm_content(prompt: str = '你好，Gemini！请介绍一下你自己。', model_name: str = "gemini-2.5-pro") -> str | None:
     try:
         try:
-            return get_llm_content_sub(prompt, "gemini-2.5-pro")
+            return get_llm_content_sub(prompt, model_name)
         except Exception as e1:
             print(f"[WARN] 主模型失败: {e1}")
             try:

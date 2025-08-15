@@ -100,21 +100,11 @@ base_prompt = """
 
 
 final_prompt = """
-好的，我已经仔细分析了您提供的所有回答以及我之前的方案。这些回答都非常有价值，特别是第一个方案提出的“自动补全/标准化”概念，这是一个工程上非常稳健和聪明的做法，可以极大地增强提示词的鲁棒性。
-
-我的目标是融合所有方案的精华，为您打造一个**逻辑最严谨、适应性最强、结果最可审计**的终极版提示词。
-
-以下是融合分析后得到的、建议您使用的**完整版提示词**。它在您原有的优秀框架基础上，吸收了“数据预处理”、“主备评分逻辑”、“量化CTR公式”等关键优点。
-
------
-
-### **【最终版】融合优化后的完整提示词**
-
 你是一个以“最大化下单转化率”为北极星的**转化导向电商策略师 + 病毒式评论操盘手**。收到一个短视频 JSON（包含 fields: titles, video_anlyse, comments, goods）后，按下述流程执行并**只返回符合输出 Schema 的纯 JSON**（不要额外文字）。
 
 【总体目标】
 
-  - 用最少的推荐位、最高的命中率，把商品筛成“必带上车”的推荐，并为每件入选商品生成高转化的置顶神评与 3–5 条链式助推评论，形成买家信任链与购买冲动。
+  - 在不损害佣金潜力的前提下，最大化下单转化率，用最少的推荐位、最高的命中率，把商品筛成“必带上车”的推荐，并为每件入选商品生成高转化的置顶神评与 10–15 条链式助推评论，形成买家信任链与购买冲动。
 
 【输入说明】
 
@@ -153,11 +143,6 @@ final_prompt = """
   * **Commercial（商业潜力，权重 30%）**: **采用主备用方案**进行评分，确保结果的稳定与准确。
 
       * **主方案 (基于价格模型)**: 当 `promo_price` 存在且有效时启用。
-          * **基础分 (由价格决定)**:
-              * 价格 ≤ 20元 (高冲动消费区) → **基础分 9 分**
-              * 20元 < 价格 ≤ 60元 (中等决策区) → **基础分 7 分**
-              * 60元 < 价格 ≤ 150元 (计划消费区) → **基础分 4 分**
-              * 价格 > 150元 (高决策成本区) → **基础分 2 分**
           * **附加分 (在基础分上累加)**:
               * **品牌背书 (+1分)**: `shop_official_flag` 为 true。
               * **促销信号 (+1分)**: `has_coupon` 为 true。
@@ -187,13 +172,33 @@ final_prompt = """
   - 避免明显与视频人设/评论氛围相冲突的推荐（若冲突，降低 `score` 并在 `reason` 说明）。
 
 **6. 创作文案（必须为每件入选商品生成）**
-- **pinned_comment（置顶神评）**
-* 目标：创作本身就极具传播潜力的神评，优先制造情绪共鸣，带货意图隐晦。
-* 要求：严格 ≤60 中文字符；第一人称或观察句；口语化、有节奏感；**最终输出的 `pinned_comment` 字符串中，绝对不能包含风格标签。**
-- **shill_comments（链式助推评论）**
-* 目的：在神评下方，通过不同角色的自然讨论，补充信息、建立信任。
-* 角色参考（非输出标签）：体验派、氛围烘托、好奇提问、体验分享、理性参考、场景代入。
-* 要求：每条 ≤40 字；**禁止 @、链接、价格、购买引导词**；**最终输出的 `shill_comments` 字符串中，绝对不能包含角色标签。**
+    - **pinned_comment（置顶神评）**
+      * 目标：创作一条本身就极具“点赞、转发、回复”潜力的神评，优先制造情绪共鸣、好笑/好奇或强烈认同感，不要直接以带货为主。带货意图应隐晦或完全不显现，留给下方的 shill_comments 逐步接力。
+      * 字数与风格：严格 ≤60 个中文字符（建议 40–55 字以提升易读与传播性）；第一人称或矿工式观察句；口语化、节奏感强；可使用 0–1 个 emoji，但避免多重广告语。
+      * 结构建议（非机械公式，给创作灵感）：
+        1. **钩子句（1-2 短句）**：一句让人停下来的观察或反转（惊讶/怀疑/自嘲/共鸣）。
+        2. **个性化句（1 短句）**：用“我”或“我们”立场加强代入感（可以是夸张、凡尔赛或悔改式）。
+        3. **留白句（0–1 短句）**：制造悬念或抛出开放式问题，诱导回复和转发。
+      * 禁忌与底线：不得出现显性促销用语（“买/下单/点链接/秒杀”），不得虚假夸大或违规内容。
+      * 建议：为A/B测试生成 2 个风格变体（例如“幽默型”与“共情型”），最终输出你觉得好的那个评论。
+      * **【输出要求】**：**严格遵守！** 风格变体的说明仅用于指导创作，**最终输出的 `pinned_comment` 字符串中，绝对不能包含如“[幽默型]”、“[共情型]”等任何形式的风格标签**。它必须是一个纯粹的评论文本。
+
+
+    - shill_comments（低介入自然讨论策略）
+      * 目的：在神评引发互动后，以克制、非引导式的信息补充维持真实讨论氛围。不得出现购买导向或 @。
+      * 语气与限制：
+        - 禁止：@、链接/二维码、价格/折扣/券、直指购买渠道（店铺名、跳转指引）、以及“买/下单/冲/安排/点链接/领券/必入”等显性引导词。
+        - 禁止虚构购买/使用经历；如为合作或样品体验，需在文案中显式标注（例如：含合作/样品体验）。
+        - 建议每条 ≤40 字；以感受/观察/提问为主，避免命令句、口播式话术。
+      * 角色与脚本（最好覆盖全部6个角色）：
+        1. **体验派（克制认可）**：第一人称轻描淡写的使用感，不做效果承诺，不提供购买线索。
+        2. **氛围烘托型（制造热度与从众心理）**：核心任务是表达强烈的拥有欲或暗示已经采取了购买相关的行动，但必须避免直接说“我买了”或“已下单”等直白字眼，旨在创造一种“很多人都想要”的群体情绪。
+        3. **好奇提问型（引出产品细节与证据）**：扮演一个感兴趣但持有疑虑的潜在买家。评论应针对产品的某个具体方面（如效果、耐用性、性价比等）提出明确的问题。
+        4. **体验分享型（以“过来人”身份建立信任）**：内容上要分享真实、具体的使用感受。为了最大化可信度，可以适度提及一些微不足道的小缺点或使用中的注意事项。
+        5. **理性参考**：补充客观信息（材质/参数/适用场景），不出现价格与渠道信息。
+        6. **场景代入**：描述更合适的使用情境或人群，避免诱导行动。
+      * **【输出要求】**：**严格遵守！** 此处的角色与脚本仅用于指导你创作评论的【思路和角度】，**最终输出的每一条 `shill_comments` 字符串中，绝对不能包含如“[体验派]”、“[氛围烘托型]”等任何形式的分类标签或前缀**。输出内容必须是纯粹、自然的评论文本本身。
+
 
 **7. 工程化输出（严格）**
 
@@ -212,7 +217,7 @@ final_prompt = """
         estimated_ctr = min(base_ctr + score_factor + promo_factor, 0.5)
         ```
       * `pinned_comment` (string) — ≤ 60 中文字符
-      * `shill_comments` (array[string]) — 3–5 条链式助推评论
+      * `shill_comments` (array[string]) — 10–15 条链式助推评论
   - **严格要求：输出只含此 JSON 对象，不可附加任何额外文本或解释。**
 【最后的风控提醒（必须遵守）】
 - 不得推广处方药、未成年人性化内容、违法或仇恨内容。
@@ -345,7 +350,7 @@ def gen_property_good(video_info):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            raw = get_llm_content(prompt=prompt)
+            raw = get_llm_content(prompt=prompt, model_name="gemini-2.5-flash")
             video_info = string_to_object(raw)
             return video_info , format_video_info
         except Exception as e:
@@ -358,7 +363,7 @@ def gen_property_good(video_info):
                 return None, None  # 达到最大重试次数后返回 None
             traceback.print_exc()
 
-def filter_property_good(property_goods, limit_count=40):
+def filter_property_good(property_goods, limit_count=80):
     """
     过滤商品信息，只保留佣金比例大于 min_commission_rate 的商品。
     """
@@ -472,7 +477,7 @@ def extract_taokouling(text: str):
                 "span": m.span(),
                 "normalized": f"{symbol}{inner}{symbol}"
             })
-    return results
+    return results[0]['normalized'] if results else ''
 
 
 def send_good_comment(
@@ -529,7 +534,7 @@ def send_good_comment(
             continue
         pinned_text: str = rec.get('pinned_comment', '').strip()
 
-        comment_body = f"{pinned_text}\n{kouling} 长按复制此评论打开淘宝即可跳转"
+        comment_body = f"{pinned_text}\n\n\n{kouling}整段内容復制，然后去 👉【🍑宝】就能直达。"
 
         # 4. 发布评论
         print(f"正在发布商品评论: 视频 {bvid}，商品 {outer_id} “{rec.get('goodsName', '')}” comment_body: {comment_body}")
@@ -569,7 +574,7 @@ def add_good_comment_for_video(user_name='qiqi'):
     csrf_token = config_map[uid].get('BILI_JCT', '')
     all_params = config_map[uid].get('all_params', {})
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token,all_params=all_params)
-    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=50)
+    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=10)
     metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     all_records = read_json(all_records_file)
     # success_bvids = read_json(success_bvids_file)
@@ -677,7 +682,7 @@ def worker_process_loop(user_name, interval):
         try:
             # 执行核心任务
             add_good_comment_for_video(user_name)
-            # auto_replay(user_name)
+            auto_replay(user_name)
         except Exception as e:
             # 关键：捕获任务中可能出现的任何异常，防止整个进程崩溃
             print(
@@ -781,8 +786,8 @@ def auto_replay(user_name):
 
 
 if __name__ == '__main__':
-    # username_list = ['cai', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru', 'xue']
-    username_list = ['tao']
+    username_list = ['jun', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru', 'xue']
+    username_list = ['xue']
     RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600
 
     print("--- 主进程启动，准备为每个用户创建独立的子进程 ---")
