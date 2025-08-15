@@ -112,7 +112,7 @@ def add_template(video_path, output_video_path, user_name):
             box_info = (576, 768)
 
         # 随机生成1-3的一个数字
-        random_number = str(random.randint(1, 3))
+        random_number = str(random.randint(1, 12))
         template_image = f"template_images/{image_key}{random_number}_transparent.png"
         process_video_with_template(input_video=video_path, template_image=template_image, output_video=output_video_path, left_up_point=left_up_point, box_info=box_info)
     except Exception as e:

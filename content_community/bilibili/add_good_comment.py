@@ -638,6 +638,7 @@ def add_good_comment_for_video(user_name='qiqi'):
                         all_records[bvid]['rpid'] = rpid
                         all_records[bvid]['good_name'] = good_name
                         all_records[bvid]['upload_time'] = time.time()
+                        all_records[bvid]['send_time'] = time.time()
                         all_records[bvid]['property_goods'] = []
                         save_json_safe(all_records_file, all_records)
         except Exception as e:
@@ -720,7 +721,7 @@ def auto_replay(user_name):
 
     # 新增：最大处理次数（可按需调整）
     max_process_times = 10
-
+    max_success_count = 3
     for key, detail_config in config_map.items():
         name = detail_config.get('name', key)
         if user_name == name:
@@ -735,6 +736,12 @@ def auto_replay(user_name):
     for bvid, record in all_records.items():
         # 标记：是否因为达到上限而跳过（用于 finally 中是否自增）
         skip_due_to_limit = False
+        send_time = record.get('send_time', time.time())
+        # 如果和当前时间相差5天就跳过
+        if time.time() - send_time > 60 * 60 * 24 * 5:
+            print(f"用户 {user_name} 的记录 {bvid} 已经超过5天未处理，跳过。")
+            continue
+
         try:
             success_count = 0
 
@@ -752,6 +759,7 @@ def auto_replay(user_name):
             last_processed_date = record.get('last_processed_date', '')
 
             if len(exist_shill_comments) >= 2:
+                max_success_count = 1
                 if not rpid or not good_name or last_processed_date == today:
                     # print(f"{user_name} 视频 {bvid} 没有 rpid，{rpid},  没有 good_name，{good_name}跳过。最近处理日期 {last_processed_date}，今天日期 {today}")
                     continue
@@ -774,7 +782,7 @@ def auto_replay(user_name):
             random.shuffle(commenter_items)
 
             for shill_comment in shill_comments:
-                if success_count > 3:  # 单次回复数量限制
+                if success_count > max_success_count:  # 单次回复数量限制
                     print(f"用户 {user_name} 已经成功回复 {success_count} 条评论，跳过剩余评论。")
                     time.sleep(100)
                     break
@@ -802,6 +810,7 @@ def auto_replay(user_name):
             traceback.print_exc()
         finally:
             record['last_processed_date'] = today
+            record['send_time'] = send_time
             # 新增：仅当未因超限跳过时才累计处理次数
             if not skip_due_to_limit:
                 record['process_count'] = record.get('process_count', 0) + 1
