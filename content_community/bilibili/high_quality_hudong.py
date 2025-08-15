@@ -1172,7 +1172,9 @@ def fun():
             all_found_videos.extend(temp_found_videos)
 
         all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
-        all_found_videos = all_found_videos[:100]
+        max_count = 20 * len(commenter_map)
+        all_found_videos = all_found_videos[:max_count]
+        print(f"共找到 {len(all_found_videos)} 个视频，限制为 {max_count} 个。")
         print(f"共找到 {len(all_found_videos)} 个视频。")
         for video in all_found_videos:
             print(f"正在处理视频 BVID: {video.get('bvid', '未知')}...")
@@ -1198,12 +1200,19 @@ def fun():
         stop_event.set()  # 标记任务结束
 
 def run_periodically():
+    start_time = time.time()  # 记录程序开始的基准时间
     while True:
         stop_event.set()  # 每次开始时设定停止标志
         fun_thread = threading.Thread(target=fun)
-        fun_thread.start()  # 启动一个新线程执行fun
+        fun_thread.start()
         fun_thread.join()  # 等待当前线程执行完毕
-        time.sleep(60 * 30)  # 等待30分钟
+
+        elapsed = time.time() - start_time
+        if elapsed >= 30 * 60:  # 已经使用了30分钟，不再等待
+            break
+
+        remaining = max(0, 30 * 60 - elapsed)
+        time.sleep(remaining)  # 仅睡眠剩余的时间，保持总时长不超过30分钟
 
 if __name__ == '__main__':
     # 启动定时任务线程

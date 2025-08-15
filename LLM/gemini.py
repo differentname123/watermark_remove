@@ -249,7 +249,8 @@ def analyze_videos_gemini(
 @with_proxy
 def get_llm_content_gemini_flash_video(
     prompt: str = '视频中的内容是什么',
-    video_path: str = 'test.mp4'
+    video_path: str = 'test.mp4',
+    model_name: str = "gemini-2.5-pro"
 ) -> str:
     last_error = None
     ordered_keys = api_key_manager.get_ordered_keys()
@@ -278,7 +279,7 @@ def get_llm_content_gemini_flash_video(
             if video_file.state.name == "FAILED":
                 raise RuntimeError(f"视频处理失败：{video_path}")
 
-            model = genai_flash.GenerativeModel(model_name="gemini-2.5-pro")
+            model = genai_flash.GenerativeModel(model_name=model_name)
             response = model.generate_content(
                 [video_file, prompt],
                 request_options={"timeout": 600}

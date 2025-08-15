@@ -786,8 +786,17 @@ def auto_replay(user_name):
 
 
 if __name__ == '__main__':
-    username_list = ['jun', 'tao', 'yan','nana', 'qiqi', 'jie', 'ruru', 'xue']
-    username_list = ['xue']
+    username_list = ['mama', 'nana', 'ruru', 'tao', 'hong', 'jie', 'qiqi', 'yan', 'xue', 'jun', 'xiaosu']
+    username_list = ['qiqi', 'xue', 'mama', 'nana', 'ruru', 'tao', 'jie']
+    username_list = ['jie']
+
+    # config_map = init_config()
+    # username_list = []
+    # for key, detail_config in config_map.items():
+    #     username_list.append(detail_config.get('name', key))
+
+    print(f"当前配置的用户列表:{len(username_list)}个 {username_list}")
+
     RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600
 
     print("--- 主进程启动，准备为每个用户创建独立的子进程 ---")
@@ -799,6 +808,8 @@ if __name__ == '__main__':
         processes.append(p)
         p.start()  # 启动进程
         print(f"已为用户 <{user}> 启动进程，PID: {p.pid}")
+        time.sleep(10)
+
 
     # 主进程等待所有子进程结束。
     # 因为子进程是无限循环，所以主进程会一直在这里等待，直到您手动停止程序 (例如按 Ctrl+C)。
