@@ -6,6 +6,7 @@ import re
 import time
 import traceback
 from typing import Any, Dict, List, Optional
+from multiprocessing import Pool
 
 from LLM.gemini import get_llm_content
 from common_utils.common_utils import read_json, get_config, save_json_safe, init_config, process_product_title
@@ -799,7 +800,6 @@ def auto_replay(user_name):
         if time.time() - send_time > 60 * 60 * 24 * 5:
             print(f"用户 {user_name} 的记录 {bvid} 已经超过5天未处理，跳过。")
             continue
-
         try:
             success_count = 0
 
@@ -815,6 +815,13 @@ def auto_replay(user_name):
             exist_shill_comments = record.get('exist_shill_comments', [])
             exist_shill_users = record.get('exist_shill_users', [])
             last_processed_date = record.get('last_processed_date', '')
+            comments = get_bilibili_comments(bvid)
+            if comments and str(rpid) not in str(comments):
+                print(f"用户 {user_name} 视频 {bvid} 的 rpid {rpid} 不在评论列表中，跳过。")
+                record['status'] = 'delete'
+                all_records[bvid] = record
+                save_json_safe(all_records_file, all_records)
+                continue
 
             if len(exist_shill_comments) >= 2:
                 max_success_count = 1
@@ -877,35 +884,38 @@ def auto_replay(user_name):
 
 
 
+def process_user(user):
+    """子进程执行逻辑"""
+    try:
+        print(f"[{time.strftime('%X')}] 子进程开始处理用户: {user}")
+        add_good_comment_for_video(user)
+        auto_replay(user)
+        print(f"[{time.strftime('%X')}] 子进程完成用户: {user}")
+    except Exception as e:
+        print(f"[{time.strftime('%X')}] 子进程处理用户 {user} 时出错: {e}")
+        traceback.print_exc()
+
+
+def run_once(username_list):
+    print(f"当前配置的用户列表:{len(username_list)}个 {username_list}")
+
+    print("--- 主进程启动，准备以 2 个并行进程处理用户 ---")
+    with Pool(processes=2) as pool:
+        pool.map(process_user, username_list)
+
+    print("--- 所有用户处理完成 ---")
+
 if __name__ == '__main__':
-    username_list = ['mama', 'nana', 'ruru', 'tao', 'hong', 'jie', 'qiqi', 'yan', 'xue', 'jun', 'xiaosu']
     username_list = ['qiqi', 'mama', 'nana', 'ruru', 'tao', 'jie', 'jun', 'xiaosu', 'yan']
     # username_list = ['jie']
 
-    # config_map = init_config()
-    # username_list = []
-    # for key, detail_config in config_map.items():
-    #     username_list.append(detail_config.get('name', key))
-
-    print(f"当前配置的用户列表:{len(username_list)}个 {username_list}")
-
-    RUN_INTERVAL_SECONDS = 3600  # <--- 实际使用时请改为 3600
-
-    print("--- 主进程启动，准备为每个用户创建独立的子进程 ---")
-
-    processes = []
-    # 遍历用户列表，为每个用户创建一个进程
-    for user in username_list:
-        p = multiprocessing.Process(target=worker_process_loop, args=(user, RUN_INTERVAL_SECONDS))
-        processes.append(p)
-        p.start()  # 启动进程
-        print(f"已为用户 <{user}> 启动进程，PID: {p.pid}")
-        # time.sleep(10)
-
-
-    # 主进程等待所有子进程结束。
-    # 因为子进程是无限循环，所以主进程会一直在这里等待，直到您手动停止程序 (例如按 Ctrl+C)。
-    for p in processes:
-        p.join()
-
-    print("--- 所有子进程已终止 ---")
+    # 无限循环：每轮执行一次 run_once
+    while True:
+        start_time = time.time()
+        run_once(username_list)
+        # 计算本轮执行时间
+        elapsed_time = time.time() - start_time
+        # 至少30分钟执行
+        wait_time = max(1800 - elapsed_time, 0)
+        print(f"本轮执行时间: {elapsed_time:.2f} 秒，等待 {wait_time:.2f} 秒后开始下一轮...")
+        time.sleep(wait_time)
