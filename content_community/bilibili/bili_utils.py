@@ -8,6 +8,8 @@
 :description:
     
 """
+import json
+
 import requests
 import time
 import random
@@ -457,65 +459,131 @@ def check_duplicate_video(meta_data):
             else:
                 return False
 
+def get_bilibili_income_detail(cookie_string: str) -> dict | None:
+    """
+    通过提供的 cookie 获取 Bilibili 创作激励收入明细。
+
+    Args:
+        cookie_string (str): 从浏览器中复制的完整用户 cookie 字符串。
+
+    Returns:
+        dict | None: 如果请求成功，返回解析后的 JSON 数据 (一个字典)。
+                      如果请求失败或解析失败，返回 None。
+    """
+    # 目标 URL
+    # 注意：URL中的 csrf token 可能与你的 cookie 绑定，如果请求失败，
+    # 可能需要同时更新 cookie 和 URL 中的 csrf token。
+    url = "https://api.bilibili.com/studio/growup/up/income/detail?biz=1&csrf=36f468b198245a940bd9c19957ed1736&from=0&limit=8&page=1&s_locale=zh_CN&type=0"
+
+    # 构造请求头
+    headers = {
+        "Cookie": cookie_string,
+        "accept": "application/json, text/plain, */*",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+        "priority": "u=1, i",
+        "sec-ch-ua": "\"Not)A;Brand\";v=\"8\", \"Chromium\";v=\"138\", \"Microsoft Edge\";v=\"138\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-site",
+        "Referer": "https://member.bilibili.com/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.0.0"
+    }
+
+    try:
+        # 发送 GET 请求
+        response = requests.get(url, headers=headers, timeout=10)  # 设置10秒超时
+
+        # 检查 HTTP 状态码是否表示成功
+        response.raise_for_status()
+
+        # 解析并返回 JSON 数据
+        return response.json()
+
+    except requests.exceptions.HTTPError as e:
+        print(f"HTTP 错误: {e}")
+        print(f"服务器响应内容: {e.response.text}")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"请求失败，发生网络错误: {e}")
+        return None
+    except json.JSONDecodeError:
+        print("解析 JSON 失败，服务器返回的可能不是有效的 JSON 格式。")
+        print(f"服务器原始响应内容: {response.text}")
+        return None
+
+
 if __name__ == '__main__':
-    meta_data =       {
-        "collection_time": "2025-08-15 22:10:58",
-        "id": "7538810947314453769",
-        "desc": "IG被AL零封 朱开怒喷丹尼BP 朱开：IG #AL #IG #LPL #2025lpl第三赛段",
-        "full_title": "IG被AL零封 朱开怒喷丹尼BP 朱开：这看两看两波就知道结果了，这游戏看什么东西啊，IG你在玩什么东西啊，准备让谁C啊这BP，自己能C的英雄自己Ban，今天这比赛就是在通便。#AL战胜IG #AL #IG #LPL #2025lpl第三赛段",
-        "create_timestamp": 1755266216,
-        "create_time": "2025-08-15 21:56:56",
-        "text_extra": [
-          "AL战胜IG",
-          "AL",
-          "IG",
-          "LPL",
-          "2025lpl第三赛段"
-        ],
-        "type": "视频",
-        "height": 720,
-        "width": 1280,
-        "downloads": "https://www.douyin.com/aweme/v1/play/?video_id=v0200fg10000d2fjmmvog65k9au2reeg&line=0&file_id=a159fbbc0e62471d8332990af07fc02d&sign=1b034022497cb16eaf1f9ea52be11fb4&is_play_url=1&source=PackSourceEnum_AWEME_DETAIL",
-        "duration": "00:02:08",
-        "uri": "v0200fg10000d2fjmmvog65k9au2reeg",
-        "dynamic_cover": "https://p9-pc-sign.douyinpic.com/obj/tos-cn-i-dy/63fcec72aede4a1a9a7b75815fa562c4?lk3s=138a59ce&x-expires=1756476000&x-signature=O7hGRMdGh7GG6yhz0MBEHjnqiKs%3D&from=327834062_large&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=dynamic_cover&biz_tag=pcweb_cover&l=20250815221055BA9A43A5FDDD5A308FF1",
-        "static_cover": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/63fcec72aede4a1a9a7b75815fa562c4~tplv-dy-resize-origshort-autoq-75:330.jpeg?lk3s=138a59ce&x-expires=2070626400&x-signature=4QFJWy76uXcSLdj%2Fe2pozEZHQFg%3D&from=327834062&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=cover&biz_tag=pcweb_cover&l=20250815221055BA9A43A5FDDD5A308FF1",
-        "uid": "4076634204016388",
-        "sec_uid": "MS4wLjABAAAASGBhmFeozhHMp_SU3Bd-btmN7t7FV7VRet10KRmSZACF85mWGJt7RtLO-Chrtzau",
-        "unique_id": "dypeai25wgyl",
-        "signature": "❤每天分享好玩的游戏内容",
-        "user_age": 23,
-        "nickname": "付小凡",
-        "mark": "付小凡",
-        "music_author": "DiCrow",
-        "music_title": "22 22",
-        "music_url": "",
-        "digg_count": 3,
-        "comment_count": -1,
-        "collect_count": 2,
-        "share_count": 2,
-        "play_count": -1,
-        "tag": [
-          "游戏",
-          "竞技游戏",
-          ""
-        ],
-        "extra": "",
-        "share_url": "https://www.douyin.com/video/7538810947314453769",
-        "abs_cover_path": "W:\\project\\python_project\\watermark_remove\\LLM\\TikTokDownloader\\Download\\cover\\7538810947314453769.jpg"
-      }
+    income_data = get_bilibili_income_detail(get_config("dahao_bilibili_total_cookie"))
 
-    result = check_duplicate_video(meta_data)
-    print(f"检查结果: {'重复' if result else '不重复'}")
+    # 3. 处理并打印返回结果
+    if income_data:
+        print("成功获取收入明细数据：")
+        # 使用 json.dumps 进行格式化打印，使其更易读
+        print(json.dumps(income_data, indent=4, ensure_ascii=False))
+    else:
+        print("\n未能获取数据。请检查上面的错误信息，确认 cookie 是否正确且未过期。")
 
+
+    # meta_data =       {
+    #     "collection_time": "2025-08-15 22:10:58",
+    #     "id": "7538810947314453769",
+    #     "desc": "IG被AL零封 朱开怒喷丹尼BP 朱开：IG #AL #IG #LPL #2025lpl第三赛段",
+    #     "full_title": "IG被AL零封 朱开怒喷丹尼BP 朱开：这看两看两波就知道结果了，这游戏看什么东西啊，IG你在玩什么东西啊，准备让谁C啊这BP，自己能C的英雄自己Ban，今天这比赛就是在通便。#AL战胜IG #AL #IG #LPL #2025lpl第三赛段",
+    #     "create_timestamp": 1755266216,
+    #     "create_time": "2025-08-15 21:56:56",
+    #     "text_extra": [
+    #       "AL战胜IG",
+    #       "AL",
+    #       "IG",
+    #       "LPL",
+    #       "2025lpl第三赛段"
+    #     ],
+    #     "type": "视频",
+    #     "height": 720,
+    #     "width": 1280,
+    #     "downloads": "https://www.douyin.com/aweme/v1/play/?video_id=v0200fg10000d2fjmmvog65k9au2reeg&line=0&file_id=a159fbbc0e62471d8332990af07fc02d&sign=1b034022497cb16eaf1f9ea52be11fb4&is_play_url=1&source=PackSourceEnum_AWEME_DETAIL",
+    #     "duration": "00:02:08",
+    #     "uri": "v0200fg10000d2fjmmvog65k9au2reeg",
+    #     "dynamic_cover": "https://p9-pc-sign.douyinpic.com/obj/tos-cn-i-dy/63fcec72aede4a1a9a7b75815fa562c4?lk3s=138a59ce&x-expires=1756476000&x-signature=O7hGRMdGh7GG6yhz0MBEHjnqiKs%3D&from=327834062_large&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=dynamic_cover&biz_tag=pcweb_cover&l=20250815221055BA9A43A5FDDD5A308FF1",
+    #     "static_cover": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/63fcec72aede4a1a9a7b75815fa562c4~tplv-dy-resize-origshort-autoq-75:330.jpeg?lk3s=138a59ce&x-expires=2070626400&x-signature=4QFJWy76uXcSLdj%2Fe2pozEZHQFg%3D&from=327834062&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=cover&biz_tag=pcweb_cover&l=20250815221055BA9A43A5FDDD5A308FF1",
+    #     "uid": "4076634204016388",
+    #     "sec_uid": "MS4wLjABAAAASGBhmFeozhHMp_SU3Bd-btmN7t7FV7VRet10KRmSZACF85mWGJt7RtLO-Chrtzau",
+    #     "unique_id": "dypeai25wgyl",
+    #     "signature": "❤每天分享好玩的游戏内容",
+    #     "user_age": 23,
+    #     "nickname": "付小凡",
+    #     "mark": "付小凡",
+    #     "music_author": "DiCrow",
+    #     "music_title": "22 22",
+    #     "music_url": "",
+    #     "digg_count": 3,
+    #     "comment_count": -1,
+    #     "collect_count": 2,
+    #     "share_count": 2,
+    #     "play_count": -1,
+    #     "tag": [
+    #       "游戏",
+    #       "竞技游戏",
+    #       ""
+    #     ],
+    #     "extra": "",
+    #     "share_url": "https://www.douyin.com/video/7538810947314453769",
+    #     "abs_cover_path": "W:\\project\\python_project\\watermark_remove\\LLM\\TikTokDownloader\\Download\\cover\\7538810947314453769.jpg"
+    #   }
     #
-    # total_cookie = get_config("ruru_bilibili_total_cookie")
-    # # car_items = list_selection_car_items(total_cookie, 100)
+    # result = check_duplicate_video(meta_data)
+    # print(f"检查结果: {'重复' if result else '不重复'}")
     #
-    # cookie = total_cookie
-    # result = fetch_goods(cookie=cookie, max_count=20, goodsName="零食")
-    # print(f"共获取到 {len(result)} 个商品")
-    #
-    # # add_goods_to_selection(cookie=cookie, goods=result[:10], operate_source=4, from_type=18)
-    # goods = update_short_url(cookie=cookie, goods=result)
-    # print(goods)
+    # #
+    # # total_cookie = get_config("ruru_bilibili_total_cookie")
+    # # # car_items = list_selection_car_items(total_cookie, 100)
+    # #
+    # # cookie = total_cookie
+    # # result = fetch_goods(cookie=cookie, max_count=20, goodsName="零食")
+    # # print(f"共获取到 {len(result)} 个商品")
+    # #
+    # # # add_goods_to_selection(cookie=cookie, goods=result[:10], operate_source=4, from_type=18)
+    # # goods = update_short_url(cookie=cookie, goods=result)
+    # # print(goods)
