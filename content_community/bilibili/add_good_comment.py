@@ -178,15 +178,15 @@ final_prompt = """
   - 避免明显与视频人设/评论氛围相冲突的推荐（若冲突，降低 `score`）。
 
 **6. 创作文案（必须为每件入选商品生成）**
-    - **重定义 `reason` 字段为高转化推广语**:
-      - **目标**: `reason` 字段是直接面向消费者的“购买指令”，必须一句话同时点燃“购买欲望”和“行动紧迫感”。
-      - **格式要求**: 必须是**单句字符串**，结构为 `“[为何买的价值主张]，[为何现在买的紧迫话术]”`。
-      - **强制要求**: 如果 `has_coupon` 为 true，**“为何现在买”** 的部分**必须**明确提及“**X元优惠券**”或“**券后X元**”等字眼，并体现其价值感。
-      - **“为何现在买”话术技巧工具箱**: 创作时，请至少运用以下一种技巧来增强说服力：
-          - **价值锚定**: 对比过去的价格或无优惠的状态。（例：“……趁着现在有难得的博主券，比平时划算多了。”）
-          - **损失规避**: 强调不行动的潜在损失。（例：“……这波带券活动随时可能结束，错过就亏了。”）
-          - **购买合理化**: 给用户一个等待已久的购买理由。（例：“……不少人等了好久的活动价，正好现在可以入手。”）
-      - **示例**: `"这款‘熬夜急救神器’能快速改善视频里那种暗沉脸，趁着官方店都少见的大额券还在，错过这次得等双十一了。"`
+     **- 重定义 `reason` 字段为“好友式种草推荐语”**:
+       - **目标**: `reason` 字段是模拟真实用户的口吻，用一句话自然地“安利”商品，同时巧妙地暗示现在是入手的好时机，**核心是降低营销感，提升真实感**。
+       - **格式要求**: 必须是**单句字符串**，结构为 `“[个人化场景/感受] + [暗示性的时机/优惠]”`。
+       - **强制要求**: 如果 `has_coupon` 为 true，“为何现在买”的部分**必须暗示优惠的存在，但应避免使用“X元优惠券”、“大额券”、“官方旗舰店”、“博主粉丝”等高风险词**。改为使用更口语化、更像“意外发现”的表述，例如 **“好像有个券”、“最近有活动能便宜不少”、“我买的时候正好有优惠”** 等。
+       - **“为何现在买”话术技巧工具箱 (降火版)**: 创作时，请至少运用以下一种“软性”技巧：
+           - **价值锚定 (个人化)**: 对比“我”过去的价格。（例：“……比我上次买划算多了，感觉赚到了。”）
+           - **损失规避 (弱化)**: 用不确定的语气暗示时效性。（例：“……这个活动不知道啥时候结束，想买的可以先去看看。”）
+           - **发现惊喜 (营造偶然感)**: 表现出是自己刚发现的。（例：“……我刚发现它家竟然有活动，赶紧冲了。”）
+       - **示例**: `"看视频里主角那个状态，跟我前阵子熬夜后简直一模一样，还好有这个零食陪我，我刚发现我买的那家店好像有活动，比上次买划算，需要的可以去瞅瞅。"`
 
 
     - **pinned_comment（置顶神评）**
@@ -468,40 +468,32 @@ def gen_final_property_good(video_info, property_goods):
 
 def extract_taokouling(text: str):
     """
-    从文本中提取所有符合规则的淘口令。
-    淘口令特征：
-      - 以 ￥ 或 ¥ 成对包裹
-      - 内部 4~64 字符，仅包含字母/数字/空格
-      - 必须同时含字母和数字
-    返回：
-      - 匹配到的淘口令列表（格式：{'raw': 原始匹配, 'inner': 内部口令, 'span': (start, end)})
+    从文本中提取淘口令最核心的、风险最低的代码部分。
+    例如，从 "￥CZ028 mGT54R79BlZ￥" 中提取 "mGT54R79BlZ"。
     """
-    # 匹配模式：成对的￥/¥，中间不含￥/¥，长度2~64
     pattern = re.compile(r"([￥¥])\s*([^￥¥\n]{2,64}?)\s*\1")
-    # 匹配零宽字符范围
     zw_chars = re.compile(r"[\u200b-\u200f\u202a-\u202e]")
 
     results = []
     for m in pattern.finditer(text):
-        symbol = m.group(1)
         inner_raw = m.group(2)
-
-        # 清理零宽符和多余空格
         inner = zw_chars.sub("", inner_raw)
         inner = re.sub(r"\s+", " ", inner.strip())
 
-        # 校验规则
         if 4 <= len(inner) <= 64 \
                 and re.fullmatch(r"[A-Za-z0-9 ]+", inner) \
                 and any(c.isalpha() for c in inner) \
                 and any(c.isdigit() for c in inner):
+            # 【关键优化】通过分割字符串，获取最后一部分作为核心代码
+            core_code = inner.split()[-1]
+
             results.append({
-                "raw": m.group(0),
                 "inner": inner,
-                "span": m.span(),
-                "normalized": f"{symbol}{inner}{symbol}"
+                "core_code": core_code  # 我们真正需要的部分
             })
-    return results[0]['normalized'] if results else ''
+
+    # 返回我们提取出的最核心代码
+    return results[0]['core_code'] if results else ''
 
 
 def build_comment_body(pinned_text, rec, kouling):
@@ -531,13 +523,14 @@ def build_comment_body(pinned_text, rec, kouling):
     # 随机选择图标
     reason_pre, reason_post = random.choice(reason_icons)
     goods_pre, goods_post = random.choice(goods_icons)
-
+    taobao_list = ['【🍑 宝】', '【🍒 橙色软件】', '【🍇 掏 宝】', '【🍉 桃 宝 】', '【🍑橙色App】', '【Tao 宝】']
+    taobao = random.choice(taobao_list)
     # 组装评论
     return (
         f"{pinned_text}\n"
         f"{reason_pre} {rec.get('reason', '')} {reason_post}\n"
         f"{goods_pre} {rec.get('goodsName', '')} {goods_post}\n"
-        f"{kouling}整段内容複制，然后迲 👉【🍑宝】就能直达。"
+        f"{kouling}整段内容複 制，然后迲 👉{taobao}就能直达。"
     )
 
 def send_good_comment(
@@ -639,7 +632,7 @@ def add_good_comment_for_video(user_name='qiqi'):
     metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     all_records = read_json(all_records_file)
     # success_bvids = read_json(success_bvids_file)
-    success_bvids = [record['bvid'] for record in all_records.values() if record.get('status') == 'success' or record.get('rpid')]
+    success_bvids = [record['bvid'] for record in all_records.values() if record.get('status') == 'success' and record.get('rpid')]
     # success_bvids = []
 
     print(f"已处理 {len(all_records)} 条记录，其中 {len(success_bvids)} 条成功。")

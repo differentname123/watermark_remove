@@ -23,10 +23,10 @@ from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box, find_ov
 from common_utils.split_audio import separate_with_cli
 from common_utils.split_scenes import find_and_split_scenes
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
-from common_utils.tts.paddle_speech_demo import synthesize_and_get_duration
+# from common_utils.tts.paddle_speech_demo import synthesize_and_get_duration
 from common_utils.video_utils import cover_video_area_gently, add_subtitles_to_video, cover_video_area_simple, \
     re_edit_video_ffmpeg, extract_audio_from_video, cut_audio_segment, cover_video_area_blur, get_video_duration_seconds
-from paddlespeech.cli.tts.infer import TTSExecutor
+# from paddlespeech.cli.tts.infer import TTSExecutor
 
 import json
 
@@ -565,7 +565,7 @@ def gen_new_audio(optimized_subtitles,voice_name="zh-CN-YunjianNeural",output_di
     """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    tts_engine_backup = TTSExecutor()
+    # tts_engine_backup = TTSExecutor()
 
     for subtitle in optimized_subtitles:
         output_file = os.path.join(output_dir, f"{subtitle['id']}.wav")
@@ -580,15 +580,15 @@ def gen_new_audio(optimized_subtitles,voice_name="zh-CN-YunjianNeural",output_di
         )
 
         # 检查方式二是否成功，如果不成功 (audio_length为0)，则切换到方式一
-        if audio_length == 0.0:
-            print(f"    [!] 默认方式生成失败，返回时长为 0.0。")
-            print(f"    --> 切换到备用方式 (方式一) 重试...")
-
-            audio_length = synthesize_and_get_duration(
-                tts_executor=tts_engine_backup,
-                text=text_to_speak,
-                output_path=output_file
-            )
+        # if audio_length == 0.0:
+        #     print(f"    [!] 默认方式生成失败，返回时长为 0.0。")
+        #     print(f"    --> 切换到备用方式 (方式一) 重试...")
+        #
+        #     audio_length = synthesize_and_get_duration(
+        #         tts_executor=tts_engine_backup,
+        #         text=text_to_speak,
+        #         output_path=output_file
+        #     )
 
         # 更新字幕信息
         subtitle['outputPath'] = output_file
