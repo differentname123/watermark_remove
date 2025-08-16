@@ -118,7 +118,7 @@ final_prompt = """
 ### **【执行步骤（必须严格执行）】**
 
 **1. 输入预处理与标准化（首要步骤）**
-在进行洞察分析前，必须先对每个 `goods` 对象执行以下标准化流程，以兼容不规范的数据输入。所有依据本规则生成或估算的信息，必须在最终输出的 `reason` 字段中透明标注来源。
+在进行洞察分析前，必须先对每个 `goods` 对象执行以下标准化流程，以兼容不规范的数据输入。所有依据本规则生成或估算的信息
 
   - **`description` (描述) 生成**: 若原始数据中不存在 `description` 字段，则通过拼接现有字段合成一个：`"{goodsName}；类目：{leaf_category}；品牌：{brand}"`。
   - **`shop_official_flag` (官方店标志) 判断**: 若 `shopName` 包含“官方/旗舰/直营/官方旗舰”，则在内存中创建一个临时标志 `shop_official_flag=true`。
@@ -128,7 +128,9 @@ final_prompt = """
 **2. 深度洞察（必做）**
 
   - 从 `video_anlyse` + `comments` 提取：核心冲突/欲望（1句），高光梗/金句（1-2项），主流情绪（正/负/中 比例或定性）。
-  - 标注可能的购买扳机（如省时、省钱、面子、好玩、社交货币、治愈等）。
+  - **将购买扳机分类**：
+      - **识别价值主张 (回答“为何买”)**: 将提取出的购买扳机（如省时、省钱、面子、好玩、治愈等）归类为核心价值主张。
+      - **识别紧迫性信号 (回答“为何现在买”)**: 额外扫描视频、评论和商品信息，寻找所有可用的紧迫性信号（如：限时优惠、季节性需求、评论区热议暗示的“再不买就晚了”的氛围等）。
 
 **3. 构建转化假设赛道（必做）**
 
@@ -152,6 +154,9 @@ final_prompt = """
           * **品牌背书 (+1分)**: `shop_official_flag` 为 true。
           * **社交流量信号 (+2分)**: `is_mentioned_in_comments` 为 true。
           * **基础分**: 若无任何上述信号，则**基础分为 4 分**。
+      * **紧迫性信号加分 (Urgency Boost)**: 在上述主/备方案计算出的分数基础上，额外检查紧迫性信号。
+          * 若 `has_coupon` 为 true 或 `promo_price` 明确为限时低价 → **额外+2分**。
+          * 若商品为强季节性/节日性商品，或评论区有明显的即时需求讨论 → **额外+1分**。
       * **计算方式**: 采用所选方案，将各项得分相加，并将**最终结果裁剪到 0–10 的区间内**。
 
   * **SocialProof（社证明，权重 20%）**: 优先依据 `is_mentioned_in_comments` 标志和评论内容。
@@ -159,19 +164,30 @@ final_prompt = """
       * `comments` 中 ≥2 条正面提及 → 7–9分
       * 1 条正面提及 (`is_mentioned_in_comments`=true) → 5–6分
       * 无提及，但 `goodsName` 含“推荐/热卖” → 5分
+      * 若无任何上述信号 → 2-3分
 
   * **Diversity（差异化，权重 10%）**: 基于 `leaf_category` 判断。首个出现的品类得10分，后续重复的品类逐步递减。
 
 **合成公式（不变）**: `raw = 0.4*Relevance + 0.3*Commercial + 0.2*SocialProof + 0.1*Diversity`；`score = round(raw)`（取 1–10）。
-**透明审计**: 若评分中使用了任何标准化的估算数据，必须在输出的 `reason` 中追加来源，例如“**（估算来源：goodsName/shopName）**”。
 
 **5. 回退与风控（必做）**
 
-  - 若所有商品 `score` ≤ 5，则仍输出综合最高项，但在 `reason` 中写明“放宽匹配标准”。
+  - 若所有商品 `score` ≤ 5，则仍输出综合最高项”。
   - 禁止推荐处方药；涉及保健/药品必须标注“非处方/保健，建议咨询专业人士”，并避免疗效断言。
-  - 避免明显与视频人设/评论氛围相冲突的推荐（若冲突，降低 `score` 并在 `reason` 说明）。
+  - 避免明显与视频人设/评论氛围相冲突的推荐（若冲突，降低 `score`）。
 
 **6. 创作文案（必须为每件入选商品生成）**
+    - **重定义 `reason` 字段为高转化推广语**:
+      - **目标**: `reason` 字段是直接面向消费者的“购买指令”，必须一句话同时点燃“购买欲望”和“行动紧迫感”。
+      - **格式要求**: 必须是**单句字符串**，结构为 `“[为何买的价值主张]，[为何现在买的紧迫话术]”`。
+      - **强制要求**: 如果 `has_coupon` 为 true，**“为何现在买”** 的部分**必须**明确提及“**X元优惠券**”或“**券后X元**”等字眼，并体现其价值感。
+      - **“为何现在买”话术技巧工具箱**: 创作时，请至少运用以下一种技巧来增强说服力：
+          - **价值锚定**: 对比过去的价格或无优惠的状态。（例：“……趁着现在有难得的博主券，比平时划算多了。”）
+          - **损失规避**: 强调不行动的潜在损失。（例：“……这波带券活动随时可能结束，错过就亏了。”）
+          - **购买合理化**: 给用户一个等待已久的购买理由。（例：“……不少人等了好久的活动价，正好现在可以入手。”）
+      - **示例**: `"这款‘熬夜急救神器’能快速改善视频里那种暗沉脸，趁着官方店都少见的大额券还在，错过这次得等双十一了。"`
+
+
     - **pinned_comment（置顶神评）**
       * 目标：创作一条本身就极具“点赞、转发、回复”潜力的神评，优先制造情绪共鸣、好笑/好奇或强烈认同感，不要直接以带货为主。带货意图应隐晦或完全不显现，留给下方的 shill_comments 逐步接力。
       * 字数与风格：严格 ≤60 个中文字符（建议 40–55 字以提升易读与传播性）；第一人称或矿工式观察句；口语化、节奏感强；可使用 0–1 个 emoji，但避免多重广告语。
@@ -192,11 +208,17 @@ final_prompt = """
         - 建议每条 ≤40 字；以感受/观察/提问为主，避免命令句、口播式话术。
       * 角色与脚本（最好覆盖全部6个角色）：
         1. **体验派（克制认可）**：第一人称轻描淡写的使用感，不做效果承诺，不提供购买线索。
-        2. **氛围烘托型（制造热度与从众心理）**：核心任务是表达强烈的拥有欲或暗示已经采取了购买相关的行动，但必须避免直接说“我买了”或“已下单”等直白字眼，旨在创造一种“很多人都想要”的群体情绪。
+        2. **氛围烘托型（高级紧迫感塑造者）**: 核心任务是巧妙地使用**价值锚定**、**损失规避**和**稀缺感**来制造“现在不买就亏了”的群体情绪。避免直白引导，要像一个精明的“发现者”或“受益者”。
+           - **话术示例库**:
+               - (价值锚定) “我上次买都不是这个价，感觉这次买到赚到。”
+               - (损失规避) “蹲了好几天了，看到有券赶紧冲，就怕明天没了。”
+               - (稀缺专属) “咦，之前看还没有券啊，这是博主专属的吗？”
+               - (从众热度) “看评论区感觉大家都要人手一个了，我也跟风去看看。”
         3. **好奇提问型（引出产品细节与证据）**：扮演一个感兴趣但持有疑虑的潜在买家。评论应针对产品的某个具体方面（如效果、耐用性、性价比等）提出明确的问题。
         4. **体验分享型（以“过来人”身份建立信任）**：内容上要分享真实、具体的使用感受。为了最大化可信度，可以适度提及一些微不足道的小缺点或使用中的注意事项。
         5. **理性参考**：补充客观信息（材质/参数/适用场景），不出现价格与渠道信息。
         6. **场景代入**：描述更合适的使用情境或人群，避免诱导行动。
+      - **创作提示**: 在设计不同角色的评论时，可以有意让部分评论从侧面印证“为何买”（如分享效果），让另一部分评论烘托“为何现在买”的氛围（如讨论优惠或热度）。
       * **【输出要求】**：**严格遵守！** 此处的角色与脚本仅用于指导你创作评论的【思路和角度】，**最终输出的每一条 `shill_comments` 字符串中，绝对不能包含如“[体验派]”、“[氛围烘托型]”等任何形式的分类标签或前缀**。输出内容必须是纯粹、自然的评论文本本身。
 
 
@@ -206,7 +228,7 @@ final_prompt = """
   - 每个推荐对象字段如下（必须全部包含）：
       * `outerId` (string) — 原样返回
       * `goodsName` (string) — 原样返回
-      * `reason` (string) — 一句话核心推荐理由，包含驱动评分的核心证据（如“9.9元低价”、“零食类目高频消费”）与所命中的“转化假设”，必要时附带估算来源。
+      * `reason` (string) — 内容必须是按照步骤6中新定义的高转化推广语格式。
       * `score` (integer) — 1–10
       * `keywords` (array[string]) — 3–5 个高意向搜索词（从 `goodsName`, `leaf_category`, `brand` 中提炼）。
       * `estimated_ctr` (float) — 预计点击转化率，**使用以下可复现公式计算**：
@@ -214,7 +236,8 @@ final_prompt = """
         base_ctr = 0.03
         score_factor = 0.07 * (score / 10)
         promo_factor = 0.02 if (promo_price is not None and promo_price <= 20) else 0
-        estimated_ctr = min(base_ctr + score_factor + promo_factor, 0.5)
+        urgency_factor = 0.015 if has_coupon else 0
+        estimated_ctr = min(base_ctr + score_factor + promo_factor + urgency_factor, 0.55)
         ```
       * `pinned_comment` (string) — ≤ 60 中文字符
       * `shill_comments` (array[string]) — 10–15 条链式助推评论
@@ -480,6 +503,42 @@ def extract_taokouling(text: str):
     return results[0]['normalized'] if results else ''
 
 
+def build_comment_body(pinned_text, rec, kouling):
+    # 内部图标池
+    reason_icons = [
+        ("🔥", "🔥"),  # 热度
+        ("💡", "✨"),  # 灵感
+        ("🏆", "🎯"),  # 冠军
+        ("💎", "💎"),  # 奢华
+        ("✅", "🌟"),  # 推荐
+        ("⏰", "⚡"),  # 限时
+        ("❤️", "🌹"),  # 情感
+        ("🛠️", "👍")  # 实用
+    ]
+
+    goods_icons = [
+        ("📦", "📦"),
+        ("🛒", "🛒"),
+        ("📌", "📌"),
+        ("🎁", "🎁"),
+        ("💰", "💰"),
+        ("✨", "✨"),
+        ("📍", "📍"),
+        ("🥇", "🥇")
+    ]
+
+    # 随机选择图标
+    reason_pre, reason_post = random.choice(reason_icons)
+    goods_pre, goods_post = random.choice(goods_icons)
+
+    # 组装评论
+    return (
+        f"{pinned_text}\n"
+        f"{reason_pre} {rec.get('reason', '')} {reason_post}\n"
+        f"{goods_pre} {rec.get('goodsName', '')} {goods_post}\n"
+        f"{kouling}整段内容複制，然后迲 👉【🍑宝】就能直达。"
+    )
+
 def send_good_comment(
     total_cookie,
     commenter: Any,
@@ -533,8 +592,7 @@ def send_good_comment(
             print(f"⚠️ 商品 {outer_id} 没有有效的短链接，跳过。{taokouling_30d}")
             continue
         pinned_text: str = rec.get('pinned_comment', '').strip()
-
-        comment_body = f"{pinned_text}\n//{rec.get('goodsName', '')}//\n{kouling}整段内容復制，然后去 👉【🍑宝】就能直达。"
+        comment_body = build_comment_body(pinned_text, rec, kouling)
 
         # 4. 发布评论
         print(f"正在发布商品评论: 视频 {bvid}，商品 {outer_id} “{rec.get('goodsName', '')}” comment_body: {comment_body}")
@@ -548,7 +606,7 @@ def send_good_comment(
 
         # 5. 置顶评论并结束
         if commenter.pin_comment(bvid=bvid, rpid=rpid):
-            print(f"✅ 已成功发送并置顶商品评论: 视频 {bvid}，商品 {outer_id} “{rec.get('goodsName', '')}” pinned_text: {pinned_text}")
+            print(f"✅ 已成功发送并置顶商品评论: 视频 {bvid}，商品 {outer_id} “{rec.get('goodsName', '')}” comment_body: {comment_body}")
             return rpid, rec.get('goodsName', '')
 
     # 如果所有推荐都处理完仍未成功
@@ -721,7 +779,6 @@ def auto_replay(user_name):
 
     # 新增：最大处理次数（可按需调整）
     max_process_times = 10
-    max_success_count = 3
     for key, detail_config in config_map.items():
         name = detail_config.get('name', key)
         if user_name == name:
@@ -734,6 +791,7 @@ def auto_replay(user_name):
         print(f"已创建评论者 {name} (UID: {key})")
 
     for bvid, record in all_records.items():
+        max_success_count = 3
         # 标记：是否因为达到上限而跳过（用于 finally 中是否自增）
         skip_due_to_limit = False
         send_time = record.get('send_time', time.time())
@@ -783,7 +841,7 @@ def auto_replay(user_name):
 
             for shill_comment in shill_comments:
                 if success_count > max_success_count:  # 单次回复数量限制
-                    print(f"用户 {user_name} 已经成功回复 {success_count} 条评论，跳过剩余评论。")
+                    print(f"用户 {user_name} 已经成功回复 {success_count} 限制为 {max_success_count}条评论，跳过剩余评论。")
                     time.sleep(100)
                     break
                 for commenter_name, commenter in commenter_items:
@@ -821,7 +879,7 @@ def auto_replay(user_name):
 
 if __name__ == '__main__':
     username_list = ['mama', 'nana', 'ruru', 'tao', 'hong', 'jie', 'qiqi', 'yan', 'xue', 'jun', 'xiaosu']
-    username_list = ['qiqi', 'mama', 'nana', 'ruru', 'tao', 'jie']
+    username_list = ['qiqi', 'mama', 'nana', 'ruru', 'tao', 'jie', 'jun', 'xiaosu', 'yan']
     # username_list = ['jie']
 
     # config_map = init_config()
