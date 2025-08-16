@@ -619,6 +619,8 @@ def add_good_comment_for_video(user_name='qiqi'):
     """
     为视频增加合适的商品链接
     """
+    bvid_file_path = 'bvid_file.json'
+    bvid_file_data = read_json(bvid_file_path)
     print(f"\n\n开始为用户 {user_name} 的视频增加商品评论...")
     config_map = init_config()
     all_records_file = f"{BASE_DIR}/{user_name}_record_info.json"
@@ -633,7 +635,7 @@ def add_good_comment_for_video(user_name='qiqi'):
     csrf_token = config_map[uid].get('BILI_JCT', '')
     all_params = config_map[uid].get('all_params', {})
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token,all_params=all_params)
-    temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=20)
+    temp_found_videos = bvid_file_data.get(user_name, [])
     metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     all_records = read_json(all_records_file)
     # success_bvids = read_json(success_bvids_file)

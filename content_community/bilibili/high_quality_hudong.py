@@ -1160,16 +1160,21 @@ def fun():
         metadata_cache_with_uploads = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
         metadata_cache_with_uploads_back = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads0811.json')
         metadata_cache_with_uploads.update(metadata_cache_with_uploads_back)
+        bvid_file_path = 'bvid_file.json'
+        bvid_file_data = load_processed_dict(bvid_file_path)
 
         bvid_uid_map = {}
         all_found_videos = []
         for uid in config_map.keys():
+            name = config_map[uid].get('name', uid)
             if uid == '443415885':
                 continue
             logging.info(f"  > 正在获取UP主(UID: {uid})的最新动态...")
             temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=50)
             bvid_uid_map.update({video.get('bvid'): uid for video in temp_found_videos if 'bvid' in video})
             all_found_videos.extend(temp_found_videos)
+            bvid_file_data[name] = temp_found_videos
+        save_json(bvid_file_path, bvid_file_data)
 
         all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
         all_found_videos = all_found_videos[:100]
