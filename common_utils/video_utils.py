@@ -2095,17 +2095,10 @@ def _check_video_integrity(path: str) -> bool:
 
 
 def apply_all_subtle_tweaks(input_path: str, output_path: str, show_progress: bool = True,
-                                     seed: int = None) -> bool:
+                            seed: int = None) -> bool:
     """
-    【最终推荐版】集大成之作，以全面的随机化参数和兼容性优化，最大化通过审核的概率。
-    此版本整合了多个模型的优点，实现了最全面和最隐蔽的处理。
-
-    包含:
-    - 视频: 随机放大、旋转、裁切回原始尺寸、调色/伽马、增加噪声、帧率抖动。
-    - 音频: 变速、音高随机微调。
-    - 编码: 随机CRF质量、强制兼容格式。
-    - 元数据: 彻底清除所有元数据、章节和字幕流。
-    - 可复现性: 可选的随机种子用于调试。
+    【最终推荐版-用户指定修正】集大成之作，以全面的随机化参数和兼容性优化，最大化通过审核的概率。
+    此版本采用用户指定的音频滤镜链和帧率固定策略，以应对复杂的同步场景。
 
     :param input_path: 输入视频路径。
     :param output_path: 输出视频路径。
@@ -2124,9 +2117,8 @@ def apply_all_subtle_tweaks(input_path: str, output_path: str, show_progress: bo
     if not _check_video_integrity(input_path):
         return False
 
-    print(f"🏆 开始终极随机微调任务 (修正版): '{input_path}' -> '{output_path}'")
+    print(f"🏆 开始终极随机微调任务 (用户指定修正版): '{input_path}' -> '{output_path}'")
 
-    # 1. 探测视频和音频信息 (一次性完成)
     try:
         probe_info = ffmpeg.probe(input_path)
         video_stream_info = next((s for s in probe_info['streams'] if s['codec_type'] == 'video'), None)
@@ -2139,19 +2131,18 @@ def apply_all_subtle_tweaks(input_path: str, output_path: str, show_progress: bo
         print(f"❌ 无法在文件中找到视频流: {input_path}", file=sys.stderr)
         return False
 
-    # 2. 生成全面的随机参数
+    # 生成随机参数 (保持不变)
     scale_factor = random.uniform(1.04, 1.05)
-    speed_multiplier = random.uniform(0.95, 0.96)
+    speed_multiplier = random.uniform(0.995, 0.998)
     brightness = random.uniform(0.04, 0.05)
     saturation = random.uniform(1.08, 1.1)
     gamma = random.uniform(1.04, 1.06)
     noise_strength = random.randint(4, 6)
     rotate_angle_deg = random.uniform(0.2, 0.4)
     pitch_multiplier = random.uniform(1.004, 1.006)
-    fps_factor = random.uniform(0.998, 1.002)
     crf_value = random.randint(22, 25)
 
-    # 3. 构建视频滤镜链
+    # 构建视频滤镜链 (基础部分)
     video_filters = [
         f"scale=iw*{scale_factor}:-2",
         f"rotate={rotate_angle_deg}*PI/180:c=black@0",
@@ -2161,42 +2152,42 @@ def apply_all_subtle_tweaks(input_path: str, output_path: str, show_progress: bo
         f"setpts={1.0 / speed_multiplier}*PTS",
     ]
 
-    # 【修正部分】预先计算目标帧率，并添加到滤镜链中
+    # 【修改点 1】按照您的要求，添加帧率固定逻辑
     try:
-        original_fps_str = video_stream_info.get('r_frame_rate')
-        if original_fps_str and '/' in original_fps_str:
-            num, den = map(int, original_fps_str.split('/'))
-            if den != 0:
-                original_fps = num / den
-                target_fps = original_fps * fps_factor
-                video_filters.append(f"fps={target_fps}")
-    except (ValueError, ZeroDivisionError) as e:
-        print(f"⚠️ 无法解析原始帧率 '{original_fps_str}'，跳过帧率抖动调整。错误: {e}")
+        fps_str = video_stream_info.get('avg_frame_rate') or video_stream_info.get('r_frame_rate')
+        if fps_str and fps_str != "0/0" and '/' in fps_str:
+            # 固定为原始帧率，避免乘以随机因子导致的时间栅格不齐
+            video_filters.append(f"fps={fps_str}")
+    except Exception as e:
+        print(f"⚠️ 无法解析帧率 '{fps_str}'，跳过 fps 固定。错误: {e}")
 
     video_filters_str = ",".join(video_filters)
 
-    # 4. 构建基础命令
+    # 构建基础命令 (保持不变)
     cmd = [
-        "ffmpeg", "-hide_banner", "-v", "error",
+        "ffmpeg", "-hide_banner", "-v", "error", "-nostdin",
         "-i", input_path,
         "-vf", video_filters_str,
     ]
 
-    # 5. 如果有音频，则添加随机化的音频滤镜
+    # 【修改点 2】按照您的要求，替换为新的音频滤镜构造逻辑
     if audio_stream_info:
         original_sample_rate = int(audio_stream_info.get('sample_rate', 44100))
-        target_sample_rate = int(original_sample_rate * pitch_multiplier)
+        inv_pitch = 1.0 / pitch_multiplier
 
         audio_filter = (
-            f"atempo={speed_multiplier},"
-            f"asetrate={target_sample_rate},"
-            f"aresample={original_sample_rate}"
+            f"asetrate={original_sample_rate}*{pitch_multiplier},"
+            f"aresample={original_sample_rate},"
+            f"atempo={inv_pitch},"
+            f"atempo={speed_multiplier}"
+            # 可选小漂移吸收器（需要时再加）：
+            # f",aresample=async=1:min_hard_comp=0.1:first_pts=0"
         )
         cmd.extend(["-af", audio_filter])
     else:
         cmd.extend(["-an"])
 
-    # 6. 添加编码、元数据和其他关键输出参数
+    # 添加编码、元数据和其他输出参数 (保持不变)
     cmd.extend([
         "-c:v", "libx264",
         "-crf", str(crf_value),
