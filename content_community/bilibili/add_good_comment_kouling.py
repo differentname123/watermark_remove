@@ -391,8 +391,14 @@ def merge_all_goods(base_dir=BASE_DIR) -> str:
     # 生成一个新字段叫做all_str,由product_name， shop_name， top_category， leaf_category， brand拼接而成
     merged['all_str'] = merged['goodsName'].fillna('') + ' ' + merged['shopName'].fillna('') + ' ' + merged['top_category'].fillna('') + ' ' + merged['leaf_category'].fillna('') + ' ' + merged['brand'].fillna('')
 
+    # 按照goodsName， shopName， top_category， leaf_category， brand去重
+    merged = merged.drop_duplicates(subset=['goodsName', 'shopName', 'top_category', 'leaf_category', 'brand'])
+
     output_path = os.path.join(base_dir, "all_goods_info.csv")
+
+
     merged.to_csv(output_path, index=False)
+    add_image_info()
     return output_path
 
 def search_products(query, model, collection, top_n=5):
@@ -440,7 +446,7 @@ def search_goods(key_word_list=['零食']):
     local_model_dir = r"C:\Users\zxh\.cache\huggingface\hub\models--BAAI--bge-base-zh-v1.5\snapshots\f03589ceff5aac7111bd60cfc7d497ca17ecac65"
     model, collection = init_model_and_db_local(local_model_dir)
 
-    add_products_from_csv(csv_path, model, collection)
+    # add_products_from_csv(csv_path, model, collection)
 
     for q in key_word_list:
         search_results = search_products(q, model, collection, top_n=5)
@@ -521,17 +527,17 @@ def add_image_info():
 
 
 if __name__ == "__main__":
-    # add_image_info()
-
-    # merge_all_goods()
 
 
-    result_list = search_goods([
-                        "电竞零食",
-                        "开黑必备",
-                        "游戏夜宵",
-                        "懒人速食"
-                    ])
-    print(result_list)
+    merge_all_goods()
+
+
+    # result_list = search_goods([
+    #                     "电竞零食",
+    #                     "开黑必备",
+    #                     "游戏夜宵",
+    #                     "懒人速食"
+    #                 ])
+    # print(result_list)
     # print(goods_infos)
 

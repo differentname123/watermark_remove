@@ -576,7 +576,7 @@ class BilibiliCommenter:
             return False
 
     def reply_to_comment(self, bvid: str, message_content: str, root_rpid: int, parent_rpid: int,
-                         type_code: int = 1) -> int | None:
+                         type_code: int = 1):
         """
         回复指定的 Bilibili 评论 (发送楼中楼评论)。
         在发送回复前，此方法会先尝试为被回复的评论（父评论）点赞。
@@ -600,7 +600,7 @@ class BilibiliCommenter:
         video_info = self._get_video_info(bvid)
         if not video_info:
             print("回复失败：无法获取有效的视频信息。")
-            return None
+            return None , "无法获取有效的视频信息"
         oid = video_info['aid']
 
         print(f"准备回复 rpid={parent_rpid} 的评论，先尝试为其点赞...")
@@ -627,7 +627,7 @@ class BilibiliCommenter:
             signed_post_body_data = self._sign_params_for_wbi(post_body_data_unsigned)
         except ValueError as e:
             print(f"回复失败：{e}")
-            return None
+            return None, str(e)
 
         full_url = self._COMMENT_ADD_API_URL
         self.session.headers.update({
@@ -652,16 +652,16 @@ class BilibiliCommenter:
                     print(f"获取到新回复的 rpid: {rpid}")
                     time.sleep(5)
                     self.like_comment(oid=oid, rpid=rpid, type_code=1)
-                return rpid
+                return rpid, "回复成功"
             else:
                 print(f"回复失败，错误码：{result.get('code')}, 错误信息：{result.get('message')} {message_content}")
-                return None
+                return None, result.get('message', '未知错误')
         except requests.exceptions.RequestException as e:
             print(f"请求发生错误：{e}")
-            return None
+            return None, str(e)
         except Exception as e:
             print(f"发生未知错误：{e}")
-            return None
+            return None, str(e)
         finally:
             # 恢复原有的代理环境变量，确保全局环境不变
             for k, v in old_proxy_env.items():

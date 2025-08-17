@@ -523,14 +523,14 @@ def build_comment_body(pinned_text, rec, kouling):
     # 随机选择图标
     reason_pre, reason_post = random.choice(reason_icons)
     goods_pre, goods_post = random.choice(goods_icons)
-    taobao_list = ['【🍑 宝】', '【🍒 橙色软件】', '【🍇 掏 宝】', '【🍉 桃 宝 】', '【🍑橙色App】', '【Tao 宝】']
+    taobao_list = ['【🍑 宝】', '【🍒 橙色软件】', '【万能的某宝】', '【那个橙色的购物软件】', '【🍑橙色App】', '【Tao 宝】', '【某宝】']
     taobao = random.choice(taobao_list)
     # 组装评论
     return (
         f"{pinned_text}\n"
         f"{reason_pre} {rec.get('reason', '')} {reason_post}\n"
         f"{goods_pre} {rec.get('goodsName', '')} {goods_post}\n"
-        f"{kouling}整段内容複 制，然后迲 👉{taobao}就能直达。"
+        f"{kouling}长按整段内容複 制，然后迲 👉{taobao}就能直达。"
     )
 
 def send_good_comment(
@@ -601,7 +601,7 @@ def send_good_comment(
         # 5. 置顶评论并结束
         if commenter.pin_comment(bvid=bvid, rpid=rpid):
             print(f"✅ 已成功发送并置顶商品评论: 视频 {bvid}，商品 {outer_id} “{rec.get('goodsName', '')}” comment_body: {comment_body}")
-            return rpid, rec.get('goodsName', '')
+            return rpid, comment_body
 
     # 如果所有推荐都处理完仍未成功
     print(f"⚠️ 未能发送或置顶任何商品评论到视频 {bvid}")
@@ -678,7 +678,7 @@ def add_good_comment_for_video(user_name='qiqi'):
                 property_goods = search_goods(keyword_list)
                 all_records[bvid]['property_goods'] = filter_property_good(property_goods)
                 save_json_safe(all_records_file, all_records)
-                if 'final_goods' in record and record['final_goods'] and True:
+                if 'final_goods' in record and record['final_goods'] and False:
                     print(f"视频 {bvid} 已经有最终商品信息，跳过。")
                     final_goods = record['final_goods']
                 else:
@@ -844,12 +844,12 @@ def auto_replay(user_name):
             for shill_comment in shill_comments:
                 if success_count > max_success_count:  # 单次回复数量限制
                     print(f"用户 {user_name} 已经成功回复 {success_count} 限制为 {max_success_count}条评论，跳过剩余评论。")
-                    time.sleep(100)
+                    time.sleep(10)
                     break
                 for commenter_name, commenter in commenter_items:
                     if commenter_name in exist_shill_users:
                         continue
-                    reply_rpid = commenter.reply_to_comment(
+                    reply_rpid, reason = commenter.reply_to_comment(
                         bvid=bvid, message_content=shill_comment,
                         root_rpid=rpid, parent_rpid=rpid
                     )
@@ -863,7 +863,14 @@ def auto_replay(user_name):
                         print(f"{commenter_name} 回复用户 {user_name} 成功: 视频 {bvid}，评论 {reply_rpid} 内容: {shill_comment}")
                         break
                     else:
-                        time.sleep(100)
+                        if '无法获取有效的视频信息' in reason or "删除" in reason:
+                            print(f"用户 {user_name} 回复视频 {bvid} 时出错: {reason}，跳过。")
+                            record['status'] = 'delete'
+                            all_records[bvid] = record
+                            save_json_safe(all_records_file, all_records)
+                            break
+
+                        time.sleep(10)
 
         except Exception as e:
             print(f"用户 {user_name} 回复视频 {bvid} 时出错: {e}")
@@ -878,14 +885,242 @@ def auto_replay(user_name):
             save_json_safe(all_records_file, all_records)
 
 
+# --- 常量定义 ---
+RECORD_EXPIRATION_DAYS = 5
+MAX_PROCESSING_ATTEMPTS = 10
+DEFAULT_MAX_REPLIES_PER_RUN = 3
+REDUCED_MAX_REPLIES_PER_RUN = 1
+EXISTING_REPLIES_THRESHOLD = 2
+RETRY_INTERVAL_SECONDS = 10
+
+
+# --- 辅助函数 ---
+
+def _initialize_commenters(config_map: Dict[str, Any], user_to_exclude: str) -> Dict[str, 'BilibiliCommenter']:
+    """根据配置初始化所有评论员实例，并排除指定用户。"""
+    commenter_map = {}
+    for uid, config in config_map.items():
+        name = config.get('name', uid)
+        if name == user_to_exclude:
+            continue
+
+        try:
+            commenter = BilibiliCommenter(
+                total_cookie=config.get('total_cookie', ''),
+                csrf_token=config.get('BILI_JCT', ''),
+                all_params=config.get('all_params', {})
+            )
+            commenter_map[name] = commenter
+            print(f"已创建评论者 {name} (UID: {uid})")
+        except Exception as e:
+            print(f"创建评论者 {name} (UID: {uid}) 失败: {e}")
+
+    return commenter_map
+
+
+def _is_rpid_in_comments(rpid: int, comments: List[Dict[str, Any]]) -> bool:
+    """
+    (重构核心) 健壮地检查 rpid 是否存在于评论列表中。
+    注意: 'comments' 的具体结构取决于 get_bilibili_comments 的返回格式。
+    这里假设返回的是一个包含评论对象的列表，每个对象有 'rpid' 字段。
+    """
+    if not comments:
+        return True
+    return str(rpid) in str(comments)
+
+
+def _should_skip_video(record: Dict[str, Any], bvid: str, today: str) -> Optional[str]:
+    """检查是否应跳过当前视频，如果需要则返回原因，否则返回 None。"""
+    # 检查1：记录是否过期
+    send_time = record.get('send_time', 0)
+    if time.time() - send_time > RECORD_EXPIRATION_DAYS * 86400:  # 86400秒 = 1天
+        return f"记录 {bvid} 已超过 {RECORD_EXPIRATION_DAYS} 天，跳过。"
+
+    # 检查2：是否达到最大处理次数
+    process_count = record.get('process_count', 0)
+    if process_count >= MAX_PROCESSING_ATTEMPTS:
+        return f"记录 {bvid} 处理次数已达上限 ({process_count}/{MAX_PROCESSING_ATTEMPTS})，跳过。"
+
+    # 检查3：特定条件下，当天是否已处理
+    if len(record.get('exist_shill_comments', [])) >= EXISTING_REPLIES_THRESHOLD:
+        if not record.get('rpid') or not record.get('good_name'):
+            return f"记录 {bvid} 已有足够回复但信息不全，跳过。"
+        if record.get('last_processed_date') == today:
+            return f"记录 {bvid} 今日已处理，跳过。"
+
+    return None
+
+
+def _process_single_video(
+        bvid: str,
+        record: Dict[str, Any],
+        commenter_pool,
+        today: str
+) -> Dict[str, Any]:
+    """处理单个视频的回复逻辑，返回更新后的记录。"""
+    updated_record = record.copy()
+
+    # 1. 检查目标评论是否存在
+    rpid = updated_record.get('rpid')
+    if not rpid:
+        print(f"视频 {bvid} 缺少 rpid，无法处理。")
+        return updated_record  # 直接返回，不标记删除
+
+    comments = get_bilibili_comments(bvid)
+    # 假设 get_bilibili_comments 在失败时返回 None 或空列表
+    if not _is_rpid_in_comments(rpid, comments):
+        print(f"视频 {bvid} 的目标评论 {rpid} 不存在或已删除，标记为删除。")
+        updated_record['status'] = 'delete'
+        return updated_record
+
+    # 2. 准备评论文案
+    good_name = updated_record.get('good_name', '')
+    product_recs = updated_record.get('final_goods', {}).get('product_recommendations', [])
+    target_product = next((p for p in product_recs if p.get('goodsName') == good_name), None)
+
+    if not target_product:
+        print(f"视频 {bvid} 未找到商品 '{good_name}' 的推荐信息。")
+        return updated_record
+
+    exist_shill_comments = updated_record.get('exist_shill_comments', [])
+    all_shill_comments = target_product.get('shill_comments', [])
+    comments_to_send = [c for c in all_shill_comments if c not in exist_shill_comments]
+
+    if not comments_to_send:
+        print(f"视频 {bvid} 没有新的评论文案可以发送。")
+        return updated_record
+
+    # 3. 确定本次运行最大回复数
+    max_replies_this_run = (REDUCED_MAX_REPLIES_PER_RUN
+                            if len(exist_shill_comments) >= EXISTING_REPLIES_THRESHOLD
+                            else DEFAULT_MAX_REPLIES_PER_RUN)
+
+    # 4. 执行回复
+    success_count = 0
+    exist_shill_users = updated_record.get('exist_shill_users', [])
+
+    for shill_comment in comments_to_send:
+        if success_count >= max_replies_this_run:
+            print(f"已达到本次运行回复上限 ({max_replies_this_run})，停止回复视频 {bvid}。")
+            break
+
+        # 每次都随机化评论员，但排除已用过的
+        available_commenters = [c for c in commenter_pool if c[0] not in exist_shill_users]
+        random.shuffle(available_commenters)
+
+        for commenter_name, commenter in available_commenters:
+            reply_rpid, reason = commenter.reply_to_comment(
+                bvid=bvid,
+                message_content=shill_comment,
+                root_rpid=rpid,
+                parent_rpid=rpid
+            )
+
+            if reply_rpid:
+                success_count += 1
+                exist_shill_comments.append(shill_comment)
+                exist_shill_users.append(commenter_name)
+                print(f"✅ {commenter_name} 回复成功: 视频 {bvid}, 内容: {shill_comment[:30]}...")
+                # 成功后，此条文案完成，换下一条
+                break
+            else:
+                print(f"❌ {commenter_name} 回复失败: {reason}")
+                time.sleep(RETRY_INTERVAL_SECONDS)  # 等待一段时间再重试
+                if '无法获取有效的视频信息' in reason or '删除' in reason:
+                    print(f"视频 {bvid} 或评论似乎已失效，标记为删除。")
+                    updated_record['status'] = 'delete'
+                    # 如果视频失效，直接终止对该视频的所有操作
+                    return updated_record
+
+                time.sleep(RETRY_INTERVAL_SECONDS)
+
+    updated_record['exist_shill_comments'] = exist_shill_comments
+    updated_record['exist_shill_users'] = exist_shill_users
+    return updated_record
+
+
+# --- 主函数（重构后） ---
+
+def auto_replay_refactored(user_name: str):
+    """
+    自动扫描并回复指定用户的置顶评论，以增加商品购买几率。
+    重构版本：逻辑清晰，职责分离，性能更优。
+    """
+    print(f"\n🚀 开始为用户 {user_name} 的视频增加置顶文案回复...当前时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+    # 1. 加载数据与配置
+    try:
+        all_records_file = f"{BASE_DIR}/{user_name}_record_info.json"
+        all_records = read_json(all_records_file)
+        config_map = init_config()
+    except FileNotFoundError:
+        print(f"错误：找不到文件 {all_records_file} 或配置文件。")
+        return
+    except Exception as e:
+        print(f"加载数据时出错: {e}")
+        return
+
+    # 2. 初始化评论员
+    commenters = _initialize_commenters(config_map, user_to_exclude=user_name)
+    if not commenters:
+        print("没有可用的评论员账号，程序终止。")
+        return
+    commenter_pool = list(commenters.items())
+
+    # 3. 循环处理每个视频
+    today = datetime.date.today().isoformat()
+    processed_count = 0
+    total_records = len(all_records)
+
+    for bvid, record in all_records.items():
+        processed_count += 1
+        print(f"\n[{processed_count}/{total_records}] 正在处理视频 BVID: {bvid}...")
+
+        # 3.1. 前置检查
+        skip_reason = _should_skip_video(record, bvid, today)
+        if skip_reason:
+            print(f"⏭️  跳过: {skip_reason}")
+            # 注意：即使跳过，我们也更新处理日期和次数，防止无限次检查
+            record['last_processed_date'] = today
+            # 仅在非“达到上限”原因跳过时增加处理次数
+            if "已达上限" not in skip_reason:
+                record['process_count'] = record.get('process_count', 0) + 1
+            all_records[bvid] = record
+            continue
+
+        # 3.2. 核心处理逻辑
+        try:
+            updated_record = _process_single_video(bvid, record, commenter_pool, today)
+            # 无论处理结果如何，都更新处理日期和次数
+            updated_record['last_processed_date'] = today
+            updated_record['process_count'] = updated_record.get('process_count', 0) + 1
+            all_records[bvid] = updated_record
+            save_json_safe(all_records_file, all_records)
+
+        except Exception as e:
+            print(f"处理视频 {bvid} 时发生未知严重错误: {e}")
+            traceback.print_exc()
+            # 同样更新记录，防止下次再次出错
+            record['last_processed_date'] = today
+            record['process_count'] = record.get('process_count', 0) + 1
+            all_records[bvid] = record
+            save_json_safe(all_records_file, all_records)
+
+    # 4. 一次性保存所有更改
+    try:
+        save_json_safe(all_records_file, all_records)
+        print(f"\n✅ 全部处理完成，已将更新后的 {len(all_records)} 条记录保存至文件。")
+    except Exception as e:
+        print(f"最终保存文件时出错: {e}")
 
 def process_user(user):
     """子进程执行逻辑"""
     try:
+        start_time = time.time()
         print(f"[{time.strftime('%X')}] 子进程开始处理用户: {user}")
         add_good_comment_for_video(user)
-        auto_replay(user)
-        print(f"[{time.strftime('%X')}] 子进程完成用户: {user}")
+        auto_replay_refactored(user)
+        print(f"[{time.strftime('%X')}] 子进程完成用户: {user} 处理，耗时: {time.time() - start_time:.2f} 秒")
     except Exception as e:
         print(f"[{time.strftime('%X')}] 子进程处理用户 {user} 时出错: {e}")
         traceback.print_exc()
@@ -906,6 +1141,8 @@ if __name__ == '__main__':
 
     # 无限循环：每轮执行一次 run_once
     while True:
+        # 打乱username_list顺序
+        random.shuffle(username_list)
         start_time = time.time()
         run_once(username_list)
         # 计算本轮执行时间
