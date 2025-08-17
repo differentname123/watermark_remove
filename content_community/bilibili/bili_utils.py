@@ -395,7 +395,7 @@ def check_duplicate_video(meta_data):
             douyin_full_title = meta_data.get("full_title", "")
             douyin_duration = meta_data.get("duration", '0:0')
             douyin_duration = time_to_ms(douyin_duration) / 1000
-            if douyin_duration < 30:
+            if douyin_duration < 60:
                 return False
             user_map_file = "douyin_bilibili_user_map.json"
             user_map_info = read_json(user_map_file)

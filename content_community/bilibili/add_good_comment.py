@@ -523,14 +523,16 @@ def build_comment_body(pinned_text, rec, kouling):
     # 随机选择图标
     reason_pre, reason_post = random.choice(reason_icons)
     goods_pre, goods_post = random.choice(goods_icons)
-    taobao_list = ['【🍑 宝】', '【🍒 橙色软件】', '【那个橙色的购物软件】', '【🍑橙色App】']
+    taobao_list = ['【🍑 宝】', '【🍑 橙色软件】', '【🍑橙色App】']
     taobao = random.choice(taobao_list)
     # 组装评论
     return (
         f"{pinned_text}\n"
-        f"{reason_pre} {rec.get('reason', '')} {reason_post}\n"
-        f"{goods_pre} {rec.get('goodsName', '')} {goods_post}\n"
-        f"{kouling}长按整段内容複 制，然后迲 👉{taobao}就能直达。"
+        # f"{reason_pre} {rec.get('reason', '')} {reason_post}\n"
+        # f"{goods_pre} {rec.get('goodsName', '')} {goods_post}\n"
+        # f"{kouling}长按整段内容複，制，然后迲， 👉{taobao}就能直达。"
+        f"{kouling}"
+
     )
 
 def send_good_comment(
@@ -940,10 +942,10 @@ def _should_skip_video(record: Dict[str, Any], bvid: str, today: str) -> Optiona
     if time.time() - send_time > RECORD_EXPIRATION_DAYS * 86400:  # 86400秒 = 1天
         return f"记录 {bvid} 已超过 {RECORD_EXPIRATION_DAYS} 天，跳过。"
 
-    # 检查2：是否达到最大处理次数
-    process_count = record.get('process_count', 0)
-    if process_count >= MAX_PROCESSING_ATTEMPTS:
-        return f"记录 {bvid} 处理次数已达上限 ({process_count}/{MAX_PROCESSING_ATTEMPTS})，跳过。"
+    # # 检查2：是否达到最大处理次数
+    # process_count = record.get('process_count', 0)
+    # if process_count >= MAX_PROCESSING_ATTEMPTS:
+    #     return f"记录 {bvid} 处理次数已达上限 ({process_count}/{MAX_PROCESSING_ATTEMPTS})，跳过。"
 
     # 检查3：特定条件下，当天是否已处理
     if len(record.get('exist_shill_comments', [])) >= EXISTING_REPLIES_THRESHOLD:
@@ -980,7 +982,7 @@ def _process_single_video(
     # 2. 准备评论文案
     good_name = updated_record.get('good_name', '')
     product_recs = updated_record.get('final_goods', {}).get('product_recommendations', [])
-    target_product = next((p for p in product_recs if p.get('goodsName') == good_name), None)
+    target_product = next((p for p in product_recs if p.get('goodsName') in good_name), None)
 
     if not target_product:
         print(f"视频 {bvid} 未找到商品 '{good_name}' 的推荐信息。")
