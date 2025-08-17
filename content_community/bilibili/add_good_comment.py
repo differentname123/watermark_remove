@@ -523,7 +523,7 @@ def build_comment_body(pinned_text, rec, kouling):
     # 随机选择图标
     reason_pre, reason_post = random.choice(reason_icons)
     goods_pre, goods_post = random.choice(goods_icons)
-    taobao_list = ['【🍑 宝】', '【🍒 橙色软件】', '【万能的某宝】', '【那个橙色的购物软件】', '【🍑橙色App】', '【Tao 宝】', '【某宝】']
+    taobao_list = ['【🍑 宝】', '【🍒 橙色软件】', '【那个橙色的购物软件】', '【🍑橙色App】']
     taobao = random.choice(taobao_list)
     # 组装评论
     return (
@@ -600,8 +600,9 @@ def send_good_comment(
 
         # 5. 置顶评论并结束
         if commenter.pin_comment(bvid=bvid, rpid=rpid):
+            final_goods_record['comment_body'] = comment_body
             print(f"✅ 已成功发送并置顶商品评论: 视频 {bvid}，商品 {outer_id} “{rec.get('goodsName', '')}” comment_body: {comment_body}")
-            return rpid, comment_body
+            return rpid, rec.get('goodsName', '')
 
     # 如果所有推荐都处理完仍未成功
     print(f"⚠️ 未能发送或置顶任何商品评论到视频 {bvid}")
@@ -630,6 +631,9 @@ def add_good_comment_for_video(user_name='qiqi'):
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token,all_params=all_params)
     temp_found_videos = bvid_file_data.get(user_name, [])
     metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
+    metadata_cache_with_uploads_back = read_json(
+        '../../LLM/TikTokDownloader/metadata_cache_with_uploads0817.json')
+    metadata_cache_with_uploads.update(metadata_cache_with_uploads_back)
     all_records = read_json(all_records_file)
     # success_bvids = read_json(success_bvids_file)
     success_bvids = [record['bvid'] for record in all_records.values() if record.get('status') == 'success' and record.get('rpid')]
