@@ -452,7 +452,7 @@ def gen_final_property_good(video_info, property_goods):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            raw = get_llm_content(prompt=prompt)
+            raw = get_llm_content(prompt=prompt, model_name="gemini-2.5-flash")
             video_info = string_to_object(raw)
             return video_info
         except Exception as e:
@@ -528,10 +528,10 @@ def build_comment_body(pinned_text, rec, kouling):
     # 组装评论
     return (
         f"{pinned_text}\n"
-        # f"{reason_pre} {rec.get('reason', '')} {reason_post}\n"
+        f"{reason_pre} {rec.get('reason', '')} {reason_post}\n"
         # f"{goods_pre} {rec.get('goodsName', '')} {goods_post}\n"
-        # f"{kouling}长按整段内容複，制，然后迲， 👉{taobao}就能直达。"
-        f"{kouling}"
+        f"{kouling}长按複，制整段内容，然后迲， 👉{taobao}就能直达。"
+        # f"{kouling}"
 
     )
 
