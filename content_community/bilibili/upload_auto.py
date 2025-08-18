@@ -56,6 +56,7 @@ accounts = {
     'xiaosu': 'xiaosu',
     'chabian': 'chabian',
     'lin': 'lin',
+    'jj': 'jj',
     'hao': 'hao',
     'xiaohao': 'xiaohao',
 

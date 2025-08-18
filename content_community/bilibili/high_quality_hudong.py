@@ -979,7 +979,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     exist_comment_text = [comment[0] for comment in exist_comment]
     exist_danmu = result.get('已有弹幕', [])
     exist_danmu_text = [danmu[0] for danmu in exist_danmu]
-    max_success_comment_count = 5
+    max_success_comment_count = 10
     # if uid in ['443415885','3546954575383021','3546717871934392','1223805908','3546947310848473','3546947566700892', '477861377', '3493263231158598']:
     #     max_success_comment_count = 100
 

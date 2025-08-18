@@ -529,7 +529,7 @@ def build_comment_body(pinned_text, rec, kouling):
     return (
         f"{pinned_text}\n"
         f"{reason_pre} {rec.get('reason', '')} {reason_post}\n"
-        # f"{goods_pre} {rec.get('goodsName', '')} {goods_post}\n"
+        f"{goods_pre} {rec.get('goodsName', '')} {goods_post}\n"
         f"{kouling}长按複，制整段内容，然后迲， 👉{taobao}就能直达。"
         # f"{kouling}"
 
@@ -1154,7 +1154,7 @@ def run_once(username_list):
     print("--- 所有用户处理完成 ---")
 
 if __name__ == '__main__':
-    username_list = ['qiqi', 'mama', 'nana', 'ruru', 'tao', 'jie', 'jun', 'xiaosu', 'yan']
+    username_list = ['qiqi', 'mama', 'nana', 'ruru', 'jie', 'jun', 'xiaosu', 'yan']
     # username_list = ['jie']
 
     # 无限循环：每轮执行一次 run_once
