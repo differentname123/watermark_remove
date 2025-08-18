@@ -637,13 +637,25 @@ def add_good_comment_for_video(user_name='qiqi'):
         '../../LLM/TikTokDownloader/metadata_cache_with_uploads0817.json')
     metadata_cache_with_uploads.update(metadata_cache_with_uploads_back)
     all_records = read_json(all_records_file)
-    # success_bvids = read_json(success_bvids_file)
-    success_bvids = [record['bvid'] for record in all_records.values() if record.get('status') == 'success' and record.get('rpid')]
-    # success_bvids = []
+    success_bvids = []
+    for rec in all_records.values():
+        bvid = rec.get('bvid')
+        if not bvid:
+            continue
+        if rec.get('status') == 'success' and rec.get('rpid'):
+            success_bvids.append(bvid)
+            continue
+        try:
+            if int(rec.get('process_count', 0)) > 1:
+                success_bvids.append(bvid)
+        except (TypeError, ValueError):
+            # process_count 非整数字符时视为 0，忽略
+            pass
+
+    processed_bvids = set(success_bvids)
 
     print(f"已处理 {len(all_records)} 条记录，其中 {len(success_bvids)} 条成功。")
     # 过滤出已经处理过的
-    processed_bvids = success_bvids
     videos_to_process = [video for video in temp_found_videos if video['bvid'] not in processed_bvids]
     print(f"{user_name} 找到 {len(videos_to_process)} 个未处理的视频。总共视频数量：{len(temp_found_videos)}")
 

@@ -56,6 +56,9 @@ accounts = {
     'xiaosu': 'xiaosu',
     'chabian': 'chabian',
     'lin': 'lin',
+    'hao': 'hao',
+    'xiaohao': 'xiaohao',
+
 }
 
 for name, map_key in accounts.items():
