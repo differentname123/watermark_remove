@@ -349,7 +349,7 @@ if __name__ == '__main__':
     ASR_FILES = [
         run_funasr(audio_file),
         transcribe_words_to_json(audio_file),
-        transcribe_words_to_json(audio_file, MODEL_SIZE="large-v3"),
+        transcribe_words_to_json(audio_file, MODEL_SIZE="large-v2"),
     ]
     OUTPUT_FILE = 'output/fused_transcript_final.json'
 
