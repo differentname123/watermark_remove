@@ -297,7 +297,7 @@ def auto_upload():
             print(f"🔄 重制视频 {video_path}... userName: {userName}")
             try:
                 final_video_path = remake_video_robust(video_path, bgm_library_path='../app/bgm_audio', force_regenerate=True)
-                if final_video_path:
+                if final_video_path and os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0:
                     print(f"✅ 重制视频成功，保存为 {final_video_path}")
                     video_path = final_video_path
                     current_video_path = final_video_path
@@ -336,7 +336,7 @@ def auto_upload():
             tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
             try:
                 result = apply_all_subtle_tweaks(video_path, output_path=tweak_video_path)
-                if os.path.exists(tweak_video_path) and result:
+                if os.path.exists(tweak_video_path) and result and os.path.getsize(tweak_video_path) > 0:
                     video_path = tweak_video_path
                     print(f"✅ 视频细节调整成功，保存为 {tweak_video_path}")
                 else:
@@ -355,7 +355,7 @@ def auto_upload():
                     print(f"⚠️ 版权视频文件 {copyright_video_path} 不存在，使用默认视频。")
                 video_path_list = [video_path, copyright_video_path]
                 merge_videos_ffmpeg(video_path_list, output_path=temp_video_path)
-                if os.path.exists(temp_video_path):
+                if os.path.exists(temp_video_path) and os.path.getsize(temp_video_path) > 0:
                     video_path = temp_video_path
                     print(f"✅ 合并视频成功，保存为 {temp_video_path}")
         except Exception as e:
@@ -379,7 +379,7 @@ def auto_upload():
                 if os.path.exists(temp_video_path):
                     print(f"✅ 添加开场白成功，保存为 {temp_video_path}")
                     merge_videos_ffmpeg([temp_video_path, video_path], output_path=addPrologue_video_path)
-                    if os.path.exists(addPrologue_video_path):
+                    if os.path.exists(addPrologue_video_path) and os.path.getsize(addPrologue_video_path) > 0:
                         video_path = addPrologue_video_path
                         print(f"✅ 合并开场白视频成功，保存为 {addPrologue_video_path}")
             except Exception as e:
@@ -389,7 +389,7 @@ def auto_upload():
         if generation_options.get('need_template', False):
             try:
                 add_template(video_path, template_video_path, userName)
-                if os.path.exists(template_video_path):
+                if os.path.exists(template_video_path) and os.path.getsize(template_video_path) > 0:
                     video_path = template_video_path
                     print(f"✅ 添加模板成功，保存为 {template_video_path}")
             except Exception as e:

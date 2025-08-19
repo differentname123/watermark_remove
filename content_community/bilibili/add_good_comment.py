@@ -1154,7 +1154,7 @@ def run_once(username_list):
     print("--- 所有用户处理完成 ---")
 
 if __name__ == '__main__':
-    username_list = ['qiqi', 'mama', 'nana', 'ruru', 'jie', 'jun', 'xiaosu', 'yan']
+    username_list = [ 'mama', 'nana', 'ruru', 'jie', 'jun', 'xiaosu', 'yan']
     # username_list = ['jie']
 
     # 无限循环：每轮执行一次 run_once
