@@ -4,7 +4,7 @@ from funasr import AutoModel
 from common_utils.common_utils import save_json
 
 
-def run_asr(audio_path):
+def run_funasr(audio_path):
     """
     使用 FunASR 执行语音识别（中文为主），输出带时间戳的结果
     """
@@ -46,9 +46,10 @@ def run_asr(audio_path):
         ]
 
     save_json(output_file, final_res)
+    return output_file
 
 
 if __name__ == "__main__":
     # 这里换成你的音频文件路径（支持 wav/mp3/m4a/flac）
     audio_file = r"test.wav"
-    run_asr(audio_file)
+    run_funasr(audio_file)

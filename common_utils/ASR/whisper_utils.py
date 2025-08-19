@@ -4,7 +4,7 @@ import time
 from typing import Tuple, List, Dict
 from faster_whisper import WhisperModel
 
-def transcribe_words_to_json(audio_file: str) -> Tuple[List[Dict], str]:
+def transcribe_words_to_json(audio_file: str, MODEL_SIZE="large-v3") -> Tuple[List[Dict], str]:
     """
     只接受 audio_file 参数，使用固定的模型配置执行转录。
     输出: (word_items, json_path)
@@ -15,7 +15,6 @@ def transcribe_words_to_json(audio_file: str) -> Tuple[List[Dict], str]:
       - 检查文件、加载模型、转录开始/结束、每个 segment 的摘要、保存文件、总耗时
     """
     # ---------- 固定配置（如需修改，请在此处改） ----------
-    MODEL_SIZE = "large-v3"
     DEVICE = "cuda"
     COMPUTE_TYPE = "float16"
     BEAM_SIZE = 5
@@ -76,7 +75,7 @@ def transcribe_words_to_json(audio_file: str) -> Tuple[List[Dict], str]:
     print("[5/5] 正在保存为 JSON 文件...")
     t_save_start = time.perf_counter()
     base_name = os.path.splitext(os.path.basename(audio_file))[0]
-    json_filename = f"{base_name}_asr_whisper2.json"
+    json_filename = f"{base_name}_asr_whisper_{MODEL_SIZE}.json"
     json_path = os.path.join(OUTPUT_DIR, json_filename)
     with open(json_path, "w", encoding="utf-8") as jf:
         json.dump(word_items, jf, ensure_ascii=False, indent=2)
@@ -86,7 +85,7 @@ def transcribe_words_to_json(audio_file: str) -> Tuple[List[Dict], str]:
     total_elapsed = time.perf_counter() - start_all
     print(f"全部完成。总耗时: {total_elapsed:.2f}s （加载模型: {t1 - t0:.2f}s, 转录: {t3 - t2:.2f}s, 处理: {t_seg_end - t_seg_start:.2f}s, 保存: {t_save_end - t_save_start:.2f}s）保存到: {json_path}")
 
-    return word_items, json_path
+    return json_path
 
 
 # 简单示例（直接运行脚本会执行）
