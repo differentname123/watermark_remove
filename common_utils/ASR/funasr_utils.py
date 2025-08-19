@@ -10,7 +10,7 @@ def run_asr(audio_path):
         # model= "iic/SenseVoiceSmall",   # 中英混合、效果好
         model="iic/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch",  # 中英混合、效果好
         vad_model="iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",  # 语音活动检测
-        punc_model="iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch",  # 标点恢复
+        # punc_model="iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch",  # 标点恢复
         spk_model=None,  # 不需要说话人分离
     )
 

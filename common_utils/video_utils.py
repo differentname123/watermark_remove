@@ -136,14 +136,11 @@ def make_transparent(input_path: str, output_path: str,
 def process_video_with_template(input_video, template_image, output_video, left_up_point, box_info, blur_sigma=25, preset='veryfast'):
     """
     将视频填充到模板的透明区域，背景为模糊填充，并生成最终视频。
-
-    参数:
-    input_video (str): 输入视频文件的路径。
-    template_image (str): 带透明窗口的模板图片路径。
-    output_video (str): 输出视频文件的路径。
-    blur_sigma (int): 背景模糊程度，数值越大越模糊。
-    preset (str): FFmpeg 的编码速度预设。
+    - 统一视频为 bt709 + limited + yuv420p，避免 yuvj420p 引发的 swscale 报错。
+    - 模板图像显式转为 RGBA，确保 alpha 正常。
+    - 音频改为 AAC 重编码，更兼容 MP4。
     """
+
     # 1. --- 文件和尺寸检查 ---
     for f in [input_video, template_image]:
         if not os.path.exists(f):
@@ -154,41 +151,70 @@ def process_video_with_template(input_video, template_image, output_video, left_
     if not final_w:
         return False
 
-    # 根据之前的讨论，我们硬编码这些坐标
     target_x, target_y = left_up_point
     target_w, target_h = box_info
 
     print(f"模板尺寸: {final_w}x{final_h} | 目标区域: {target_w}x{target_h} at ({target_x},{target_y})")
 
-    # 2. --- 使用多行f-string构建更易读的滤镜 ---
+    # 2. --- 构建滤镜 ---
+    # 关键点：
+    # - 在两处 scale 上固定颜色矩阵与范围：in_color_matrix=auto:out_color_matrix=bt709:in_range=auto:out_range=limited
+    # - 模板图像转为 RGBA，overlay 使用其 alpha
+    # - 最终统一为 yuv420p，并且 setsar=1，裁剪为偶数尺寸
     filter_complex = f"""
         [0:v]split=2[bg_src][fg_src];
-        [bg_src]scale={final_w}:{final_h},gblur=sigma={blur_sigma}[blurred_bg];
-        [fg_src]scale=w={target_w}:h={target_h}:force_original_aspect_ratio=decrease[scaled_fg];
-        [blurred_bg][scaled_fg]overlay=x={target_x}+({target_w}-w)/2:y={target_y}+({target_h}-h)/2[base_video];
-        [base_video][1:v]overlay=0:0[final_video];
-        [final_video]crop=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p,setsar=1[v_out]
+
+        [bg_src]
+        scale={final_w}:{final_h}:in_color_matrix=auto:out_color_matrix=bt709:in_range=auto:out_range=limited,
+        gblur=sigma={blur_sigma},
+        setsar=1[blurred_bg];
+
+        [fg_src]
+        scale=w={target_w}:h={target_h}:force_original_aspect_ratio=decrease:in_color_matrix=auto:out_color_matrix=bt709:in_range=auto:out_range=limited,
+        setsar=1[scaled_fg];
+
+        [blurred_bg][scaled_fg]
+        overlay=x={target_x}+({target_w}-w)/2:y={target_y}+({target_h}-h)/2[base_video];
+
+        [1:v]format=rgba[tpl_rgba];
+
+        [base_video][tpl_rgba]
+        overlay=0:0:shortest=1[final_video];
+
+        [final_video]
+        crop=trunc(iw/2)*2:trunc(ih/2)*2,
+        format=yuv420p,
+        setsar=1[v_out]
     """
 
-    # 3. --- 构建最终的 FFmpeg 命令 ---
+    # 3. --- FFmpeg 命令 ---
     ffmpeg_command = [
         'ffmpeg',
-        '-loglevel', 'error',  # 只显示错误日志
+        '-loglevel', 'error',
         '-i', input_video,
-        '-loop', '1',
+        '-loop', '1',            # 持续输出模板帧
         '-i', template_image,
         '-filter_complex', filter_complex,
         '-map', '[v_out]',
-        '-map', '0:a?',
+        '-map', '0:a?',          # 如果原视频有音频就带上
         '-c:v', 'libx264',
-        '-preset', preset,  # 使用速度预设
-        '-c:a', 'copy',
+        '-preset', preset,
+        '-pix_fmt', 'yuv420p',
+        # 同步写出颜色元数据，和滤镜内统一保持一致
+        '-colorspace', 'bt709',
+        '-color_primaries', 'bt709',
+        '-color_trc', 'bt709',
+        '-color_range', 'tv',    # limited range
+        # 音频用 AAC 更稳，避免 copy 在 MP4 内不兼容
+        '-c:a', 'aac', '-b:a', '192k',
+        '-ar', '48000', '-ac', '2',
         '-shortest',
+        '-movflags', '+faststart',
         '-y',
         output_video
     ]
 
-    # 4. --- 执行命令 ---
+    # 4. --- 执行 ---
     print(f"正在处理视频，输出到 '{output_video}'...")
     try:
         subprocess.run(ffmpeg_command, check=True)
@@ -1499,50 +1525,62 @@ def probe_video_new(path):
 def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.mp4"):
     """
     将多个视频按第一个视频的参数拼接合并。
-    - 视频处理与原版相同。
-    - 音频在重新编码时，使用 volume=1 滤镜来尽力维持原始音量。
+    - 视频：统一到 bt709 + limited + yuv420p，避免 yuvj420p 引发的 swscale 报错。
+    - 音频：统一到 48kHz 立体声，避免 concat 因参数不一致而失败。
+    - 尽量少调整原有结构。
     """
-    # 输入验证
     if not video_paths:
         raise ValueError("视频路径列表不能为空")
     for p in video_paths:
         if not os.path.exists(p):
             raise FileNotFoundError(f"未找到文件: {p}")
 
-    # 探测第一个视频参数
+    # 你现有的探测函数，保持不变
     ref_w, ref_h, ref_fps, ref_sar = probe_video_new(video_paths[0])
     print(f"[INFO] 参考视频参数: {ref_w}×{ref_h}, fps={ref_fps:.2f}, SAR={ref_sar}")
 
     inputs = []
     vf_filters = []
-    audio_labels = []
 
     for idx, path in enumerate(video_paths):
         inputs += ["-i", path]
-        # 视频流处理 (不变)
+
         if idx == 0:
-            vf_filters.append(f"[0:v]setsar=1[v0]")
-        else:
+            # 首段不缩放，但固定像素格式，避免后续 concat 触发格式协商
             vf_filters.append(
                 f"[{idx}:v]"
-                f"scale={ref_w}:{ref_h}:force_original_aspect_ratio=decrease,"
+                f"setsar=1,"
+                f"format=yuv420p,"
+                f"setpts=PTS-STARTPTS[v{idx}]"
+            )
+        else:
+            # 其他段：缩放/填充，并固定颜色矩阵与范围，最后统一为 yuv420p
+            vf_filters.append(
+                f"[{idx}:v]"
+                f"scale={ref_w}:{ref_h}:force_original_aspect_ratio=decrease"
+                f":in_color_matrix=auto:out_color_matrix=bt709"
+                f":in_range=auto:out_range=limited,"
                 f"pad={ref_w}:{ref_h}:(ow-iw)/2:(oh-ih)/2,"
-                f"setsar=1[v{idx}]"
+                f"setsar=1,"
+                f"format=yuv420p,"
+                f"setpts=PTS-STARTPTS[v{idx}]"
             )
 
-        # 音频流处理：将 anull 替换为 volume=1
-        # 这就是关键的修改！
-        vf_filters.append(f"[{idx}:a]volume=1[a{idx}]")  # 或者 "volume=0dB"
-        audio_labels.append(f"[a{idx}]")
+        # 音频：统一到 48kHz 立体声，保持音量为 1（与原代码一致）
+        vf_filters.append(
+            f"[{idx}:a]"
+            f"volume=1,"
+            f"aresample=48000,"
+            f"aformat=sample_rates=48000:channel_layouts=stereo,"
+            f"asetpts=PTS-STARTPTS[a{idx}]"
+        )
 
-    # 拼接部分 (不变)
+    # 拼接
     concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(video_paths)))
-    concat_part = f"{concat_inputs}concat=n={len(video_paths)}:v=1:a=1[outv][outa]"
-    vf_filters.append(concat_part)
+    vf_filters.append(f"{concat_inputs}concat=n={len(video_paths)}:v=1:a=1[outv][outa]")
 
     filter_complex = "; ".join(vf_filters)
 
-    # 构造 ffmpeg 命令 (不变)
     cmd = [
         "ffmpeg", "-y",
         "-loglevel", "error",
@@ -1550,13 +1588,22 @@ def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.m
         "-filter_complex", filter_complex,
         "-map", "[outv]",
         "-map", "[outa]",
+        # 如果各段 fps 差异较大，可以考虑把 -r 移到每个分支里用 fps 滤镜统一；
+        # 这里保持你的原输出帧率限制不变
         "-r", f"{ref_fps:.2f}",
         "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-        "-c:a", "aac", "-b:a", "192k",  # 建议为aac指定一个比特率
+        # 确保编码端也用 yuv420p（避免回到 yuvj）
+        "-pix_fmt", "yuv420p",
+        # 写出颜色元数据，和前面的固定保持一致
+        "-colorspace", "bt709",
+        "-color_primaries", "bt709",
+        "-color_trc", "bt709",
+        "-color_range", "tv",  # limited range
+        "-c:a", "aac", "-b:a", "192k",
         output_path
     ]
 
-    print("[INFO] 开始执行合并命令 (使用 volume=1 保持音量):")
+    print("[INFO] 开始执行合并命令:")
     print(" ".join(cmd))
     subprocess.run(cmd, check=True)
     print(f"[SUCCESS] 合并完成，输出文件：{output_path}")
