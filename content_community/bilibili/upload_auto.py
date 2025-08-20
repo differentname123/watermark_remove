@@ -45,7 +45,7 @@ accounts = {
     'ruru': 'ruru',
     'nana': 'nana',
     'jie': 'jie',
-    'qiqi': 'qiqi',
+    # 'qiqi': 'qiqi',
     'mama': 'mama',
     'hong': 'hong',
     # 'su': 'su',

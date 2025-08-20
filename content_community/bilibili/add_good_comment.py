@@ -632,8 +632,8 @@ def add_good_comment_for_video(user_name='qiqi'):
     all_params = config_map[uid].get('all_params', {})
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token,all_params=all_params)
     temp_found_videos = bvid_file_data.get(user_name, [])
-    metadata_cache_with_uploads = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
-    metadata_cache_with_uploads_back = read_json(
+    metadata_cache_with_uploads_back = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
+    metadata_cache_with_uploads = read_json(
         '../../LLM/TikTokDownloader/metadata_cache_with_uploads0817.json')
     metadata_cache_with_uploads.update(metadata_cache_with_uploads_back)
     all_records = read_json(all_records_file)
@@ -882,10 +882,15 @@ def auto_replay(user_name):
                         break
                     else:
                         if '无法获取有效的视频信息' in reason or "删除" in reason:
-                            print(f"用户 {user_name} 回复视频 {bvid} 时出错: {reason}，跳过。")
-                            record['status'] = 'delete'
-                            all_records[bvid] = record
-                            save_json_safe(all_records_file, all_records)
+                            print(f"用户 {user_name} 回复视频 {bvid} 时出错: {reason}，将删除该记录。")
+                            # .pop() 方法在删除的同时可以提供一个默认值，如果key不存在也不会报错
+                            removed_record = all_records.pop(bvid, None)
+
+                            if removed_record is not None:
+                                print(f"已从记录中删除 key: {bvid}")
+                                save_json_safe(all_records_file, all_records)
+                            else:
+                                print(f"记录中不存在 key: {bvid}，无需删除。")
                             break
 
                         time.sleep(10)

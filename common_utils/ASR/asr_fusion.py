@@ -1,10 +1,14 @@
 import collections
 import math
 import statistics
+import time
+from itertools import groupby
+
 import unicodedata
 from difflib import SequenceMatcher
 
 from common_utils.ASR.funasr_utils import run_funasr
+from common_utils.ASR.speech_brain_utils import perform_speaker_diarization
 from common_utils.ASR.whisper_utils import transcribe_words_to_json
 
 
@@ -207,26 +211,43 @@ def fuse_asr_results_final(all_asr_lists):
         })
 
     return fused_result
-def foolproof_merge(speech_file, transcript_file, output_file):
+
+
+def foolproof_merge(speech_file, transcript_file, output_file,
+                    include_word_timestamps=False, sentence_split_threshold=0.5):
     """
     Merges speaker segments and ASR transcripts, ensuring every single ASR word
-    is assigned to a speaker.
+    is assigned to a speaker. It also splits segments into sub-sentences based on
+    time gaps and can optionally include word-level timestamps.
 
     The logic is word-centric:
     1. For each word, find the speaker segment with the maximum time overlap.
     2. If a word has no overlap (is in a gap), assign it to the chronologically
        closest speaker segment.
-    3. Group consecutive words from the same speaker into sentences.
+    3. Group consecutive words from the same speaker.
+    4. Within each speaker group, create sub-sentences by splitting where the
+       time gap between words exceeds `sentence_split_threshold`.
+    5. Optionally include detailed timestamps for every single word.
 
     Args:
         speech_file (str): Path to the JSON file with speaker segments.
         transcript_file (str): Path to the JSON file with word-level transcripts.
         output_file (str): Path to save the final merged output.
+        include_word_timestamps (bool): If True, adds a 'word_timestamps' list
+                                        to each segment with per-word timing.
+                                        Defaults to False.
+        sentence_split_threshold (float): The time gap in seconds between words
+                                          to trigger a new sub-sentence.
+                                          Defaults to 0.5.
     """
     # 1. 加载数据
     print("Loading data...")
-    with open(speech_file, 'r', encoding='utf-8') as f:
-        segments = json.load(f)
+    try:
+        with open(speech_file, 'r', encoding='utf-8') as f:
+            segments = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        print(f"Warning: Speaker file '{speech_file}' not found or is invalid. Assuming a single unknown speaker.")
+        segments = []
 
     with open(transcript_file, 'r', encoding='utf-8') as f:
         words = json.load(f)
@@ -249,11 +270,11 @@ def foolproof_merge(speech_file, transcript_file, output_file):
         word_start = word['start']
         word_end = word['end']
 
-        best_speaker = None
+        best_speaker = "SPEAKER_UNKNOWN"  # 默认值
         max_overlap_duration = -1
 
         # --- 首选规则：寻找最大重叠 ---
-        if segments:  # 仅当有说话人分段时才进行此操作
+        if segments:
             for seg in segments:
                 overlap = max(0, min(word_end, seg['end_s']) - max(word_start, seg['start_s']))
                 if overlap > max_overlap_duration:
@@ -261,63 +282,86 @@ def foolproof_merge(speech_file, transcript_file, output_file):
                     best_speaker = seg['speaker']
 
         # --- 备用规则：寻找最近邻 ---
-        if max_overlap_duration == 0:
+        if max_overlap_duration <= 0 and segments:
             min_distance = float('inf')
             # 找到时间上最近的说话人分段
-            if segments:
-                for seg in segments:
-                    # 计算词语和分段之间的时间间隙
-                    if word_end <= seg['start_s']:
-                        distance = seg['start_s'] - word_end
-                    else:  # word_start >= seg['end_s']
-                        distance = word_start - seg['end_s']
+            for seg in segments:
+                # 计算词语和分段之间的时间间隙
+                if word_end <= seg['start_s']:
+                    distance = seg['start_s'] - word_end
+                else:  # word_start >= seg['end_s']
+                    distance = word_start - seg['end_s']
 
-                    if distance < min_distance:
-                        min_distance = distance
-                        best_speaker = seg['speaker']
-            else:
-                # 如果没有说话人日志，则分配一个默认标签
-                best_speaker = "SPEAKER_UNKNOWN"
+                if distance < min_distance:
+                    min_distance = distance
+                    best_speaker = seg['speaker']
 
         word['speaker'] = best_speaker
         words_with_speaker.append(word)
 
-    # 3. 合并连续属于同一说话人的词语
-    print("Grouping consecutive words into sentences...")
+    # 3. 合并连续属于同一说话人的词语，并生成子句
+    print("Grouping words and creating sub-sentences...")
     final_data = []
     if not words_with_speaker:
         print("No words to process after speaker assignment.")
     else:
-        current_group = {
-            "speaker": words_with_speaker[0]['speaker'],
-            "text_list": [words_with_speaker[0]['word']],
-            "start": words_with_speaker[0]['start'],
-            "end": words_with_speaker[0]['end']
-        }
+        # 使用 groupby 按说话人对连续的词语进行分组
+        for speaker, group in groupby(words_with_speaker, key=lambda x: x['speaker']):
+            words_in_group = list(group)
 
-        for i in range(1, len(words_with_speaker)):
-            word_data = words_with_speaker[i]
-            if word_data['speaker'] == current_group['speaker']:
-                # 如果说话人相同，则继续添加到当前组
-                current_group['text_list'].append(word_data['word'])
-                current_group['end'] = word_data['end']  # 更新结束时间
-            else:
-                # 如果说话人不同，则完成当前组并开始一个新组
-                # 完成当前组
-                current_group['text'] = "".join(current_group.pop('text_list'))
-                final_data.append(current_group)
+            # --- 计算整个句段的宏观信息 ---
+            segment_start = words_in_group[0]['start']
+            segment_end = words_in_group[-1]['end']
+            full_text = "".join(w['word'] for w in words_in_group)
 
-                # 开始新组
-                current_group = {
-                    "speaker": word_data['speaker'],
-                    "text_list": [word_data['word']],
-                    "start": word_data['start'],
-                    "end": word_data['end']
+            # --- 生成 sub_text_list ---
+            sub_text_list = []
+            if words_in_group:
+                current_sub = {
+                    'words': [words_in_group[0]['word']],
+                    'start': words_in_group[0]['start'],
+                    'end': words_in_group[0]['end']
                 }
+                for i in range(1, len(words_in_group)):
+                    prev_word = words_in_group[i - 1]
+                    curr_word = words_in_group[i]
+                    gap = curr_word['start'] - prev_word['end']
 
-        # 不要忘记添加最后一个组
-        current_group['text'] = "".join(current_group.pop('text_list'))
-        final_data.append(current_group)
+                    if gap > sentence_split_threshold:
+                        # 间隔过大，结束当前子句，开始新子句
+                        current_sub['text'] = "".join(current_sub.pop('words'))
+                        sub_text_list.append(current_sub)
+                        current_sub = {
+                            'words': [curr_word['word']],
+                            'start': curr_word['start'],
+                            'end': curr_word['end']
+                        }
+                    else:
+                        # 间隔不大，继续向当前子句添加词语
+                        current_sub['words'].append(curr_word['word'])
+                        current_sub['end'] = curr_word['end']
+
+                # 不要忘记添加最后一个子句
+                current_sub['text'] = "".join(current_sub.pop('words'))
+                sub_text_list.append(current_sub)
+
+            # --- 组装最终数据 ---
+            segment_data = {
+                "speaker": speaker,
+                "start": segment_start,
+                "end": segment_end,
+                "text": full_text,
+                "sub_text_list": sub_text_list
+            }
+
+            # --- 根据参数添加可选的字级别时间戳 ---
+            if include_word_timestamps:
+                segment_data['word_timestamps'] = [
+                    {'word': w['word'], 'start': w['start'], 'end': w['end']}
+                    for w in words_in_group
+                ]
+
+            final_data.append(segment_data)
 
     # 4. 保存结果
     print(f"Saving final merged data to {output_file}...")
@@ -326,35 +370,50 @@ def foolproof_merge(speech_file, transcript_file, output_file):
 
     print("Done! All ASR words have been processed and included.")
 
+
+def gen_precise_asr(audio_file, output_file):
+    """
+    生成融合后准确的asr文件
+    """
+    funasr_file = run_funasr(audio_file)
+    whisper_v2_file = transcribe_words_to_json(audio_file, MODEL_SIZE="large-v2")
+    time.sleep(10)
+    whisper_v3_file = transcribe_words_to_json(audio_file)
+    ASR_FILES = [
+        funasr_file,
+        whisper_v2_file,
+        whisper_v3_file,
+    ]
+    fuse_asr_file = 'output/fused_transcript_final.json'
+    all_asr_lists = [read_json(f) for f in ASR_FILES if read_json(f) is not None]
+
+    final_result = fuse_asr_results_final(all_asr_lists)
+
+    # 将结果时间戳转换为秒，并格式化
+    for item in final_result:
+        item['start'] = round(item['start'] / 1000.0, 3)
+        item['end'] = round(item['end'] / 1000.0, 3)
+        item['probability'] = round(item['probability'], 4)
+
+    save_json(fuse_asr_file, final_result)
+    print(f"融合成功！最终结果已保存到 {fuse_asr_file}")
+
+    speaker_file = perform_speaker_diarization(audio_file)
+    foolproof_merge(speaker_file, fuse_asr_file, output_file)
+    return output_file
+
+
+
+
 # --- 示例用法 ---
 if __name__ == '__main__':
     audio_file = r"mix.mp3"
-    # audio_file = r"test.wav"
 
 
+    OUTPUT_FILE = 'output/final_asr.json'
 
+    # gen_precise_asr(audio_file, OUTPUT_FILE)
 
-    # 假设你的ASR文件都在同一个目录下
-    ASR_FILES = [
-        run_funasr(audio_file),
-        transcribe_words_to_json(audio_file),
-        transcribe_words_to_json(audio_file, MODEL_SIZE="large-v2"),
-    ]
-    OUTPUT_FILE = 'output/fused_transcript_final.json'
-
-    all_asr_lists = [read_json(f) for f in ASR_FILES if read_json(f) is not None]
-
-    if len(all_asr_lists) > 1:
-        # 执行最终版融合
-        final_result = fuse_asr_results_final(all_asr_lists)
-
-        # 将结果时间戳转换为秒，并格式化
-        for item in final_result:
-            item['start'] = round(item['start'] / 1000.0, 3)
-            item['end'] = round(item['end'] / 1000.0, 3)
-            item['probability'] = round(item['probability'], 4)
-
-        save_json(OUTPUT_FILE, final_result)
-        print(f"融合成功！最终结果已保存到 {OUTPUT_FILE}")
-    else:
-        print("未能加载足够的ASR文件进行融合。")
+    fuse_asr_file = 'output/fused_transcript_final.json'
+    speaker_file = "output/segments_speech.json"
+    foolproof_merge(speaker_file, fuse_asr_file, OUTPUT_FILE)

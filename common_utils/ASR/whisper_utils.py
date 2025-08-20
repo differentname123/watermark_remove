@@ -20,7 +20,11 @@ def transcribe_words_to_json(audio_file: str, MODEL_SIZE="large-v3"):
     BEAM_SIZE = 5
     OUTPUT_DIR = "output"
     # -------------------------------------------------------
-
+    base_name = os.path.splitext(os.path.basename(audio_file))[0]
+    json_filename = f"{base_name}_asr_whisper_{MODEL_SIZE}.json"
+    json_path = os.path.join(OUTPUT_DIR, json_filename)
+    if os.path.exists(json_path):
+        return json_path
     start_all = time.perf_counter()
 
     print(f"[1/5] 检查音频文件：{audio_file}")
@@ -74,9 +78,7 @@ def transcribe_words_to_json(audio_file: str, MODEL_SIZE="large-v3"):
     # 保存为 JSON
     print("[5/5] 正在保存为 JSON 文件...")
     t_save_start = time.perf_counter()
-    base_name = os.path.splitext(os.path.basename(audio_file))[0]
-    json_filename = f"{base_name}_asr_whisper_{MODEL_SIZE}.json"
-    json_path = os.path.join(OUTPUT_DIR, json_filename)
+
     with open(json_path, "w", encoding="utf-8") as jf:
         json.dump(word_items, jf, ensure_ascii=False, indent=2)
     t_save_end = time.perf_counter()

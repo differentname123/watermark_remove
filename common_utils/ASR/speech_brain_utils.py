@@ -88,6 +88,7 @@ def perform_speaker_diarization(input_audio_path: str):
         # 假设 save_json 函数从 common_utils.common_utils 导入成功
         save_json(json_path, segments)
         print(f"JSON 段信息已保存到 {json_path}")
+        return json_path
     except NameError:
         print("错误: 'save_json' 函数未找到。请确保 'common_utils.common_utils' 已正确导入或定义了 'save_json' 函数。")
         # 保持 exit()

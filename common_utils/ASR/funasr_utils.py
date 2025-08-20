@@ -8,7 +8,12 @@ def run_funasr(audio_path):
     """
     使用 FunASR 执行语音识别（中文为主），输出带时间戳的结果
     """
+
     base_dir = 'output'
+    output_file_name = os.path.splitext(audio_path)[0] + "_asr_funasr.json"
+    output_file = os.path.join(base_dir, output_file_name)
+    if os.path.exists(output_file):
+        return output_file
     # 选择推荐的高精度模型
     model = AutoModel(
         # model= "iic/SenseVoiceSmall",   # 中英混合、效果好
@@ -23,8 +28,7 @@ def run_funasr(audio_path):
         input=audio_path,
         batch_size_s=30,  # 每次处理 300 秒以内的片段
     )
-    output_file_name = os.path.splitext(audio_path)[0] + "_asr_funasr.json"
-    output_file = os.path.join(base_dir, output_file_name)
+
     final_res = []
     # 输出结果
     for i, r in enumerate(res):
