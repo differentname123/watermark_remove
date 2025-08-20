@@ -207,12 +207,129 @@ def fuse_asr_results_final(all_asr_lists):
         })
 
     return fused_result
+def foolproof_merge(speech_file, transcript_file, output_file):
+    """
+    Merges speaker segments and ASR transcripts, ensuring every single ASR word
+    is assigned to a speaker.
 
+    The logic is word-centric:
+    1. For each word, find the speaker segment with the maximum time overlap.
+    2. If a word has no overlap (is in a gap), assign it to the chronologically
+       closest speaker segment.
+    3. Group consecutive words from the same speaker into sentences.
+
+    Args:
+        speech_file (str): Path to the JSON file with speaker segments.
+        transcript_file (str): Path to the JSON file with word-level transcripts.
+        output_file (str): Path to save the final merged output.
+    """
+    # 1. 加载数据
+    print("Loading data...")
+    with open(speech_file, 'r', encoding='utf-8') as f:
+        segments = json.load(f)
+
+    with open(transcript_file, 'r', encoding='utf-8') as f:
+        words = json.load(f)
+
+    if not words:
+        print("Transcript file is empty. Nothing to process.")
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump([], f)
+        return
+
+    # 预处理：将说话人日志的时间单位从毫秒转换为秒
+    for seg in segments:
+        seg['start_s'] = seg['start'] / 1000.0
+        seg['end_s'] = seg['end'] / 1000.0
+
+    # 2. 为每一个 ASR 词语分配一个说话人
+    print("Assigning a speaker to every word...")
+    words_with_speaker = []
+    for word in words:
+        word_start = word['start']
+        word_end = word['end']
+
+        best_speaker = None
+        max_overlap_duration = -1
+
+        # --- 首选规则：寻找最大重叠 ---
+        if segments:  # 仅当有说话人分段时才进行此操作
+            for seg in segments:
+                overlap = max(0, min(word_end, seg['end_s']) - max(word_start, seg['start_s']))
+                if overlap > max_overlap_duration:
+                    max_overlap_duration = overlap
+                    best_speaker = seg['speaker']
+
+        # --- 备用规则：寻找最近邻 ---
+        if max_overlap_duration == 0:
+            min_distance = float('inf')
+            # 找到时间上最近的说话人分段
+            if segments:
+                for seg in segments:
+                    # 计算词语和分段之间的时间间隙
+                    if word_end <= seg['start_s']:
+                        distance = seg['start_s'] - word_end
+                    else:  # word_start >= seg['end_s']
+                        distance = word_start - seg['end_s']
+
+                    if distance < min_distance:
+                        min_distance = distance
+                        best_speaker = seg['speaker']
+            else:
+                # 如果没有说话人日志，则分配一个默认标签
+                best_speaker = "SPEAKER_UNKNOWN"
+
+        word['speaker'] = best_speaker
+        words_with_speaker.append(word)
+
+    # 3. 合并连续属于同一说话人的词语
+    print("Grouping consecutive words into sentences...")
+    final_data = []
+    if not words_with_speaker:
+        print("No words to process after speaker assignment.")
+    else:
+        current_group = {
+            "speaker": words_with_speaker[0]['speaker'],
+            "text_list": [words_with_speaker[0]['word']],
+            "start": words_with_speaker[0]['start'],
+            "end": words_with_speaker[0]['end']
+        }
+
+        for i in range(1, len(words_with_speaker)):
+            word_data = words_with_speaker[i]
+            if word_data['speaker'] == current_group['speaker']:
+                # 如果说话人相同，则继续添加到当前组
+                current_group['text_list'].append(word_data['word'])
+                current_group['end'] = word_data['end']  # 更新结束时间
+            else:
+                # 如果说话人不同，则完成当前组并开始一个新组
+                # 完成当前组
+                current_group['text'] = "".join(current_group.pop('text_list'))
+                final_data.append(current_group)
+
+                # 开始新组
+                current_group = {
+                    "speaker": word_data['speaker'],
+                    "text_list": [word_data['word']],
+                    "start": word_data['start'],
+                    "end": word_data['end']
+                }
+
+        # 不要忘记添加最后一个组
+        current_group['text'] = "".join(current_group.pop('text_list'))
+        final_data.append(current_group)
+
+    # 4. 保存结果
+    print(f"Saving final merged data to {output_file}...")
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(final_data, f, ensure_ascii=False, indent=4)
+
+    print("Done! All ASR words have been processed and included.")
 
 # --- 示例用法 ---
 if __name__ == '__main__':
     audio_file = r"mix.mp3"
-    audio_file = r"test.wav"
+    # audio_file = r"test.wav"
 
 
 
