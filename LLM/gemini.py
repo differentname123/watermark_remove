@@ -111,6 +111,7 @@ API_KEY_chu3 = get_config("gemini_api_key_chu3")
 API_KEY_chu4 = get_config("gemini_api_key_chu4")
 API_KEY_chu5 = get_config("gemini_api_key_chu5")
 API_KEY_chu6 = get_config("gemini_api_key_chu6")
+API_KEY_chu7 = get_config("gemini_api_key_chu7")
 
 
 API_KEY_MAP = {
@@ -125,7 +126,8 @@ API_KEY_MAP = {
     'chu3': API_KEY_chu3,
     # 'chu4': API_KEY_chu4,
     'chu5': API_KEY_chu5,
-    'chu6': API_KEY_chu6
+    'chu6': API_KEY_chu6,
+    'chu7': API_KEY_chu7,
 }
 
 # 创建一个全局的 Key Manager 实例
@@ -250,7 +252,7 @@ def analyze_videos_gemini(
 def get_llm_content_gemini_flash_video(
     prompt: str = '视频中的内容是什么',
     video_path: str = 'test.mp4',
-    model_name: str = "gemini-2.5-pro"
+    model_name: str = "gemini-2.5-flash"
 ) -> str:
     last_error = None
     ordered_keys = api_key_manager.get_ordered_keys()

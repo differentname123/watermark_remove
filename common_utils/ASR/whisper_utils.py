@@ -4,7 +4,7 @@ import time
 from typing import Tuple, List, Dict
 from faster_whisper import WhisperModel
 
-def transcribe_words_to_json(audio_file: str, MODEL_SIZE="large-v3") -> Tuple[List[Dict], str]:
+def transcribe_words_to_json(audio_file: str, MODEL_SIZE="large-v3"):
     """
     只接受 audio_file 参数，使用固定的模型配置执行转录。
     输出: (word_items, json_path)
@@ -91,4 +91,4 @@ def transcribe_words_to_json(audio_file: str, MODEL_SIZE="large-v3") -> Tuple[Li
 # 简单示例（直接运行脚本会执行）
 if __name__ == "__main__":
     audio = "test.wav"
-    items, path = transcribe_words_to_json(audio)
+    path = transcribe_words_to_json(audio, MODEL_SIZE="large-v2")
