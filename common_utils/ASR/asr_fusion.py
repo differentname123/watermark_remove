@@ -1,8 +1,10 @@
 import collections
 import math
+import re
 import statistics
 import time
 from itertools import groupby
+import difflib
 
 import unicodedata
 from difflib import SequenceMatcher
@@ -50,6 +52,15 @@ def save_json(filepath, data):
         print(f"Error saving to {filepath}: {e}")
 
 
+def calculate_pinyin_similarity(pinyin1, pinyin2):
+    """
+    使用 difflib.SequenceMatcher 计算两个拼音字符串的相似度。
+    返回值在 0.0 到 1.0 之间。
+    """
+    if not pinyin1 or not pinyin2 or len(pinyin1) != len(pinyin2):
+        return 0.0
+    return difflib.SequenceMatcher(None, pinyin1, pinyin2).ratio()
+
 def fuse_asr_results_final(all_asr_lists):
     """
     基于拼音共识与时间聚类的精简型ASR融合算法 (循环基准版)。
@@ -92,8 +103,16 @@ def fuse_asr_results_final(all_asr_lists):
 
     @lru_cache(maxsize=1024)
     def get_pinyin(char):
+        # 如果是英文字母，直接返回小写
+        if char.isalpha() and len(char) == 1:
+            return char.lower()
+
+        # 否则尝试转拼音
         p = pinyin(char, style=Style.NORMAL)
-        return p[0][0] if p else char
+        if p:
+            return p[0][0]
+        else:
+            return char.lower()
 
     # ----------------------- 1. 线性化单字拆分 -----------------------
     all_char_tokens = []
@@ -101,22 +120,34 @@ def fuse_asr_results_final(all_asr_lists):
         char_sequence = []
         for item_idx, item in enumerate(asr_list or []):
             word = norm_text(item.get("word", ""))
-            if not word: continue
+            if not word:
+                continue
             start, end = to_float(item.get("start")), to_float(item.get("end"))
             prob = get_prob(item)
             duration = end - start
-            if duration < 0: continue
-            units = list(word)
-            unit_count = len(units)
-            if unit_count == 0: continue
+            if duration < 0:
+                continue
+
+            # 拆分为单字或数字
+            if re.fullmatch(r'[A-Za-z]+', word):
+                units = list(word)
+            else:
+                units = [word]
+
+            if not units:
+                continue
+
             for i, char in enumerate(units):
-                u_start = start + duration * i / unit_count
-                u_end = start + duration * (i + 1) / unit_count
                 token = {
-                    "uid": (si, item_idx, i), "text": char, "start": u_start,
-                    "end": u_end, "prob": prob, "pinyin": get_pinyin(char)
+                    "uid": (si, item_idx, i),
+                    "text": char,
+                    "start": start,  # 不再线性分割，直接用原始 start
+                    "end": end,  # 不再线性分割，直接用原始 end
+                    "prob": prob,
+                    "pinyin": get_pinyin(char),
                 }
                 char_sequence.append(token)
+
         all_char_tokens.append(char_sequence)
 
     if not any(all_char_tokens): return []
@@ -136,6 +167,7 @@ def fuse_asr_results_final(all_asr_lists):
             if base_token['uid'] in processed_uids_in_this_round:
                 continue
 
+            # 1. 定义以 base_token 为中心的时间窗口
             t_center = (base_token['start'] + base_token['end']) / 2
             t_min = t_center - TIME_WINDOW_MS
             t_max = t_center + TIME_WINDOW_MS
@@ -148,8 +180,22 @@ def fuse_asr_results_final(all_asr_lists):
                 if other_token['uid'] in processed_uids_in_this_round:
                     continue
 
-                other_t_center = (other_token['start'] + other_token['end']) / 2
-                if t_min <= other_t_center <= t_max and other_token['pinyin'] == base_token['pinyin']:
+                # --- 核心修改部分 ---
+
+                # 2. 【新】稳健的时间重叠判断
+                # base_token 的窗口是 [t_min, t_max]
+                # other_token 的时间段是 [other_token['start'], other_token['end']]
+                # 判断两个时间段是否有交集的条件是: start1 <= end2 AND start2 <= end1
+                intervals_overlap = (t_min <= other_token['end']) and (other_token['start'] <= t_max)
+
+                if not intervals_overlap:
+                    continue  # 如果时间上不重叠，直接跳过，没必要再算拼音相似度
+
+                # 3. 【新】拼音相似度判断
+                pinyin_similarity = calculate_pinyin_similarity(base_token['pinyin'], other_token['pinyin'])
+
+                # 同时满足时间重叠和拼音相似度阈值
+                if pinyin_similarity > 0.8:
                     current_cluster.append(other_token)
                     processed_uids_in_this_round.add(other_token['uid'])
 
@@ -377,7 +423,7 @@ def gen_precise_asr(audio_file, output_file):
     """
     funasr_file = run_funasr(audio_file)
     whisper_v2_file = transcribe_words_to_json(audio_file, MODEL_SIZE="large-v2")
-    time.sleep(10)
+    # time.sleep(10)
     whisper_v3_file = transcribe_words_to_json(audio_file)
     ASR_FILES = [
         funasr_file,
@@ -385,9 +431,10 @@ def gen_precise_asr(audio_file, output_file):
         whisper_v3_file,
     ]
     fuse_asr_file = 'output/fused_transcript_final.json'
-    all_asr_lists = [read_json(f) for f in ASR_FILES if read_json(f) is not None]
+    all_asr_lists = [read_json(f)[-10000:] for f in ASR_FILES if read_json(f) is not None]
 
     final_result = fuse_asr_results_final(all_asr_lists)
+
 
     # 将结果时间戳转换为秒，并格式化
     for item in final_result:
@@ -408,11 +455,13 @@ def gen_precise_asr(audio_file, output_file):
 # --- 示例用法 ---
 if __name__ == '__main__':
     audio_file = r"mix.mp3"
+    # audio_file = r"test.wav"
 
 
     OUTPUT_FILE = 'output/final_asr.json'
 
-    # gen_precise_asr(audio_file, OUTPUT_FILE)
+    gen_precise_asr(audio_file, OUTPUT_FILE)
+
 
     fuse_asr_file = 'output/fused_transcript_final.json'
     speaker_file = "output/segments_speech.json"

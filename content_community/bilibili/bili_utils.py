@@ -515,71 +515,71 @@ def get_bilibili_income_detail(cookie_string: str) -> dict | None:
 
 
 if __name__ == '__main__':
-    # income_data = get_bilibili_income_detail(get_config("jun_bilibili_total_cookie"))
-    #
-    # # 3. 处理并打印返回结果
-    # if income_data:
-    #     print("成功获取收入明细数据：")
-    #     # 使用 json.dumps 进行格式化打印，使其更易读
-    #     print(json.dumps(income_data, indent=4, ensure_ascii=False))
-    # else:
-    #     print("\n未能获取数据。请检查上面的错误信息，确认 cookie 是否正确且未过期。")
+    income_data = get_bilibili_income_detail(get_config("xiaohao_bilibili_total_cookie"))
+
+    # 3. 处理并打印返回结果
+    if income_data:
+        print("成功获取收入明细数据：")
+        # 使用 json.dumps 进行格式化打印，使其更易读
+        print(json.dumps(income_data, indent=4, ensure_ascii=False))
+    else:
+        print("\n未能获取数据。请检查上面的错误信息，确认 cookie 是否正确且未过期。")
 
 
-    meta_data =       {
-                "collection_time": "2025-08-20 00:51:36",
-                "id": "7447738126698548537",
-                "desc": "十分钟搞笑合集让你一次笑个够 #搞笑",
-                "full_title": "十分钟搞笑合集让你一次笑个够 #搞笑",
-                "create_timestamp": 1734061672,
-                "create_time": "2024-12-13 11:47:52",
-                "text_extra": [
-                    "搞笑"
-                ],
-                "type": "视频",
-                "height": 720,
-                "width": 1280,
-                "downloads": "https://www.douyin.com/aweme/v1/play/?video_id=v1e00fgi0000ctdqr2nog65qpsfq50c0&line=0&file_id=7e869e5ac3ee446dad4d866f228d4e78&sign=685ca2e8037bac7b39df99cb64b27d82&is_play_url=1&source=PackSourceEnum_AWEME_DETAIL",
-                "duration": "10:17",
-                "uri": "v1e00fgi0000ctdqr2nog65qpsfq50c0",
-                "dynamic_cover": "https://p9-pc-sign.douyinpic.com/obj/tos-cn-i-0813c000-ce/oQExAmeeFFBAXBJAEOED0FfAIAQvghicJ84Uw7?lk3s=138a59ce&x-expires=1756828800&x-signature=Wtpj09IDNz6tM98hQfpK%2Fn9KRvQ%3D&from=327834062_large&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=dynamic_cover&biz_tag=pcweb_cover&l=20250820005134973D8C6C66D6D5366F59",
-                "static_cover": "https://p9-pc-sign.douyinpic.com/image-cut-tos-priv/5e17015760a2572804264e356e8ca476~tplv-dy-resize-origshort-autoq-75:330.jpeg?lk3s=138a59ce&x-expires=2070979200&x-signature=gwGU%2F7qBDUV6L47BzaLZ%2BY9hy6o%3D&from=327834062&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=cover&biz_tag=pcweb_cover&l=20250820005134973D8C6C66D6D5366F59",
-                "uid": "729720776557711",
-                "sec_uid": "MS4wLjABAAAAOff9GwYDbDMkDI-xCGAlEYcNzcv2mz2cE1HewplyNeo",
-                "unique_id": "xy11471015",
-                "signature": "❤️橱窗里面啥都有",
-                "user_age": 124,
-                "nickname": "小歪同学",
-                "mark": "小歪同学",
-                "music_author": "小歪同学",
-                "music_title": "@小歪同学创作的原声",
-                "music_url": "https://lf26-music-east.douyinstatic.com/obj/ies-music-hj/7447738300279900988.mp3",
-                "digg_count": 139906,
-                "comment_count": 1179,
-                "collect_count": 32707,
-                "share_count": 35500,
-                "play_count": -1,
-                "tag": [
-                    "随拍",
-                    "生活记录",
-                    "日常vlog"
-                ],
-                "extra": "",
-                "share_url": "https://www.douyin.com/video/7447738126698548537",
-                "abs_cover_path": "W:\\project\\python_project\\watermark_remove\\LLM\\TikTokDownloader\\Download\\cover\\7447738126698548537.jpg"
-            }
-
-    result = check_duplicate_video(meta_data)
-    print(f"检查结果: {'重复' if result else '不重复'}")
-
+    # meta_data =       {
+    #             "collection_time": "2025-08-20 00:51:36",
+    #             "id": "7447738126698548537",
+    #             "desc": "十分钟搞笑合集让你一次笑个够 #搞笑",
+    #             "full_title": "十分钟搞笑合集让你一次笑个够 #搞笑",
+    #             "create_timestamp": 1734061672,
+    #             "create_time": "2024-12-13 11:47:52",
+    #             "text_extra": [
+    #                 "搞笑"
+    #             ],
+    #             "type": "视频",
+    #             "height": 720,
+    #             "width": 1280,
+    #             "downloads": "https://www.douyin.com/aweme/v1/play/?video_id=v1e00fgi0000ctdqr2nog65qpsfq50c0&line=0&file_id=7e869e5ac3ee446dad4d866f228d4e78&sign=685ca2e8037bac7b39df99cb64b27d82&is_play_url=1&source=PackSourceEnum_AWEME_DETAIL",
+    #             "duration": "10:17",
+    #             "uri": "v1e00fgi0000ctdqr2nog65qpsfq50c0",
+    #             "dynamic_cover": "https://p9-pc-sign.douyinpic.com/obj/tos-cn-i-0813c000-ce/oQExAmeeFFBAXBJAEOED0FfAIAQvghicJ84Uw7?lk3s=138a59ce&x-expires=1756828800&x-signature=Wtpj09IDNz6tM98hQfpK%2Fn9KRvQ%3D&from=327834062_large&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=dynamic_cover&biz_tag=pcweb_cover&l=20250820005134973D8C6C66D6D5366F59",
+    #             "static_cover": "https://p9-pc-sign.douyinpic.com/image-cut-tos-priv/5e17015760a2572804264e356e8ca476~tplv-dy-resize-origshort-autoq-75:330.jpeg?lk3s=138a59ce&x-expires=2070979200&x-signature=gwGU%2F7qBDUV6L47BzaLZ%2BY9hy6o%3D&from=327834062&s=PackSourceEnum_AWEME_DETAIL&se=false&sc=cover&biz_tag=pcweb_cover&l=20250820005134973D8C6C66D6D5366F59",
+    #             "uid": "729720776557711",
+    #             "sec_uid": "MS4wLjABAAAAOff9GwYDbDMkDI-xCGAlEYcNzcv2mz2cE1HewplyNeo",
+    #             "unique_id": "xy11471015",
+    #             "signature": "❤️橱窗里面啥都有",
+    #             "user_age": 124,
+    #             "nickname": "小歪同学",
+    #             "mark": "小歪同学",
+    #             "music_author": "小歪同学",
+    #             "music_title": "@小歪同学创作的原声",
+    #             "music_url": "https://lf26-music-east.douyinstatic.com/obj/ies-music-hj/7447738300279900988.mp3",
+    #             "digg_count": 139906,
+    #             "comment_count": 1179,
+    #             "collect_count": 32707,
+    #             "share_count": 35500,
+    #             "play_count": -1,
+    #             "tag": [
+    #                 "随拍",
+    #                 "生活记录",
+    #                 "日常vlog"
+    #             ],
+    #             "extra": "",
+    #             "share_url": "https://www.douyin.com/video/7447738126698548537",
+    #             "abs_cover_path": "W:\\project\\python_project\\watermark_remove\\LLM\\TikTokDownloader\\Download\\cover\\7447738126698548537.jpg"
+    #         }
     #
-    # total_cookie = get_config("ruru_bilibili_total_cookie")
-    # # car_items = list_selection_car_items(total_cookie, 100)
+    # result = check_duplicate_video(meta_data)
+    # print(f"检查结果: {'重复' if result else '不重复'}")
     #
-    # cookie = total_cookie
-    # result = fetch_goods(cookie=cookie, max_count=20, goodsName="零食")
-    # print(f"共获取到 {len(result)} 个商品")
-    #
-    # # add_goods_to_selection(cookie=cookie, goods=result[:10], operate_source=4, from_type=18)
-    # goods = update_short_url(cookie=cookie, goods=result)
-    # print(goods)
+    # #
+    # # total_cookie = get_config("ruru_bilibili_total_cookie")
+    # # # car_items = list_selection_car_items(total_cookie, 100)
+    # #
+    # # cookie = total_cookie
+    # # result = fetch_goods(cookie=cookie, max_count=20, goodsName="零食")
+    # # print(f"共获取到 {len(result)} 个商品")
+    # #
+    # # # add_goods_to_selection(cookie=cookie, goods=result[:10], operate_source=4, from_type=18)
+    # # goods = update_short_url(cookie=cookie, goods=result)
+    # # print(goods)
