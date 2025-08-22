@@ -91,27 +91,49 @@ def find_silent_scene_timestamps(scenes: dict,
 
 
 def create_speech_segments(scenes: dict,
-                           speakers: list,
-                           margin_ms: int = 50) -> list:
+                                               speakers: list,
+                                               margin_ms: int = 50) -> list:
     """
-    基于场景边界找到静音切点，并以此为边界生成时间段，同时包含每个时间段内完整的说话人信息元素。
-    (最终修正版)
+    基于场景边界找到静音切点，并以此为边界生成时间段。
+    完全采纳用户指定的精确归属逻辑：
+    1. 生成一个从场景结束时间戳字符串(times[1])到 scene_key 的映射表。
+    2. 在生成时间段时，使用其 end_time_str 作为键，直接从映射表中查找归属的 scene_key。
+    (最终修正版 + 用户指定映射逻辑)
     """
+
+    # 假设 time_to_ms 函数已定义
+    def time_to_ms(time_str):
+        # 这是一个示例实现，您可能需要根据您的时间格式进行调整
+        parts = time_str.split(':')
+        h, m, s_ms_str = parts[0], parts[1], parts[2].replace(',', '.')
+        s_parts = s_ms_str.split('.')
+        s = int(s_parts[0])
+        ms = int(s_parts[1]) if len(s_parts) > 1 else 0
+        return int((int(h) * 3600 + int(m) * 60 + s) * 1000 + ms)
+
     # =========================================================================
-    # 步骤 1: 找到所有作为潜在边界的“安全切点”
+    # 步骤 1: 创建从 end_time_str 到 scene_key 的映射表 (您的逻辑)
     # =========================================================================
+    end_time_to_scene_key_map = {}
     candidate_strs = set()
     for scene_key, times in scenes.items():
         if isinstance(times, (list, tuple)) and len(times) >= 2:
-            candidate_strs.add(times[0])
-            candidate_strs.add(times[1])
+            start_str, end_str = times[0], times[1]
+            candidate_strs.add(start_str)
+            candidate_strs.add(end_str)
+
+            # 核心映射逻辑：使用场景的结束时间字符串作为键
+            # 这意味着任何以这个时间点结束的时间段，都归属于这个场景
+            end_time_to_scene_key_map[end_str] = scene_key
 
     if not candidate_strs:
         return []
 
+    # =========================================================================
+    # (此部分保持不变) 步骤 2: 找到所有“安全切点”并构建最终边界点
+    # =========================================================================
     sorted_candidate_strs = sorted(list(candidate_strs), key=lambda s: time_to_ms(s))
 
-    # speaker_intervals_ms 仅用于快速查找冲突点
     speaker_intervals_for_conflict_check = []
     for sp in speakers:
         try:
@@ -127,7 +149,6 @@ def create_speech_segments(scenes: dict,
             t_ms = time_to_ms(t_str)
         except Exception:
             continue
-
         conflict = False
         left = t_ms - margin_ms
         right = t_ms + margin_ms
@@ -135,13 +156,11 @@ def create_speech_segments(scenes: dict,
             if not (right < interval['start'] or left > interval['end']):
                 conflict = True
                 break
-
         if not conflict:
             safe_points.append({"time_str": t_str, "time_ms": t_ms})
 
-    # =========================================================================
-    # 步骤 2: 构建最终的边界点列表，必须包含时间线的起点和终点
-    # =========================================================================
+    if not sorted_candidate_strs:
+        return []
     timeline_start_point = {"time_str": sorted_candidate_strs[0], "time_ms": time_to_ms(sorted_candidate_strs[0])}
     timeline_end_point = {"time_str": sorted_candidate_strs[-1], "time_ms": time_to_ms(sorted_candidate_strs[-1])}
 
@@ -158,7 +177,7 @@ def create_speech_segments(scenes: dict,
         return []
 
     # =========================================================================
-    # 步骤 3: 使用边界点生成时间段，并搜集完整的说话人元素
+    # 步骤 3: 生成时间段，并使用映射表直接查找 scene_key (您的逻辑)
     # =========================================================================
     segments = []
     for i in range(len(boundary_points) - 1):
@@ -168,35 +187,34 @@ def create_speech_segments(scenes: dict,
         segment_start_ms = start_point["time_ms"]
         segment_end_ms = end_point["time_ms"]
 
-        if segment_start_ms == segment_end_ms:
+        if segment_start_ms >= segment_end_ms:
             continue
 
-        # --- MODIFICATION START ---
-        # 改用 list 来存储完整的说话人字典
+        # --- MODIFICATION START: 实施您指定的直接查找逻辑 ---
+        # 使用 segment 的 end_time_str 作为 key 来查找 scene_key
+        end_time_key = end_point["time_str"]
+        current_scene_key = end_time_to_scene_key_map.get(end_time_key, None)
+        # --- MODIFICATION END ---
+
         speakers_in_segment = []
-        # 遍历原始的 speakers 列表
         for speaker_element in speakers:
             try:
                 s_ms = int(round(float(speaker_element.get('start', 0.0)) * 1000))
                 e_ms = int(round(float(speaker_element.get('end', 0.0)) * 1000))
             except (ValueError, TypeError):
                 continue
-
-            # 检查说话时间是否与当前时间段重叠
-            if not (e_ms < segment_start_ms or s_ms > segment_end_ms):
-                # 如果重叠，则添加完整的原始元素
+            if not (e_ms <= segment_start_ms or s_ms >= segment_end_ms):
                 speakers_in_segment.append(speaker_element)
 
-        # （推荐）按开始时间对时间段内的说话人事件进行排序
         speakers_in_segment.sort(key=lambda x: x.get('start', 0.0))
-        # --- MODIFICATION END ---
 
         segments.append({
+            "scene_key": current_scene_key,
             "start_time_str": start_point["time_str"],
             "end_time_str": end_point["time_str"],
             "start_time_ms": segment_start_ms,
             "end_time_ms": segment_end_ms,
-            "speakers": speakers_in_segment  # 存入包含完整元素的列表
+            "speakers": speakers_in_segment
         })
 
     return segments

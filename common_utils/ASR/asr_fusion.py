@@ -32,6 +32,8 @@ import unicodedata
 from difflib import SequenceMatcher
 import unicodedata
 
+from common_utils.video_utils import extract_audio_from_video
+
 
 def read_json(filepath):
     """从文件路径读取JSON数据。"""
@@ -456,13 +458,16 @@ def gen_precise_asr(audio_file, output_file):
 if __name__ == '__main__':
     audio_file = r"mix.mp3"
     # audio_file = r"test.wav"
+    audio_file = r"test1.mp4"
+    new_audio_file = audio_file.replace('.mp4', '.wav')
+    extract_audio_from_video(audio_file, new_audio_file)
 
 
-    OUTPUT_FILE = 'output/final_asr.json'
+    OUTPUT_FILE = f'output/{new_audio_file.split('.')[0]}_final_asr.json'
 
-    gen_precise_asr(audio_file, OUTPUT_FILE)
+    gen_precise_asr(new_audio_file, OUTPUT_FILE)
 
-
-    fuse_asr_file = 'output/fused_transcript_final.json'
-    speaker_file = "output/segments_speech.json"
-    foolproof_merge(speaker_file, fuse_asr_file, OUTPUT_FILE)
+    #
+    # fuse_asr_file = 'output/fused_transcript_final.json'
+    # speaker_file = "output/segments_speech.json"
+    # foolproof_merge(speaker_file, fuse_asr_file, OUTPUT_FILE)
