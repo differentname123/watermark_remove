@@ -515,7 +515,7 @@ def get_bilibili_income_detail(cookie_string: str) -> dict | None:
 
 
 if __name__ == '__main__':
-    income_data = get_bilibili_income_detail(get_config("jun_bilibili_total_cookie"))
+    income_data = get_bilibili_income_detail(get_config("lin_bilibili_total_cookie"))
 
     # 3. 处理并打印返回结果
     if income_data:

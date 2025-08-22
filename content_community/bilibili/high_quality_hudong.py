@@ -176,6 +176,26 @@ def send_get_request(url, params=None):
     return None
 
 
+comment_danmu = [
+    "本来已经划走了，结果看到一个评论，还是没忍住回来点赞。",
+    "退出去又被评论区炸回来了，你们是魔鬼吗？",
+    "谢谢评论区，差点就错过这个视频的精髓了。",
+
+    # “认知颠覆”视角 (暗示评论区有惊天发现或不同解读)
+    "看完视频一脸问号，看完评论区一句卧槽。",
+    "我以为我懂了，直到我打开了评论区。",
+    "这个视频需要搭配评论区“食用”，风味更佳。",
+
+    # “强烈推荐”视角 (用个人感受为评论区的精彩程度背书)
+    "评论区第一条直接给我干沉默了。",
+    "你们去看评论区那个热评，我笑到打嗝。",
+    "听说评论区比视频还精彩，特来围观。",
+
+    "视频还没把我怎么样，评论区差点把我笑走。",
+    "我宣布，这里是第一现场，评论区是第二现场！",
+    "这个视频的弹幕一半，评论区一半，UP主只负责上传。",
+]
+
 def modify_relation(fid, action_type, csrf_token):
     """
     修改用户关系 (关注或取消关注)。
@@ -814,7 +834,7 @@ def filter_danmu(danmu_list, duration):
             seconds = random.randint(0, total_seconds)
 
         item['建议时间戳'] = seconds
-
+    danmu_list.extend(generate_danmaku_plan(total_seconds, comment_danmu))
     return danmu_list
 
 
@@ -858,6 +878,39 @@ def format_bilibili_emote(comment_list, all_emote_list):
         # 将第一个元素调用 replace_bracketed
         comment[0] = replace_bracketed(comment[0], all_emote_list)
 
+
+def generate_danmaku_plan(total_duration: int, text_list: list, target_num: int = 4) -> list:
+    """
+    在 total_duration 范围内随机生成 target_num 个弹幕计划（时间戳为整数秒）
+
+    参数:
+        total_duration (int): 视频总时长（秒）
+        text_list (list[str]): 可供选择的弹幕内容
+        target_num (int): 需要生成的弹幕数量，默认为4
+
+    返回:
+        list[dict]: 每个元素包含 '建议时间戳' 和 '推荐弹幕内容'
+    """
+    if not text_list:
+        raise ValueError("text_list不能为空")
+    if target_num > len(text_list):
+        target_num = len(text_list)  # 避免超出可选范围
+
+    # 随机选取 target_num 个弹幕内容
+    chosen_texts = random.sample(text_list, target_num)
+
+    # 随机生成不重复的时间戳（整数秒）
+    chosen_timestamps = sorted(random.sample(range(total_duration + 1), target_num))
+
+    # 拼接结果
+    result = []
+    for ts, text in zip(chosen_timestamps, chosen_texts):
+        result.append({
+            "建议时间戳": ts,
+            "推荐弹幕内容": [text]
+        })
+
+    return result
 
 
 def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads, all_emote_list):
