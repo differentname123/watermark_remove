@@ -51,7 +51,7 @@ accounts = {
     # 'su': 'su',
     'yan': 'yan',
     'xue': 'xue',
-    'cai': 'cai',
+    # 'cai': 'cai',
     'jun': 'jun',
     'xiaosu': 'xiaosu',
     'chabian': 'chabian',
@@ -234,6 +234,8 @@ def auto_upload():
     # 2. 遍历权威元数据
     for key, value in metadata_cache.items():
         start_time = time.time()
+        # --- 增加每阶段计时字典 ---
+        stage_times = {}
         updated_entry = copy.deepcopy(value)
         status = value.get('status', '未处理')
         if status == 'error':
@@ -292,8 +294,10 @@ def auto_upload():
 
         current_video_path = video_path  # 默认新视频路径为原视频路径
         generation_options = value.get('generation_options', {})
+
+        # 如果需要重制视频，则调用重制函数
         if generation_options.get('remake_video', False) and False:
-            # 如果需要重制视频，则调用重制函数
+            t0 = time.time()
             print(f"🔄 重制视频 {video_path}... userName: {userName}")
             try:
                 final_video_path = remake_video_robust(video_path, bgm_library_path='../app/bgm_audio', force_regenerate=True)
@@ -307,9 +311,12 @@ def auto_upload():
                     save_json(UPLOAD_LOG_FILE, upload_log)
                     print(f"❌ 重制视频失败")
                     error_count += 1
+                    stage_times['重制视频'] = time.time() - t0
                     continue
                 # 重制后的视频路径仍然是 video_path
+                stage_times['重制视频'] = time.time() - t0
             except Exception as e:
+                stage_times['重制视频'] = time.time() - t0
                 upload_log[key] = upload_log.get(key, {})
                 upload_log[key]['status'] = 'error'
                 save_json(UPLOAD_LOG_FILE, upload_log)
@@ -320,6 +327,7 @@ def auto_upload():
         # ---------- 预处理：在尾部插入引导图片 ----------
         new_video_path = current_video_path.replace('.mp4', '_new.mp4')
         try:
+            t0 = time.time()
             image_duration = int(duration / 100)
             image_duration = max(1, image_duration)
             print(f"🔄 尾部插图处理：视频时长 {duration} 秒，插图持续 {image_duration} 秒。 文件路径：{current_video_path} -> {new_video_path}")
@@ -329,25 +337,31 @@ def auto_upload():
                 print(f"⚠️ 尾部插图文件 {final_jpg_path} 不存在，使用默认图片。")
             add_image_to_video_end(current_video_path, final_jpg_path, new_video_path, image_duration)
             video_path = new_video_path
+            stage_times['尾部插图'] = time.time() - t0
         except Exception as e:
+            stage_times['尾部插图'] = time.time() - t0
             print(f"⚠️  尾部插图失败，继续使用原视频：{e}")
 
         if duration < 600:
             tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
             try:
+                t0 = time.time()
                 result = apply_all_subtle_tweaks(video_path, output_path=tweak_video_path)
                 if os.path.exists(tweak_video_path) and result and os.path.getsize(tweak_video_path) > 0:
                     video_path = tweak_video_path
                     print(f"✅ 视频细节调整成功，保存为 {tweak_video_path}")
                 else:
                     print(f"❌ 视频细节调整失败，继续使用原视频。")
+                stage_times['视频细节调整'] = time.time() - t0
             except Exception as e:
+                stage_times['视频细节调整'] = time.time() - t0
                 print(f"⚠️ 视频细节调整失败：{e}")
 
 
         temp_video_path = video_path.replace('.mp4', '_temp.mp4')
         try:
             if generation_options.get('add_epilogue', False):
+                t0 = time.time()
                 print(f"🔄 添加结尾视频片段到 {video_path}... userName: {userName}")
                 copyright_video_path = f'{userName}_final.mp4'
                 if not os.path.exists(copyright_video_path):
@@ -358,7 +372,9 @@ def auto_upload():
                 if os.path.exists(temp_video_path) and os.path.getsize(temp_video_path) > 0:
                     video_path = temp_video_path
                     print(f"✅ 合并视频成功，保存为 {temp_video_path}")
+                stage_times['添加结尾片段'] = time.time() - t0
         except Exception as e:
+            stage_times['添加结尾片段'] = time.time() - t0
             print(f"⚠️ 合并视频失败：{e}")
 
         cover_path = (
@@ -369,6 +385,7 @@ def auto_upload():
         if generation_options.get('add_prologue', False):
             print(f"🔄 添加开场白到 {video_path}... userName: {userName}")
             try:
+                t0 = time.time()
                 width, height = _get_video_resolution(video_path)  # 确保视频路径有效
                 resolution = (width, height)
                 addPrologueStr = best_scheme.get('开场白', {}).get('脚本', '')
@@ -382,23 +399,28 @@ def auto_upload():
                     if os.path.exists(addPrologue_video_path) and os.path.getsize(addPrologue_video_path) > 0:
                         video_path = addPrologue_video_path
                         print(f"✅ 合并开场白视频成功，保存为 {addPrologue_video_path}")
+                stage_times['添加开场白'] = time.time() - t0
             except Exception as e:
+                stage_times['添加开场白'] = time.time() - t0
                 print(f"⚠️ 添加开场白失败：{e}")
 
         template_video_path = video_path.replace('.mp4', '_template.mp4')
         if generation_options.get('need_template', False):
             try:
+                t0 = time.time()
                 add_template(video_path, template_video_path, userName)
                 if os.path.exists(template_video_path) and os.path.getsize(template_video_path) > 0:
                     video_path = template_video_path
                     print(f"✅ 添加模板成功，保存为 {template_video_path}")
+                stage_times['添加模板'] = time.time() - t0
             except Exception as e:
+                stage_times['添加模板'] = time.time() - t0
                 print(f"⚠️ 添加模板失败：{e}")
 
 
         try:
             # ---------- 准备投稿参数 ----------
-
+            t0 = time.time()
             output_image_path = cover_path.replace('.jpg', '_enhanced.jpg')
             create_enhanced_cover(
                 input_image_path=cover_path,
@@ -406,7 +428,9 @@ def auto_upload():
                 text_lines=[best_scheme.get('封面', {}).get('配文', '')],
             )
             cover_path = output_image_path if os.path.exists(output_image_path) else cover_path
+            stage_times['封面处理'] = time.time() - t0
         except Exception as e:
+            stage_times['封面处理'] = time.time() - t0
             traceback.print_exc()
             print(f"⚠️  封面处理失败：{e}")
 
@@ -475,6 +499,8 @@ def auto_upload():
         # ---------- 调用上传接口 ----------
         max_retries = 3
         result = None
+        # --- 记录上传总体耗时 ---
+        t_upload = time.time()
         for attempt in range(1, max_retries + 1):
             try:
                 result = upload_to_bilibili(**upload_params)
@@ -487,6 +513,7 @@ def auto_upload():
                     time.sleep(60)
                 else:
                     print("已达最大重试次数，放弃本次上传。")
+        stage_times['上传'] = time.time() - t_upload
 
         # ---------- 结果处理 ----------
         if result and result.get("aid") and result.get("bvid"):
@@ -536,7 +563,17 @@ def auto_upload():
         if new_uploads_made:
             try:
                 save_json(UPLOAD_LOG_FILE, upload_log)
-                print(f"✅ 上传日志已更新 -> {UPLOAD_LOG_FILE} 耗时 {time.time() - start_time:.2f} 秒。")
+                # ---------- 在日志更新处一并打印阶段耗时汇总 ----------
+                total_elapsed = time.time() - start_time
+                # 构造阶段耗时文本
+                if stage_times:
+                    stage_lines = []
+                    for k, v in stage_times.items():
+                        stage_lines.append(f"{k}: {v:.2f} 秒")
+                    stage_summary = " | ".join(stage_lines)
+                    print(f"✅ 上传日志已更新 -> {UPLOAD_LOG_FILE} 总耗时 {total_elapsed:.2f} 秒。阶段耗时：{stage_summary}")
+                else:
+                    print(f"✅ 上传日志已更新 -> {UPLOAD_LOG_FILE} 总耗时 {total_elapsed:.2f} 秒。")
             except IOError as e:
                 print(f"🔥 写入日志文件失败：{e}")
         else:
@@ -550,6 +587,7 @@ def auto_upload():
         save_json(persistent_tasks_file, list(persistent_tasks))
 
     print(f"错误数量为{error_count}  全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+
 
 
 # ---------- CLI ----------

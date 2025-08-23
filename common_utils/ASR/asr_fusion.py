@@ -432,6 +432,7 @@ def gen_precise_asr(audio_file, output_file):
         whisper_v2_file,
         whisper_v3_file,
     ]
+    return ASR_FILES, ASR_FILES
     fuse_asr_file = 'output/fused_transcript_final.json'
     all_asr_lists = [read_json(f)[-10000:] for f in ASR_FILES if read_json(f) is not None]
 
@@ -449,7 +450,7 @@ def gen_precise_asr(audio_file, output_file):
 
     speaker_file = perform_speaker_diarization(audio_file)
     foolproof_merge(speaker_file, fuse_asr_file, output_file)
-    return output_file
+    return output_file, ASR_FILES
 
 
 

@@ -8,7 +8,14 @@
 :description:
     
 """
-from common_utils.common_utils import read_json, time_to_ms
+import collections
+import os
+
+from common_utils.ASR.asr_fusion import gen_precise_asr
+from common_utils.common_utils import read_json, time_to_ms, save_json
+from common_utils.image_utils import save_frames_around_timestamp
+from common_utils.split_scenes import find_and_split_scenes
+from common_utils.video_utils import extract_audio_from_video
 
 
 def find_silent_scene_timestamps(scenes: dict,
@@ -220,9 +227,176 @@ def create_speech_segments(scenes: dict,
     return segments
 
 
-if __name__ == '__main__':
-    scenes = read_json('test.json')
-    speakers = read_json('../ASR/output/final_asr.json')
-    safe = find_silent_scene_timestamps(scenes, speakers, margin_ms=50)
-    safe1 = create_speech_segments(scenes, speakers, margin_ms=50)
+def find_asr_indices_at_boundaries_old(scenes: dict, asr_results: list, window_ms: int = 50) -> dict:
+    """
+    为场景边界时间戳查找在指定时间窗口内的ASR结果索引。
+    ASR结果是一个列表的列表 (list[list[dict]])。
+
+    Args:
+        scenes (dict): 场景信息字典，键为场景名，值为[开始时间戳, 结束时间戳]。
+        asr_results (list[list[dict]]): ASR识别结果，这是一个嵌套列表。
+        window_ms (int): 在时间戳周围搜索的时间窗口半径（毫秒）。
+
+    Returns:
+        dict: 一个字典，键是场景边界的时间戳字符串，
+              值是对应的ASR结果索引元组 (子列表索引, 词语索引) 的列表。
+    """
+    boundary_asr_indices = collections.defaultdict(list)
+
+    # 1. 提取所有唯一的边界时间戳
+    unique_timestamps = set()
+    for start_time, end_time in scenes.values():
+        unique_timestamps.add(start_time)
+        unique_timestamps.add(end_time)
+    print(f'unique_timestamps{len(unique_timestamps)}')
+    # 2. 遍历每一个唯一的时间戳
+    for ts_str in unique_timestamps:
+        boundary_asr_indices[ts_str] = []
+        target_ms = time_to_ms(ts_str)
+        target_ms = target_ms - 1000/ 60
+        window_start_ms = target_ms - window_ms
+        window_end_ms = target_ms + window_ms
+
+        # 3. 遍历ASR结果的嵌套列表
+        # asr_segment_index 是外层列表的索引
+        # asr_segment 是内层列表（即一个完整的ASR识别结果）
+        for asr_segment_index, asr_segment in enumerate(asr_results):
+            # word_index 是内层列表的索引
+            # asr_item 是单个词的字典
+            for word_index, asr_item in enumerate(asr_segment):
+                asr_start_ms = asr_item['start']
+                asr_end_ms = asr_item['end']
+
+                # 4. 检查时间区间是否重叠
+                if asr_start_ms <= window_end_ms and window_start_ms <= asr_end_ms:
+                    # 记录复合索引 (外层列表索引, 内层词语索引)
+                    compound_index = (asr_segment_index, word_index)
+                    asr_item['compound_index'] = compound_index
+                    boundary_asr_indices[ts_str].append(asr_item)
+
+    return dict(boundary_asr_indices)
+
+
+def find_asr_at_boundaries_sorted_by_overlap(scenes: dict, asr_results: list, window_ms: int = 10) -> list:
+    """
+    为场景边界时间戳查找重叠的ASR结果，并按重叠时间总和升序排序。
+
+    新增功能:
+    1. 计算每个时间戳下，所有匹配词的重叠时间总和 (total_overlap_ms)。
+    2. 最终返回一个列表，该列表根据 'total_overlap_ms' 升序排序。
+
+    Args:
+        scenes (dict): 场景信息字典。
+        asr_results (list[list[dict]]): ASR识别结果。
+        window_ms (int): 搜索窗口半径（毫秒）。
+
+    Returns:
+        list: 一个已排序的列表，每个元素是一个元组 `(timestamp, result_info)`。
+              `result_info` 是一个字典，包含:
+              - 'found_words': 找到的ASR词语列表 (每个词都包含 'overlap_ms')。
+              - 'total_overlap_ms': 重叠时间的总和。
+    """
+    # 1. 提取所有唯一的边界时间戳
+    unique_timestamps = set()
+    for start_time, end_time in scenes.values():
+        unique_timestamps.add(start_time)
+        unique_timestamps.add(end_time)
+
+    # 临时存储结果，键是时间戳，值是包含词列表和总和的字典
+    temp_results = {}
+
+    # 2. 遍历时间戳，计算每个时间戳的匹配结果和重叠时间
+    for ts_str in unique_timestamps:
+        target_ms_original = time_to_ms(ts_str)
+        target_ms = target_ms_original - 1000 / 60
+        window_start_ms = target_ms - window_ms
+        window_end_ms = target_ms
+
+        found_items = []
+        total_overlap = 0
+
+        for asr_segment_index, asr_segment in enumerate(asr_results):
+            for word_index, asr_item in enumerate(asr_segment):
+                asr_start_ms = asr_item['start']
+                asr_end_ms = asr_item['end']
+
+                if asr_start_ms <= window_end_ms and window_start_ms <= asr_end_ms:
+                    overlap_start = max(asr_start_ms, window_start_ms)
+                    overlap_end = min(asr_end_ms, window_end_ms)
+                    overlap_duration = overlap_end - overlap_start
+
+                    # 只有当重叠时间 > 0 时才计算在内
+                    if overlap_duration > 0:
+                        result_item = asr_item.copy()
+                        result_item['compound_index'] = (asr_segment_index, word_index)
+                        result_item['overlap_ms'] = round(overlap_duration)
+
+                        found_items.append(result_item)
+                        total_overlap += result_item['overlap_ms']
+
+        # 如果找到了匹配的词，才记录结果
+        if found_items:
+            temp_results[ts_str] = {
+                'found_words': found_items,
+                'total_overlap_ms': total_overlap
+            }
+
+    # 3. 新增功能：将字典转换为列表，并根据 'total_overlap_ms' 排序
+    # dict.items() 会得到 [(key1, value1), (key2, value2), ...]
+    sorted_result_list = sorted(
+        temp_results.items(),
+        key=lambda item: item[1]['total_overlap_ms']  # item[1]是值(dict)，我们根据这个dict里的'total_overlap_ms'排序
+    )
+
+    return sorted_result_list
+
+
+def asr_and_scene(video_path):
+    scene_info_dict = find_and_split_scenes(
+        video_path,
+        high_threshold=50,  # 初始高阈值
+        max_scenes=20,  # 期望的最大场景数
+        min_scene_len=25,  # 最小场景长度（帧）
+        step=5  # 阈值调整步长
+    )
+    scene_info = video_path.replace('.mp4', '.json')
+    save_json(scene_info, scene_info_dict)
+    print("\n场景信息字典已生成并打印。")
+    for key,value in scene_info_dict.items():
+        timestamp = value[1]
+        save_frames_around_timestamp(video_path,timestamp,3,str(os.path.join('scenes',key)))
+
+    new_audio_file = video_path.replace('.mp4', '.wav')
+    extract_audio_from_video(video_path, new_audio_file)
+
+
+    OUTPUT_FILE = f'output/{new_audio_file.split('.')[0]}_final_asr.json'
+
+    output_file, ASR_FILES = gen_precise_asr(new_audio_file, OUTPUT_FILE)
+
+    scenes = read_json(scene_info)
+    speakers = read_json(OUTPUT_FILE)
+    safe = create_speech_segments(scenes, speakers, margin_ms=50)
     print(safe)
+
+
+if __name__ == '__main__':
+    video_path = 'test1.mp4'
+    new_audio_file = video_path.replace('.mp4', '.wav')
+    extract_audio_from_video(video_path, new_audio_file)
+    OUTPUT_FILE = f'output/{new_audio_file.split('.')[0]}_final_asr.json'
+
+    output_file, ASR_FILES = gen_precise_asr(new_audio_file, OUTPUT_FILE)
+    scene_info = new_audio_file.replace('.mp4', '.json').replace('.wav', '.json')
+
+    scenes = read_json(scene_info)
+    asr_list = []
+    for ASR_FILE in ASR_FILES:
+        asr_list.append(read_json(ASR_FILE))
+
+    result = find_asr_at_boundaries_sorted_by_overlap(scenes, asr_list)
+    print(result)
+
+
+    # asr_and_scene('test1.mp4')
+
