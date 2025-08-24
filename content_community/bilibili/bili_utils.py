@@ -9,6 +9,7 @@
     
 """
 import json
+import re
 
 import requests
 import time
@@ -288,7 +289,8 @@ def update_short_url(cookie, goods, max_retries=5):
 import time
 import random
 import requests
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlencode
+
 
 def fetch_from_search(key_word, target_count=20, timeout=10, page_size=20):
     """
@@ -514,8 +516,323 @@ def get_bilibili_income_detail(cookie_string: str) -> dict | None:
         return None
 
 
+BILI_REPLY_URL = "https://api.vc.bilibili.com/x/im/auto_reply/set_reply_text"
+
+def set_bili_reply(title: str, reply: str, key1: str, key2: str, cookie_str: str, csrf: str | None = None, timeout: int = 10):
+    """
+    向 B 站自动回复接口提交设置（模拟 fetch 请求）。
+    必填参数:
+      - title, reply, key1, key2: 字符串（函数会自动进行表单编码）
+      - cookie_str: 完整的 Cookie 字符串（例如 "SESSDATA=...; bili_jct=...; ..."）
+    可选:
+      - csrf: 如果你已经单独拿到 csrf（bili_jct），可以传入覆盖从 cookie 的提取
+      - timeout: requests 超时时间（秒）
+    返回:
+      - response 的 JSON（若服务器返回 JSON）；否则返回 response.text
+    """
+
+    if not cookie_str or not isinstance(cookie_str, str):
+        raise ValueError("请提供完整的 cookie_str 字符串（必填）")
+
+    # 尝试从 cookie 中提取 bili_jct（csrf token）
+    if csrf is None:
+        m = re.search(r"(?:^|;\s*)bili_jct=([^;]+)", cookie_str)
+        if m:
+            csrf_token = m.group(1)
+        else:
+            raise ValueError("cookie 中未发现 bili_jct，且未提供 csrf 参数。请提供包含 bili_jct 的 cookie 或手动传入 csrf。")
+    else:
+        csrf_token = csrf
+
+    # 构造 headers（尽量真实）
+    headers = {
+        "Accept": "*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+        "Content-Type": "application/x-www-form-urlencoded",
+        # 常见 UA（你可以替换为真实浏览器 UA）
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.0.0",
+        "Origin": "https://message.bilibili.com",
+        "Referer": "https://message.bilibili.com/",
+        "Sec-CH-UA": "\"Not)A;Brand\";v=\"8\", \"Chromium\";v=\"138\", \"Microsoft Edge\";v=\"138\"",
+        "Sec-CH-UA-Mobile": "?0",
+        "Sec-CH-UA-Platform": "\"Windows\"",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
+        # 把 cookie 放在 header 中
+        "Cookie": cookie_str,
+    }
+
+    # 构造表单数据（与 fetch 的 body 保持一致字段）
+    payload = {
+        "type": "2",
+        "reply": reply,
+        "id": "0",
+        "title": title,
+        "key1": key1,
+        "key2": key2,
+        "build": "0",
+        "mobi_app": "web",
+        "csrf": csrf_token
+    }
+
+    # 使用 urlencode 确保表单被正确编码（Content-Type: application/x-www-form-urlencoded）
+    body = urlencode(payload, doseq=False)
+
+    # 发起请求
+    try:
+        resp = requests.post(BILI_REPLY_URL, headers=headers, data=body, timeout=timeout)
+    except requests.RequestException as e:
+        raise RuntimeError(f"请求失败: {e}")
+
+    # 尝试返回 JSON，否则返回文本
+    try:
+        return resp.json()
+    except ValueError:
+        return resp.text
+
+
+LINK_SETTING_URL = "https://api.vc.bilibili.com/link_setting/v1/link_setting/set"
+
+def set_bili_keys_reply(keys_reply: str,
+                        cookie_str: str,
+                        timeout: int = 10):
+    """
+    提交 link_setting 的 keys_reply 设置（模拟浏览器 fetch POST）。
+
+    参数:
+      - keys_reply: 要提交的值，例如 "0" 或其它字符串
+      - cookie_str: 完整的 Cookie 字符串（例如 "SESSDATA=...; bili_jct=...; ..."）
+      - csrf: 可选，若已单独拿到 bili_jct，可传入以覆盖从 cookie 中提取
+      - timeout: requests 超时时间（秒）
+    返回:
+      - 若响应可解析为 JSON，则返回 resp.json()，否则返回 resp.text
+    """
+    csrf = None
+    if not cookie_str or not isinstance(cookie_str, str):
+        raise ValueError("请提供完整的 cookie_str 字符串（必填）")
+
+    # 提取 csrf (bili_jct)
+    if csrf is None:
+        m = re.search(r"(?:^|;\s*)bili_jct=([^;]+)", cookie_str)
+        if m:
+            csrf_token = m.group(1)
+        else:
+            raise ValueError("cookie 中未发现 bili_jct，且未提供 csrf 参数。请提供包含 bili_jct 的 cookie 或手动传入 csrf。")
+    else:
+        csrf_token = csrf
+
+    # 构造 headers（尽量真实）
+    headers = {
+        "Accept": "*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+        "Content-Type": "application/x-www-form-urlencoded",
+        # 可替换为你的真实 UA
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+        "Origin": "https://message.bilibili.com",
+        "Referer": "https://message.bilibili.com/",
+        "Sec-CH-UA": "\"Not;A=Brand\";v=\"99\", \"Brave\";v=\"139\", \"Chromium\";v=\"139\"",
+        "Sec-CH-UA-Mobile": "?0",
+        "Sec-CH-UA-Platform": "\"Windows\"",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
+        "Sec-GPC": "1",
+        # 将 cookie 放入 Header，requests 也会处理 cookies，但放在 header 更接近浏览器行为
+        "Cookie": cookie_str,
+    }
+
+    # 表单数据
+    payload = {
+        "keys_reply": keys_reply,
+        "build": "0",
+        "mobi_app": "web",
+        "csrf": csrf_token
+    }
+
+    body = urlencode(payload, doseq=False)
+
+    try:
+        resp = requests.post(LINK_SETTING_URL, headers=headers, data=body, timeout=timeout)
+    except requests.RequestException as e:
+        raise RuntimeError(f"请求失败: {e}")
+
+    # 返回 JSON 或文本
+    try:
+        return resp.json()
+    except ValueError:
+        return resp.text
+
+
+GET_REPLY_TEXT_URL = "https://api.vc.bilibili.com/x/im/auto_reply/get_reply_text"
+
+def get_bili_reply_text(cookie_str: str,
+                       types = None,
+                       build: str = "0",
+                       mobi_app: str = "web",
+                       web_location: str = "333.40164",
+                       timeout: int = 10):
+    """
+    发送与浏览器 fetch 等效的 GET 请求，且将 cookie 放到 Header 中。
+
+    参数:
+      - cookie_str: 完整 Cookie 字符串（必填），例如 "SESSDATA=...; bili_jct=...; ..."
+      - types: 要在查询中提交的 type[] 列表，默认 [2]
+      - build, mobi_app, web_location: 查询参数，默认复刻你给出的值
+      - timeout: requests 超时时间（秒）
+
+    返回:
+      - 若响应可解析为 JSON，则返回 resp.json()，否则返回 resp.text
+    """
+    if not cookie_str or not isinstance(cookie_str, str):
+        raise ValueError("请提供完整的 cookie_str 字符串（必填）")
+
+    if types is None:
+        types = [2]
+
+    # 构造 headers（尽量模拟真实浏览器）
+    headers = {
+        "Accept": "*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+        # 常见 UA（可替换为你的真实 UA）
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+        "Sec-CH-UA": "\"Not;A=Brand\";v=\"99\", \"Brave\";v=\"139\", \"Chromium\";v=\"139\"",
+        "Sec-CH-UA-Mobile": "?0",
+        "Sec-CH-UA-Platform": "\"Windows\"",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
+        "Sec-GPC": "1",
+        "Referer": "https://message.bilibili.com/",
+        # 把 cookie 放到 Header 中（按你的要求）
+        "Cookie": cookie_str,
+    }
+
+    # 构造 query params，注意 type[] 为数组形式
+    params = []
+    for t in types:
+        params.append(("type[]", str(t)))
+    params.extend([
+        ("build", build),
+        ("mobi_app", mobi_app),
+        ("web_location", web_location)
+    ])
+
+    try:
+        resp = requests.get(GET_REPLY_TEXT_URL, headers=headers, params=params, timeout=timeout)
+    except requests.RequestException as e:
+        raise RuntimeError(f"请求失败: {e}")
+
+    # 返回 JSON 或文本
+    try:
+        return resp.json()
+    except ValueError:
+        return resp.text
+
+DEL_REPLY_URL = "https://api.vc.bilibili.com/x/im/auto_reply/del_reply_text"
+
+def del_bili_reply_text(id: str,
+                       cookie_str: str,
+                       csrf = None,
+                       timeout: int = 10):
+    """
+    删除指定 id 的自动回复文本（模拟浏览器 fetch 的 POST 请求）。
+    参数:
+      - id: 要删除的回复 id（字符串或可以转为字符串的类型）
+      - cookie_str: 完整的 Cookie 字符串（必填），例如 "SESSDATA=...; bili_jct=...; ..."
+      - csrf: 可选，如果你已单独拿到 bili_jct（csrf token），可传入覆盖从 cookie 中提取
+      - timeout: 请求超时时间（秒）
+    返回:
+      - 如果响应能解析为 JSON，则返回 resp.json()，否则返回 resp.text
+    抛出:
+      - 在请求异常时抛出 RuntimeError；在缺少 bili_jct 且未提供 csrf 时抛出 ValueError
+    """
+
+    if not cookie_str or not isinstance(cookie_str, str):
+        raise ValueError("请提供完整的 cookie_str 字符串（必填）")
+
+    # 提取 csrf (bili_jct)
+    if csrf is None:
+        m = re.search(r"(?:^|;\s*)bili_jct=([^;]+)", cookie_str)
+        if m:
+            csrf_token = m.group(1)
+        else:
+            raise ValueError("cookie 中未发现 bili_jct，且未提供 csrf 参数。请提供包含 bili_jct 的 cookie 或手动传入 csrf。")
+    else:
+        csrf_token = csrf
+
+    # 构造 headers（尽量模拟真实浏览器）
+    headers = {
+        "Accept": "*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+        "Origin": "https://message.bilibili.com",
+        "Referer": "https://message.bilibili.com/",
+        "Sec-CH-UA": "\"Not;A=Brand\";v=\"99\", \"Brave\";v=\"139\", \"Chromium\";v=\"139\"",
+        "Sec-CH-UA-Mobile": "?0",
+        "Sec-CH-UA-Platform": "\"Windows\"",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
+        "Sec-GPC": "1",
+        # 将 cookie 放到 Header 中（按你要求）
+        "Cookie": cookie_str,
+    }
+
+    # 表单数据（与 fetch body 保持一致）
+    payload = {
+        "id": str(id),
+        "build": "0",
+        "mobi_app": "web",
+        "csrf": csrf_token
+    }
+
+    body = urlencode(payload, doseq=False)
+
+    try:
+        resp = requests.post(DEL_REPLY_URL, headers=headers, data=body, timeout=timeout)
+    except requests.RequestException as e:
+        raise RuntimeError(f"请求失败: {e}")
+
+    # 返回 JSON 或文本
+    try:
+        return resp.json()
+    except ValueError:
+        return resp.text
+
+
 if __name__ == '__main__':
-    income_data = get_bilibili_income_detail(get_config("lin_bilibili_total_cookie"))
+
+    COOKIE = get_config("tao_bilibili_total_cookie")
+
+    # 删除指定的自动回复文本
+    result= del_bili_reply_text('1101615', COOKIE)
+    print(result)
+
+    # 查看已经设置好了的自动回复的提示词
+    result = get_bili_reply_text(COOKIE)
+    print(result)
+
+
+    # 设置自动回复的提示词
+    title = "游戏"
+    reply = "https://docs.qq.com/sheet/DTmZWVWh3WnpsbE5Q?no_promotion=1&tab=BB08J2\n已经汇总到该文档中，请自行查看"
+    key1 = "游戏"
+    key2 = "好玩，无敌，破解"
+
+    result = set_bili_reply(title=title, reply=reply, key1=key1, key2=key2, cookie_str=COOKIE)
+    print(result)
+
+
+    # 打开自动回复
+    keys_reply_value = '1'
+    result = set_bili_keys_reply(keys_reply=keys_reply_value, cookie_str=COOKIE)
+    print(result)
+
+
+    # 查询激励情况
+    income_data = get_bilibili_income_detail(COOKIE)
 
     # 3. 处理并打印返回结果
     if income_data:

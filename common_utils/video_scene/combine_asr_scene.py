@@ -340,6 +340,12 @@ def find_asr_at_boundaries_sorted_by_overlap(scenes: dict, asr_results: list, wi
                 'found_words': found_items,
                 'total_overlap_ms': total_overlap
             }
+        else:
+            # 如果没有找到匹配的词，也记录一个空的结果
+            temp_results[ts_str] = {
+                'found_words': [],
+                'total_overlap_ms': 0
+            }
 
     # 3. 新增功能：将字典转换为列表，并根据 'total_overlap_ms' 排序
     # dict.items() 会得到 [(key1, value1), (key2, value2), ...]
@@ -380,8 +386,10 @@ def asr_and_scene(video_path):
     print(safe)
 
 
-if __name__ == '__main__':
-    video_path = 'test1.mp4'
+def get_detail_seg(video_path):
+    """
+    获取最详细的分割点
+    """
     new_audio_file = video_path.replace('.mp4', '.wav')
     extract_audio_from_video(video_path, new_audio_file)
     OUTPUT_FILE = f'output/{new_audio_file.split('.')[0]}_final_asr.json'
@@ -396,7 +404,11 @@ if __name__ == '__main__':
 
     result = find_asr_at_boundaries_sorted_by_overlap(scenes, asr_list)
     print(result)
+    return result
 
 
+if __name__ == '__main__':
+    video_path = 'test1.mp4'
+    get_detail_seg(video_path)
     # asr_and_scene('test1.mp4')
 

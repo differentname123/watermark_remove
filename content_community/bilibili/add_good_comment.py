@@ -1161,6 +1161,11 @@ def run_once(username_list):
 if __name__ == '__main__':
     username_list = [ 'mama', 'nana', 'ruru', 'jie', 'jun', 'xiaosu', 'yan', 'xiaohao', 'chabian']
     # username_list = ['jie']
+    username_list = []
+    config = init_config()
+    for key,value in config.items():
+        username_list.append(value['name'])
+
 
     # 无限循环：每轮执行一次 run_once
     while True:
