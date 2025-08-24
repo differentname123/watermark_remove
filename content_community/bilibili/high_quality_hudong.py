@@ -1111,7 +1111,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 else:
                     print(f"弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
                 break
-        time.sleep(random.uniform(5, 15))
+        # time.sleep(random.uniform(5, 15))
     hudong_info['danmu_used'] = danmu_used_list
 
 
@@ -1211,7 +1211,7 @@ def fun():
 
         interaction_data = load_processed_dict('../../LLM/TikTokDownloader/interaction_data.json')
         metadata_cache_with_uploads = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
-        metadata_cache_with_uploads_back = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads0817.json')
+        metadata_cache_with_uploads_back = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads0824.json')
         metadata_cache_with_uploads_back.update(metadata_cache_with_uploads)
         metadata_cache_with_uploads = metadata_cache_with_uploads_back
         bvid_file_path = 'bvid_file.json'

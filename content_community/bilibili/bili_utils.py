@@ -804,31 +804,31 @@ def del_bili_reply_text(id: str,
 
 if __name__ == '__main__':
 
-    COOKIE = get_config("tao_bilibili_total_cookie")
+    COOKIE = get_config("lin_bilibili_total_cookie")
 
-    # 删除指定的自动回复文本
-    result= del_bili_reply_text('1101615', COOKIE)
-    print(result)
-
-    # 查看已经设置好了的自动回复的提示词
-    result = get_bili_reply_text(COOKIE)
-    print(result)
-
-
-    # 设置自动回复的提示词
-    title = "游戏"
-    reply = "https://docs.qq.com/sheet/DTmZWVWh3WnpsbE5Q?no_promotion=1&tab=BB08J2\n已经汇总到该文档中，请自行查看"
-    key1 = "游戏"
-    key2 = "好玩，无敌，破解"
-
-    result = set_bili_reply(title=title, reply=reply, key1=key1, key2=key2, cookie_str=COOKIE)
-    print(result)
-
-
-    # 打开自动回复
-    keys_reply_value = '1'
-    result = set_bili_keys_reply(keys_reply=keys_reply_value, cookie_str=COOKIE)
-    print(result)
+    # # 删除指定的自动回复文本
+    # result= del_bili_reply_text('1101615', COOKIE)
+    # print(result)
+    #
+    # # 查看已经设置好了的自动回复的提示词
+    # result = get_bili_reply_text(COOKIE)
+    # print(result)
+    #
+    #
+    # # 设置自动回复的提示词
+    # title = "游戏"
+    # reply = "https://docs.qq.com/sheet/DTmZWVWh3WnpsbE5Q?no_promotion=1&tab=BB08J2\n已经汇总到该文档中，请自行查看"
+    # key1 = "游戏"
+    # key2 = "好玩，无敌，破解"
+    #
+    # result = set_bili_reply(title=title, reply=reply, key1=key1, key2=key2, cookie_str=COOKIE)
+    # print(result)
+    #
+    #
+    # # 打开自动回复
+    # keys_reply_value = '1'
+    # result = set_bili_keys_reply(keys_reply=keys_reply_value, cookie_str=COOKIE)
+    # print(result)
 
 
     # 查询激励情况

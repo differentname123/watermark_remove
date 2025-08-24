@@ -186,7 +186,7 @@ def simulate_watch_video(sessdata: str, bili_jct: str, bvid: str):
     # logging.info("开始心跳模拟...")
     start_ts = int(time.time())
     played = 0
-    while played < duration and played < 100:
+    while played < duration and played < 60:
         try:
             payload = {
                 'aid': aid, 'cid': cid, 'bvid': bvid, 'mid': viewer_mid,
@@ -236,11 +236,18 @@ def simulate_watch_video_with_log(sessdata, bili_jct, bvid):
         logging.error(f"线程执行出错: {e}")
 
 
-def run_parallel_watch(config_list, bvid, max_workers=15):
+def run_parallel_watch(config_list, bvid, max_workers=20):
+    temp_config_list = config_list
+    # 只随机保存max_workers个config_list
+    if len(config_list) > max_workers:
+        # 打乱config_list
+        random.shuffle(config_list)
+        temp_config_list = config_list[:max_workers]
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
             executor.submit(simulate_watch_video_with_log, s, t, bvid)
-            for s, t in config_list
+            for s, t in temp_config_list
         ]
         for future in as_completed(futures):
             pass
@@ -256,10 +263,12 @@ def load_processed_dict(filepath):
         return {}
 
 def watch_video(bv_list):
+    start_time = time.time()
     for bv in bv_list:
         logging.info(f"开始视频 {bv} 的模拟观看任务...")
         run_parallel_watch(config_list, bv)
-        print(f"已完成视频 {bv} 的模拟观看任务。")
+        print(f"已完成视频 {bv} 的模拟观看任务。耗时: {time.time() - start_time:.2f} 秒")
+
 
 
 if __name__ == "__main__":

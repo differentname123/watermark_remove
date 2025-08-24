@@ -1164,6 +1164,8 @@ if __name__ == '__main__':
     username_list = []
     config = init_config()
     for key,value in config.items():
+        if 'ruru' == value['name']:
+            continue
         username_list.append(value['name'])
 
 
