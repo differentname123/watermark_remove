@@ -770,7 +770,7 @@ class BilibiliCommenter:
                     self.like_comment(oid=oid, rpid=rpid, type_code=type_code)
                     return rpid
                 else:
-                    print(f"评论失败，错误码：{result['code']}, 信息：{result['message']}")
+                    print(f"评论失败，错误码：{result['code']}, 信息：{result['message']} {self.all_params}")
             except Exception as e:
                 print(f"请求出错：{e}")
 

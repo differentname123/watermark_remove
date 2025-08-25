@@ -417,13 +417,14 @@ def send_replay_comment(
         abd_image_path_list = target_good.get('abd_image_path_list', [])
         if abd_image_path_list:
             abd_image_path = random.choice(abd_image_path_list)
+        # abd_image_path = ""
         pinned_text: str = rec.get('pinned_comment', '').strip()
         key1 = target_good.get('key1', '')
         key_list = key1.split('，')
         message_list = target_good.get('message', [])
         message = random.choice(message_list) if message_list else ''
-        # comment_body = f"{pinned_text}\n{message}\n资料已经整理完毕，私信回复 {key_list[0]} 这{len(key_list[0])}个字，即可领取"
-        comment_body = f"{pinned_text}\n{message}"
+        comment_body = f"{pinned_text}\n{message}\n资料已经整理完毕，私信回复 {key_list[0]} 这{len(key_list[0])}个字，即可领取"
+        # comment_body = f"{pinned_text}\n{message}"
 
         # 4. 发布评论
         print(f"正在发布商品评论: 视频 {bvid}，商品 {title} “{rec.get('title', '')}” comment_body: {comment_body}")
@@ -443,6 +444,7 @@ def send_replay_comment(
             random.shuffle(shill_comments)
             record_info['shill_comments'] = shill_comments
             print(f"✅ 已成功发送并置顶商品评论: 视频 {bvid}，商品 {title} “{rec.get('title', '')}” comment_body: {comment_body}")
+            time.sleep(60)
             return rpid, target_good.get('title', '')
 
     # 如果所有推荐都处理完仍未成功
@@ -548,7 +550,7 @@ def gen_all_type_image():
         cover_path = replay.get('abd_image_path', '')
         message_list = replay.get('message', [])
         for key in key_list:
-            for i in range(3):
+            for i in range(30):
                 output_image_path = cover_path.replace('.jpg', f'_{key}_{i}.jpg')
                 message = random.choice(message_list) if message_list else ''
                 create_enhanced_cover(
@@ -584,6 +586,15 @@ def run_once(username_list):
 
     print("--- 所有用户处理完成 ---")
 
+def test_comment():
+    commenters = _initialize_commenters(config, user_to_exclude='oo')
+    comment_text = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}]"
+    comment_type = 1
+    for key, commenter in commenters.items():
+        posted_rpid = commenter.post_comment(
+            'BV1c3t1zDEzw', comment_text, comment_type,
+            like_video=True)
+
 if __name__ == '__main__':
 
     # gen_all_type_image()
@@ -592,17 +603,18 @@ if __name__ == '__main__':
     username_list = [ 'mama', 'nana', 'ruru', 'jie', 'jun', 'xiaosu', 'yan', 'xiaohao', 'chabian']
     cookie_list = []
     # username_list = ['jie']
-    username_list = []
+    username_list = ['mama']
     config = init_config()
-    for key,value in config.items():
-        # if 'ruru' == value['name']:
-        #     continue
-        username_list.append(value['name'])
-        cookie_list.append(value['total_cookie'])
+    # for key,value in config.items():
+    #     # if 'ruru' == value['name']:
+    #     #     continue
+    #     username_list.append(value['name'])
+    #     cookie_list.append(value['total_cookie'])
 
     #
     # for cookie in cookie_list:
     #     maintenance_replay(cookie)
+
 
 
     # 无限循环：每轮执行一次 run_once

@@ -215,26 +215,155 @@ def time_str_to_seconds(time_str: str) -> int | None:
         return None
 
 # ---------- 主逻辑 ----------
+# ---------- 新增的 imports（放到文件顶部或确保已导入） ----------
+import concurrent.futures
+import threading
+from collections import defaultdict
+
+# ---------- 全局变量（放到模块层） ----------
+# 每个账号使用一个单独的 ThreadPoolExecutor(max_workers=1) —— 保证同账号串行上传
+account_executors = defaultdict(lambda: concurrent.futures.ThreadPoolExecutor(max_workers=1))
+
+# 保护 upload_log 的并发写入
+upload_lock = threading.Lock()
+
+# 全局引用的 upload_log（在 auto_upload 开头会被赋值）
+upload_log_global = {}
+
+# ---------- upload_worker：在 per-account executor 中执行的完整上传与后处理逻辑 ----------
+def upload_worker(upload_params, key, updated_entry, files_to_cleanup, stage_times, userName):
+    """
+    后台上传任务（在各自账号的单线程 executor 中运行，保证同账号串行）；
+    完整地执行上传重试、结果处理、metadata 更新、临时文件清理与日志持久化。
+    参数：
+      - upload_params: dict, 传给 upload_to_bilibili 的参数
+      - key: str, metadata_cache 的 key
+      - updated_entry: dict, 深拷贝的 metadata entry（用于写回 upload_log）
+      - files_to_cleanup: list[str|None], 上传成功后要删除的临时文件路径
+      - stage_times: dict, 各阶段耗时（worker 会写 '上传'）
+      - userName: str, 账号名（用于记录错误 map 等）
+    """
+    global upload_log_global, error_user_map
+
+    max_retries = 3
+    result = None
+    t_upload = time.time()
+
+    # 上传重试
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = upload_to_bilibili(**upload_params)
+            break
+        except Exception as e:
+            print(f"❌ 上传接口异常 (第 {attempt} 次重试) user={userName} key={key}：{e}")
+            if attempt < max_retries:
+                # 等候一会再试（与原逻辑一致）
+                time.sleep(60)
+            else:
+                print("已达最大重试次数，放弃本次上传（后台）。")
+
+    stage_times['上传'] = time.time() - t_upload
+
+    # 上传成功分支
+    if result and isinstance(result, dict) and result.get("aid") and result.get("bvid"):
+        try:
+            print(f"🎉 后台投稿成功！AID={result['aid']}  BVID={result['bvid']} key={key} user={userName} 上传耗时 {stage_times.get('上传', 0):.2f} 秒。")
+            # 尝试获取最终视频时长并更新 metadata（和原逻辑保持一致）
+            try:
+                final_duration_sec = get_video_duration_seconds(upload_params.get("video_path"))
+                if final_duration_sec is not None:
+                    formatted_duration = format_seconds_to_mmss(final_duration_sec)
+                    if 'metadata' in updated_entry and isinstance(updated_entry['metadata'], list) and updated_entry['metadata']:
+                        updated_entry['metadata'][0]['duration'] = formatted_duration
+                else:
+                    print("⚠️ 未能获取最终视频时长，metadata 中的 duration 字段将不被更新。")
+            except Exception as e:
+                print(f"⚠️ 获取最终视频时长失败：{e}")
+
+            # 删除临时文件（上传成功后清理）
+            for p in files_to_cleanup or []:
+                try:
+                    if p and os.path.exists(p):
+                        os.remove(p)
+                except Exception as e:
+                    print(f"⚠️ 清理文件 {p} 失败：{e}")
+
+        except Exception as e:
+            print(f"⚠️ 后台上传后处理异常：{e}")
+
+        # 把 upload_info 写入 updated_entry
+        updated_entry["upload_info"] = {
+            "upload_params": upload_params,
+            "upload_result": result,
+        }
+
+        # 安全地写入全局 upload_log 并持久化（加锁）
+        with upload_lock:
+            upload_log_global[key] = updated_entry
+            try:
+                save_json(UPLOAD_LOG_FILE, upload_log_global)
+                # 打印阶段耗时汇总
+                if stage_times:
+                    stage_lines = [f"{k}: {v:.2f} 秒" for k, v in stage_times.items()]
+                    print(f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE}。阶段耗时：{' | '.join(stage_lines)} {userName}")
+                else:
+                    print(f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE} {userName}.")
+            except Exception as e:
+                print(f"🔥 后台写入日志文件失败：{e}")
+
+    else:
+        # 上传失败：记录 error_user_map，并把错误信息写到 upload_log（加锁）
+        err = None
+        try:
+            err = result.get("message", str(result)) if isinstance(result, dict) else str(result)
+        except Exception:
+            err = str(result)
+        error_user_map[userName] = err or "未知错误"
+        print(f"❌ 后台投稿失败 user={userName} key={key}：{err}")
+        with upload_lock:
+            upload_log_global[key] = upload_log_global.get(key, {})
+            upload_log_global[key]['status'] = 'error'
+            upload_log_global[key]['error_message'] = err
+            try:
+                save_json(UPLOAD_LOG_FILE, upload_log_global)
+            except Exception as e:
+                print(f"🔥 后台写入失败（失败记录）：{e}")
+
+
+# ---------- auto_upload：完整实现（主线程做预处理，上传按账号串行提交） ----------
 def auto_upload():
-    temp_set = set()  # 用于临时存储已处理的任务，避免重复处理
-    # 1. 读取元数据 & 上传日志
+    """
+    非阻塞版 auto_upload（主线程负责预处理，投稿提交到每个账号的单线程 executor）：
+    - 保留并执行原脚本的全部预处理逻辑
+    - 在生成 upload_params 后，使用 account_executors[userName].submit(...) 提交 upload_worker，
+      以确保同一用户同一时刻只会有一个上传任务在运行。
+    """
+    global upload_log_global
+
+    temp_set = set()  # 临时集合，记录被跳过/需持久化的任务
     metadata_cache: dict = load_json(METADATA_FILE, default={})
     upload_log: dict = load_json(UPLOAD_LOG_FILE, default={})
-    # if not upload_log:
-    #     print(f"❌ 上传日志文件 {UPLOAD_LOG_FILE} 不存在或为空，请检查。")
-    #     return
+    upload_log_global = upload_log  # 赋值全局，worker 会在后台修改（受 upload_lock 保护）
 
     if not metadata_cache:
         print(f"❌ 无可用任务：{METADATA_FILE} 为空或不存在。")
         return
 
-
+    futures = []  # 保存提交到各账号 executor 的 future（如需等待可用）
     new_uploads_made = False
     error_count = 0
-    # 2. 遍历权威元数据
+
+    # 遍历所有权威元数据任务
     for key, value in metadata_cache.items():
         start_time = time.time()
-        # --- 增加每阶段计时字典 ---
+
+        # 先把一些变量初始化，避免后续某些分支引用未定义变量
+        new_video_path = None
+        temp_video_path = None
+        tweak_video_path = None
+        addPrologue_video_path = None
+        template_video_path = None
+
         stage_times = {}
         updated_entry = copy.deepcopy(value)
         status = value.get('status', '未处理')
@@ -243,17 +372,11 @@ def auto_upload():
             error_count += 1
             continue
 
-        # if key in upload_log and upload_log[key].get('status') == 'error':
-        #     print(f"⏭️ 跳过 {key}：之前重制失败，已标记")
-        #     continue
-        # print("-" * 60)
-
-        # 2.1 若日志里已记录成功投稿，则跳过
-        if key in upload_log and upload_log[key].get("upload_info"):
-            # print(f"✅ 已上传，跳过 {key}")
+        # 已记录上传成功则跳过
+        if key in upload_log_global and upload_log_global[key].get("upload_info"):
             continue
 
-        # ---------- 数据合法性检查 ----------
+        # 基本合法性检查
         metadata = value.get('metadata')
         userName = value.get('userName', 'other')
         if userName in error_user_map:
@@ -262,22 +385,20 @@ def auto_upload():
             continue
         if userName not in config_map.keys():
             print(f"⚠️ 跳过 {userName} 用户上传 请检查配置数据。")
-            # error_count += 1
+            # 按原逻辑将 userName 兜到底层 base
             userName = 'base'
-            continue
         config = config_map.get(userName, config_map['base'])
         print(f"🔍 处理 {key} (用户: {userName})")
+
         if not (isinstance(metadata, list) and metadata):
             print(f"⏭️ 跳过 {key}：metadata 字段缺失或格式错误。{metadata}")
             continue
 
-        # ---------- 选择最佳投稿方案 ----------
-        best_scheme = value.get('best_scheme') or get_best_plan_by_potential(
-            value.get('title_schemes', {})
-        )
+        # 选择最佳投稿方案
+        best_scheme = value.get('best_scheme') or get_best_plan_by_potential(value.get('title_schemes', {}))
         if not best_scheme:
             print(f"⏭️ 跳过 {key}：无法选取投稿方案。")
-            temp_set.add(key)  # 添加到临时集合，避免重复处理
+            temp_set.add(key)
             continue
 
         video_id = metadata[0].get('id')
@@ -287,15 +408,15 @@ def auto_upload():
 
         video_path = value.get('video_path')
         duration = metadata[0].get('duration', "00:10")
-        duration = time_str_to_seconds(duration)  # 确保 duration 格式正确
+        duration = time_str_to_seconds(duration)
         if not video_path or not os.path.exists(video_path):
             print(f"⏭️ 跳过 {key} (ID: {video_id})：视频文件缺失 -> {video_path}")
             continue
 
-        current_video_path = video_path  # 默认新视频路径为原视频路径
+        current_video_path = video_path  # 默认使用原路径
         generation_options = value.get('generation_options', {})
 
-        # 如果需要重制视频，则调用重制函数
+        # （保留你原来的“重制视频”分支，但默认仍为 False）
         if generation_options.get('remake_video', False) and False:
             t0 = time.time()
             print(f"🔄 重制视频 {video_path}... userName: {userName}")
@@ -306,20 +427,19 @@ def auto_upload():
                     video_path = final_video_path
                     current_video_path = final_video_path
                 else:
-                    upload_log[key] = upload_log.get(key, {})
-                    upload_log[key]['status'] = 'error'
-                    save_json(UPLOAD_LOG_FILE, upload_log)
+                    upload_log_global[key] = upload_log_global.get(key, {})
+                    upload_log_global[key]['status'] = 'error'
+                    save_json(UPLOAD_LOG_FILE, upload_log_global)
                     print(f"❌ 重制视频失败")
                     error_count += 1
                     stage_times['重制视频'] = time.time() - t0
                     continue
-                # 重制后的视频路径仍然是 video_path
                 stage_times['重制视频'] = time.time() - t0
             except Exception as e:
                 stage_times['重制视频'] = time.time() - t0
-                upload_log[key] = upload_log.get(key, {})
-                upload_log[key]['status'] = 'error'
-                save_json(UPLOAD_LOG_FILE, upload_log)
+                upload_log_global[key] = upload_log_global.get(key, {})
+                upload_log_global[key]['status'] = 'error'
+                save_json(UPLOAD_LOG_FILE, upload_log_global)
                 print(f"❌ 重制视频失败：{e}")
                 error_count += 1
                 continue
@@ -340,8 +460,9 @@ def auto_upload():
             stage_times['尾部插图'] = time.time() - t0
         except Exception as e:
             stage_times['尾部插图'] = time.time() - t0
-            print(f"⚠️  尾部插图失败，继续使用原视频：{e}")
+            print(f"⚠️ 尾部插图失败，继续使用原视频：{e}")
 
+        # 视频细节调整（当 duration < 600）
         if duration < 600:
             tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
             try:
@@ -357,7 +478,7 @@ def auto_upload():
                 stage_times['视频细节调整'] = time.time() - t0
                 print(f"⚠️ 视频细节调整失败：{e}")
 
-
+        # 添加结尾片段
         temp_video_path = video_path.replace('.mp4', '_temp.mp4')
         try:
             if generation_options.get('add_epilogue', False):
@@ -377,22 +498,25 @@ def auto_upload():
             stage_times['添加结尾片段'] = time.time() - t0
             print(f"⚠️ 合并视频失败：{e}")
 
+        # 封面路径选择
         cover_path = (
             metadata[0].get('abs_cover_path') if os.path.exists(metadata[0].get('abs_cover_path', ''))
             else best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
         )
+
+        # 添加开场白
         addPrologue_video_path = video_path.replace('.mp4', '_prologue.mp4')
         if generation_options.get('add_prologue', False):
             print(f"🔄 添加开场白到 {video_path}... userName: {userName}")
             try:
                 t0 = time.time()
-                width, height = _get_video_resolution(video_path)  # 确保视频路径有效
+                width, height = _get_video_resolution(video_path)
                 resolution = (width, height)
                 addPrologueStr = best_scheme.get('开场白', {}).get('脚本', '')
                 if not addPrologueStr:
                     print(f"⚠️ 开场白脚本为空，跳过添加开场白。")
 
-                temp_video_path = text_image_to_video_with_subtitles(text=addPrologueStr, image_path=cover_path, output_path=addPrologue_video_path,resolution=resolution)
+                temp_video_path = text_image_to_video_with_subtitles(text=addPrologueStr, image_path=cover_path, output_path=addPrologue_video_path, resolution=resolution)
                 if os.path.exists(temp_video_path):
                     print(f"✅ 添加开场白成功，保存为 {temp_video_path}")
                     merge_videos_ffmpeg([temp_video_path, video_path], output_path=addPrologue_video_path)
@@ -404,6 +528,7 @@ def auto_upload():
                 stage_times['添加开场白'] = time.time() - t0
                 print(f"⚠️ 添加开场白失败：{e}")
 
+        # 添加模板
         template_video_path = video_path.replace('.mp4', '_template.mp4')
         if generation_options.get('need_template', False):
             try:
@@ -417,9 +542,8 @@ def auto_upload():
                 stage_times['添加模板'] = time.time() - t0
                 print(f"⚠️ 添加模板失败：{e}")
 
-
+        # 封面增强处理
         try:
-            # ---------- 准备投稿参数 ----------
             t0 = time.time()
             output_image_path = cover_path.replace('.jpg', '_enhanced.jpg')
             create_enhanced_cover(
@@ -434,12 +558,12 @@ def auto_upload():
             traceback.print_exc()
             print(f"⚠️  封面处理失败：{e}")
 
+        # tags / title / description 等
         origin_tag = metadata[0].get('tag', [])
         if userName == 'ruru' and '娱乐盘点' not in origin_tag:
             origin_tag.insert(0, '娱乐盘点')  # 放最前面
         origin_tag.extend(metadata[0].get('text_extra', []))
         title = best_scheme.get('标题', '欢迎来看我的视频！')
-        # title最长只能够 80 个字符
         if len(title) > 80:
             title = title[:70]
             print(f"⚠️ 标题过长，已截断为：{title}")
@@ -452,7 +576,7 @@ def auto_upload():
             "from_source": "arc.web.recommend",
             'topic_name': '骑行去追夏天的风'
         }
-        # 尝试获取data字段下面的topics列表中一个个元素的topic_id
+        # 尝试获取话题
         if isinstance(topic_json, dict) and 'data' in topic_json:
             topics = topic_json.get('data', {}).get('topics', [])
             if topics:
@@ -463,18 +587,14 @@ def auto_upload():
         else:
             print(f"⚠️ 获取分区 {human_type2} 的话题失败，使用默认值。{topic_json}")
 
-
         description_json = best_scheme.get('简介', {})
         target_keys = ["核心看点", "价值承诺", "互动引导", "补充信息"]
-        # 只拼接存在的指定字段
         description = "\n".join(
             str(description_json[k]) for k in target_keys if k in description_json
         )
         tags = best_scheme.get('标签', ['AI修复', '视频剪辑'])
-        origin_tag.extend(tags)  # 保留原始标签
-        # 去重origin_tag
+        origin_tag.extend(tags)
         tags = list(set(origin_tag))
-        # 删除长度超过20的标签
         tags = [tag for tag in tags if len(tag) <= 18]
         tags = tags[:12]
         tags_str = ",".join(tags) if isinstance(tags, list) else str(tags)
@@ -494,91 +614,31 @@ def auto_upload():
             "topic_id": topic_id,
         }
 
-        print(f"🚀 开始投稿 {key} (ID: {video_id}) - 《{title}》 userName: {userName}，封面：{cover_path}，分区：{human_type2}，话题：{topic_name}，话题ID：{topic_id}。")
+        # ---------- 非阻塞提交上传（按账号串行） ----------
+        print(f"🚀 准备为用户 {userName} 后台投稿 {key} (ID: {video_id}) - 《{title}》（按账号串行）")
+        files_to_cleanup = [
+            upload_params.get("video_path"),
+            new_video_path,
+            temp_video_path,
+            tweak_video_path,
+            addPrologue_video_path,
+            template_video_path,
+        ]
+        task_stage_times = dict(stage_times)
 
-        # ---------- 调用上传接口 ----------
-        max_retries = 3
-        result = None
-        # --- 记录上传总体耗时 ---
-        t_upload = time.time()
-        for attempt in range(1, max_retries + 1):
-            try:
-                result = upload_to_bilibili(**upload_params)
-                break
-            except Exception as e:
-                print(f"❌ 上传接口异常 (第 {attempt} 次重试)：{e}")
-                print(upload_params)
-                if attempt < max_retries:
-                    print("等待 1 分钟后重试…")
-                    time.sleep(60)
-                else:
-                    print("已达最大重试次数，放弃本次上传。")
-        stage_times['上传'] = time.time() - t_upload
+        # 获取该账号的 executor（默认每账号单线程）
+        account_executor = account_executors[userName]
+        future = account_executor.submit(upload_worker, upload_params, key, updated_entry, files_to_cleanup, task_stage_times, userName)
+        futures.append(future)
+        new_uploads_made = True
 
-        # ---------- 结果处理 ----------
-        if result and result.get("aid") and result.get("bvid"):
-            print(f"🎉 投稿成功！AID={result['aid']}  BVID={result['bvid']} 时间：{time.strftime('%Y-%m-%d %H:%M:%S')} username {userName} 耗时 {time.time() - start_time:.2f} 秒。")
-            try:
-                final_duration_sec = get_video_duration_seconds(video_path)
-                if final_duration_sec is not None:
-                    formatted_duration = format_seconds_to_mmss(final_duration_sec)
-                    print(f"ℹ️ 获取到最终视频时长: {formatted_duration}，正在更新元数据...")
-                    # 确保 metadata 结构符合预期再更新
-                    if 'metadata' in updated_entry and isinstance(updated_entry['metadata'], list) and updated_entry[
-                        'metadata']:
-                        updated_entry['metadata'][0]['duration'] = formatted_duration
-                    else:
-                        print("⚠️ 无法在 updated_entry 中找到 'metadata' 列表来更新时长。")
-                else:
-                    print("⚠️ 未能获取最终视频时长，metadata 中的 duration 字段将不被更新。")
-                if os.path.exists(video_path):
-                    os.remove(video_path)
-                if new_video_path and os.path.exists(new_video_path):
-                    os.remove(new_video_path)
-                if temp_video_path and os.path.exists(temp_video_path):
-                    os.remove(temp_video_path)
-                if tweak_video_path and os.path.exists(tweak_video_path):
-                    os.remove(tweak_video_path)
-                if addPrologue_video_path and os.path.exists(addPrologue_video_path):
-                    os.remove(addPrologue_video_path)
-                if template_video_path and os.path.exists(template_video_path):
-                    os.remove(template_video_path)
-            except Exception as e:
-                print(f"⚠️ 删除视频文件失败：{e}")
+        # 主循环继续处理下一条任务（不等待上传完成）
 
-            # 把「权威元数据 + upload_info」写入日志字典
-            updated_entry["upload_info"] = {
-                "upload_params": upload_params,
-                "upload_result": result,
-            }
-            upload_log[key] = updated_entry
-            new_uploads_made = True
-        else:
-            err = result.get("message", "未知错误") if isinstance(result, dict) else str(result)
-            error_user_map[userName] = err
-            print(f"❌ 投稿失败：{err}")
+    # 如果需要在一次运行结束前等待所有后台上传完成，可取消下面注释：
+    # print("等待所有后台上传完成...")
+    # concurrent.futures.wait(futures, timeout=None)
 
-        # 3. 如有新成功上传，则更新日志文件
-        # print("=" * 60)
-        if new_uploads_made:
-            try:
-                save_json(UPLOAD_LOG_FILE, upload_log)
-                # ---------- 在日志更新处一并打印阶段耗时汇总 ----------
-                total_elapsed = time.time() - start_time
-                # 构造阶段耗时文本
-                if stage_times:
-                    stage_lines = []
-                    for k, v in stage_times.items():
-                        stage_lines.append(f"{k}: {v:.2f} 秒")
-                    stage_summary = " | ".join(stage_lines)
-                    print(f"✅ 上传日志已更新 -> {UPLOAD_LOG_FILE} 总耗时 {total_elapsed:.2f} 秒。阶段耗时：{stage_summary}")
-                else:
-                    print(f"✅ 上传日志已更新 -> {UPLOAD_LOG_FILE} 总耗时 {total_elapsed:.2f} 秒。")
-            except IOError as e:
-                print(f"🔥 写入日志文件失败：{e}")
-        else:
-            print("本次运行没有新的成功投稿。")
-
+    # 处理被跳过的 persistent tasks
     if len(temp_set) > 0:
         print(f"⚠️ 跳过了 {len(temp_set)} 个任务：{', '.join(temp_set)}")
         persistent_tasks = load_json(persistent_tasks_file, default={})
@@ -587,6 +647,7 @@ def auto_upload():
         save_json(persistent_tasks_file, list(persistent_tasks))
 
     print(f"错误数量为{error_count}  全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+
 
 
 
