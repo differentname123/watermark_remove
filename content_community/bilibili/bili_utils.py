@@ -802,9 +802,69 @@ def del_bili_reply_text(id: str,
         return resp.text
 
 
+SIGN_UPDATE_URL = "https://api.bilibili.com/x/member/web/sign/update"
+
+
+def update_bili_user_sign(cookie_str: str, user_sign: str, timeout: int = 10):
+    """
+    更新 B 站个性签名 (user_sign) —— 模拟浏览器 fetch 请求。
+
+    参数:
+      - cookie_str: 完整 Cookie 字符串 (必须包含 bili_jct)
+      - user_sign: 新的个性签名
+
+    返回:
+      - JSON (若能解析)，否则返回文本
+    """
+
+    if not cookie_str or not isinstance(cookie_str, str):
+        raise ValueError("必须提供完整 cookie_str")
+
+    # 提取 bili_jct (csrf token)
+    m = re.search(r"(?:^|;\s*)bili_jct=([^;]+)", cookie_str)
+    if not m:
+        raise ValueError("cookie 中未发现 bili_jct，请确保 cookie 包含 bili_jct")
+    csrf_token = m.group(1)
+
+    headers = {
+        "Accept": "*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.0.0",
+        "Origin": "https://space.bilibili.com",
+        "Referer": "https://space.bilibili.com/",
+        "Sec-CH-UA": "\"Not)A;Brand\";v=\"8\", \"Chromium\";v=\"138\", \"Microsoft Edge\";v=\"138\"",
+        "Sec-CH-UA-Mobile": "?0",
+        "Sec-CH-UA-Platform": "\"Windows\"",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
+        "Cookie": cookie_str,
+    }
+
+    payload = {
+        "user_sign": user_sign,
+        "csrf": csrf_token,
+    }
+    body = urlencode(payload, doseq=False)
+
+    try:
+        resp = requests.post(SIGN_UPDATE_URL, headers=headers, data=body, timeout=timeout)
+    except requests.RequestException as e:
+        raise RuntimeError(f"请求失败: {e}")
+
+    try:
+        return resp.json()
+    except ValueError:
+        return resp.text
+
 if __name__ == '__main__':
 
-    COOKIE = get_config("lin_bilibili_total_cookie")
+    COOKIE = get_config("ruru_bilibili_total_cookie")
+
+    # 更新个性签名
+    # result = update_bili_user_sign(COOKIE, "测试个性签名")
+    # print(result)
 
     # # 删除指定的自动回复文本
     # result= del_bili_reply_text('1101615', COOKIE)

@@ -1032,7 +1032,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     exist_comment_text = [comment[0] for comment in exist_comment]
     exist_danmu = result.get('已有弹幕', [])
     exist_danmu_text = [danmu[0] for danmu in exist_danmu]
-    max_success_comment_count = 10
+    max_success_comment_count = 2
     # if uid in ['443415885','3546954575383021','3546717871934392','1223805908','3546947310848473','3546947566700892', '477861377', '3493263231158598']:
     #     max_success_comment_count = 100
 
@@ -1056,6 +1056,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 print("一键三连操作流程成功完成！")
             else:
                 print("一键三连操作流程失败。")
+        max_success_comment_count = 5
 
     hudong_info['share_video'] = share_video
     hudong_info['triple_like_video'] = triple_like_video
@@ -1082,8 +1083,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 print(f"弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
             else:
                 print(f"弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
+                time.sleep(random.uniform(10, 15))
             break
-        time.sleep(random.uniform(5, 15))
+        time.sleep(random.uniform(10, 15))
     hudong_info['owner_danmu_used'] = owner_danmu_used_list
 
 

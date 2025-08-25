@@ -45,7 +45,7 @@ def create_transparent_video_middle_third(input_path: str, output_path: str):
         'ffmpeg',
         '-i', input_path,
         '-filter_complex', filter_complex,
-        '-an',                    # 新增：-an (Audio No)，忽略所有音轨
+        '-an',  # 新增：-an (Audio No)，忽略所有音轨
         '-c:v', 'prores_ks',
         '-pix_fmt', 'yuva444p10le',
         '-alpha_bits', '16',
@@ -78,6 +78,7 @@ def create_transparent_video_middle_third(input_path: str, output_path: str):
         print(e.stderr)
         print("---------------------------------")
 
+
 def get_media_dimensions(file_path):
     """使用 ffprobe 获取媒体文件的宽度和高度。"""
     command = [
@@ -91,6 +92,7 @@ def get_media_dimensions(file_path):
     except Exception as e:
         print(f"错误: 无法获取 '{file_path}' 的尺寸。错误信息: {e}")
         return None, None
+
 
 def make_transparent(input_path: str, output_path: str,
                      target_x: int, target_y: int,
@@ -133,7 +135,9 @@ def make_transparent(input_path: str, output_path: str,
     img.save(output_path, format="PNG")
     print(f"已保存带透明区域的图像到 {output_path}")
 
-def process_video_with_template(input_video, template_image, output_video, left_up_point, box_info, blur_sigma=25, preset='veryfast'):
+
+def process_video_with_template(input_video, template_image, output_video, left_up_point, box_info, blur_sigma=25,
+                                preset='veryfast'):
     """
     将视频填充到模板的透明区域，背景为模糊填充，并生成最终视频。
     - 统一视频为 bt709 + limited + yuv420p，避免 yuvj420p 引发的 swscale 报错。
@@ -192,11 +196,11 @@ def process_video_with_template(input_video, template_image, output_video, left_
         'ffmpeg',
         '-loglevel', 'error',
         '-i', input_video,
-        '-loop', '1',            # 持续输出模板帧
+        '-loop', '1',  # 持续输出模板帧
         '-i', template_image,
         '-filter_complex', filter_complex,
         '-map', '[v_out]',
-        '-map', '0:a?',          # 如果原视频有音频就带上
+        '-map', '0:a?',  # 如果原视频有音频就带上
         '-c:v', 'libx264',
         '-preset', preset,
         '-pix_fmt', 'yuv420p',
@@ -204,7 +208,7 @@ def process_video_with_template(input_video, template_image, output_video, left_
         '-colorspace', 'bt709',
         '-color_primaries', 'bt709',
         '-color_trc', 'bt709',
-        '-color_range', 'tv',    # limited range
+        '-color_range', 'tv',  # limited range
         # 音频用 AAC 更稳，避免 copy 在 MP4 内不兼容
         '-c:a', 'aac', '-b:a', '192k',
         '-ar', '48000', '-ac', '2',
@@ -227,6 +231,7 @@ def process_video_with_template(input_video, template_image, output_video, left_
         print("错误: 未找到 'ffmpeg' 或 'ffprobe'。请确保它们已安装并位于系统 PATH 中。")
         return False
 
+
 def cut_audio_segment(input_audio_path: str, start_time: float, end_time: float, output_audio_path: str):
     """
     从音频中截取指定时间段，保存为新的音频文件。
@@ -242,22 +247,23 @@ def cut_audio_segment(input_audio_path: str, start_time: float, end_time: float,
         raise ValueError("end_time 必须大于 start_time")
 
     cmd = [
-        "ffmpeg", "-y",           # <--- 添加自动覆盖参数
+        "ffmpeg", "-y",  # <--- 添加自动覆盖参数
         "-v", "error",
         "-ss", str(start_time),
         "-i", input_audio_path,
         "-t", str(duration),
-        "-c", "copy",             # 快速截取，不转码
+        "-c", "copy",  # 快速截取，不转码
         output_audio_path
     ]
     subprocess.run(cmd, check=True)
+
 
 def extract_audio_from_video(video_path: str, audio_output_path: str):
     """
     从视频中提取音频为 wav 格式，适用于 Demucs 分离。
     """
     cmd = [
-        "ffmpeg", "-y",          # <--- 自动覆盖已存在文件
+        "ffmpeg", "-y",  # <--- 自动覆盖已存在文件
         "-v", "error",
         "-i", video_path,
         "-vn",
@@ -267,6 +273,7 @@ def extract_audio_from_video(video_path: str, audio_output_path: str):
         audio_output_path
     ]
     subprocess.run(cmd, check=True)
+
 
 def probe_video(path):
     """用 ffprobe 返回字典：{width, height, fps}"""
@@ -507,6 +514,7 @@ def cover_video_area_gently(
         raise FileNotFoundError("未检测到 ffmpeg，请先安装并添加到 PATH。")
     return vid_w, vid_h
 
+
 # ==============================================================================
 # ========================   新增的“添加字幕”函数   =========================
 # ==============================================================================
@@ -521,6 +529,7 @@ def _parse_subtitle_time(time_str: str) -> float:
 
     # 2. 将毫秒转换为秒 (float)，以匹配原始函数的返回值类型
     return milliseconds / 1000.0
+
 
 def _escape_ffmpeg_text(text: str) -> str:
     """
@@ -585,9 +594,11 @@ def get_video_dimensions(video_path: str) -> (int, int):
         print(f"ffprobe 输出了非预期的内容，无法解析为JSON。输出内容: {result.stdout}")
         raise ValueError(f"无法解析来自 ffprobe 的视频尺寸信息。")
 
+
 def _format_time_for_ffmpeg(seconds: float) -> str:
     # 辅助函数：将秒数格式化回 FFmpeg 需要的格式
     return f"{seconds:.3f}"
+
 
 # [新增] 辅助函数：处理并分割过长的字幕
 def _process_and_split_subtitles(
@@ -624,7 +635,7 @@ def _process_and_split_subtitles(
 
             # 否则需要拆分
             t_start = _parse_subtitle_time(start_str)
-            t_end   = _parse_subtitle_time(end_str)
+            t_end = _parse_subtitle_time(end_str)
             duration = t_end - t_start
             if duration <= 0:
                 # 畸形时间区间，跳过
@@ -667,7 +678,7 @@ def _process_and_split_subtitles(
 
             # **改动点**：不再直接输出 part1，而是把两段都入队再检测
             segments_to_process.append((start_str, split_time_str, part1))
-            segments_to_process.append((split_time_str, end_str,   part2))
+            segments_to_process.append((split_time_str, end_str, part2))
 
         # end while
 
@@ -676,11 +687,11 @@ def _process_and_split_subtitles(
 
 
 def cover_video_area_simple(
-    video_path: str,
-    output_path: str,
-    top_left: tuple[int, int],
-    bottom_right: tuple[int, int],
-    color: str = "black@1.0"
+        video_path: str,
+        output_path: str,
+        top_left: tuple[int, int],
+        bottom_right: tuple[int, int],
+        color: str = "black@1.0"
 ):
     """
     用 drawbox 滤镜在指定区域做纯色遮挡——极简、无坑版。
@@ -704,12 +715,13 @@ def cover_video_area_simple(
         raise RuntimeError(f"FFmpeg failed (code {proc.returncode}):\n{proc.stderr}")
     print(f"[SUCCESS] Output saved to {output_path}")
 
+
 def cover_video_area_blur(
-    video_path: str,
-    output_path: str,
-    top_left: tuple[int, int],
-    bottom_right: tuple[int, int],
-    blur_strength: int = 20
+        video_path: str,
+        output_path: str,
+        top_left: tuple[int, int],
+        bottom_right: tuple[int, int],
+        blur_strength: int = 20
 ):
     """
     在指定区域应用模糊遮挡 - 最终修正版。
@@ -779,7 +791,7 @@ def add_subtitles_to_video(
         font_color: str = 'white',
         box_color: str = 'black@0.5',
         bottom_margin: int = 50,
-        fixed_rect = None
+        fixed_rect=None
 ) -> None:
     """
     将字幕信息“烧录”到视频中，并自动分割过长的字幕行，
@@ -958,6 +970,7 @@ def add_subtitles_to_video(
         if os.path.exists(filter_script_path):
             os.remove(filter_script_path)
 
+
 if __name__ == '__main__':
     # --- 使用示例 ---
 
@@ -967,475 +980,475 @@ if __name__ == '__main__':
 
     # 2. 准备字幕数据
     subtitle_data = [
-    {
-        "id": 1,
-        "startTime": "00:00:00.376",
-        "endTime": "00:00:03.812",
-        "text": "AG让一追三击败KSG，实现跨赛季大场22连胜。",
-        "optimizedText": "AG以三比一逆转KSG，达成跨赛季大场22连胜。",
-        "old_startTime": "00:00:00.752",
-        "old_endTime": "00:03.482",
-        "forward_shift_ms": 376,
-        "backward_shift_ms": 330,
-        "duration": 3.436
-    },
-    {
-        "id": 2,
-        "startTime": "00:00:03.812",
-        "endTime": "00:00:06.562",
-        "text": "一诺成功将击杀记录刷新到三千三。",
-        "optimizedText": "一诺选手成功将击杀数刷新到3300。",
-        "old_startTime": "00:04.142",
-        "old_endTime": "00:06.182",
-        "forward_shift_ms": 330,
-        "backward_shift_ms": 380,
-        "duration": 2.75
-    },
-    {
-        "id": 3,
-        "startTime": "00:00:06.562",
-        "endTime": "00:00:09.807",
-        "text": "战文欲直接开启文艺复兴，拿小乔还有孙膑也能取胜。",
-        "optimizedText": "张角想直接上演文艺复兴，用小乔孙膑阵容也能取胜。",
-        "old_startTime": "00:06.942",
-        "old_endTime": "00:09.522",
-        "forward_shift_ms": 380,
-        "backward_shift_ms": 285,
-        "duration": 3.245
-    },
-    {
-        "id": 4,
-        "startTime": "00:00:09.807",
-        "endTime": "00:00:12.042",
-        "text": "手握满级号真的就可以为所欲为。",
-        "optimizedText": "手持顶级号真的就能如此为所欲为。",
-        "old_startTime": "00:10.092",
-        "old_endTime": "00:11.752",
-        "forward_shift_ms": 285,
-        "backward_shift_ms": 290,
-        "duration": 2.235
-    },
-    {
-        "id": 5,
-        "startTime": "00:00:12.042",
-        "endTime": "00:00:14.937",
-        "text": "都说被AG标记成强队的队伍下场都很惨。",
-        "optimizedText": "据说被AG认证为强队的队伍结局都很惨。",
-        "old_startTime": "00:12.332",
-        "old_endTime": "00:14.652",
-        "forward_shift_ms": 290,
-        "backward_shift_ms": 285,
-        "duration": 2.895
-    },
-    {
-        "id": 6,
-        "startTime": "00:00:14.937",
-        "endTime": "00:00:17.217",
-        "text": "在第一局输给KSG之后AG彻底觉醒。",
-        "optimizedText": "在首局败给KSG之后AG便彻底觉醒。",
-        "old_startTime": "00:15.222",
-        "old_endTime": "00:17.062",
-        "forward_shift_ms": 285,
-        "backward_shift_ms": 155,
-        "duration": 2.28
-    },
-    {
-        "id": 7,
-        "startTime": "00:00:17.217",
-        "endTime": "00:00:19.732",
-        "text": "第2局的长生直接把小乔玩成轰炸机。",
-        "optimizedText": "第二局里长生直接把小乔玩成轰炸机。",
-        "old_startTime": "00:17.372",
-        "old_endTime": "00:19.462",
-        "forward_shift_ms": 155,
-        "backward_shift_ms": 270,
-        "duration": 2.515
-    },
-    {
-        "id": 8,
-        "startTime": "00:00:19.732",
-        "endTime": "00:00:21.842",
-        "text": "配合大帅双大团战毁天灭地。",
-        "optimizedText": "再配合大帅双大招团战毁天灭地。",
-        "old_startTime": "00:20.002",
-        "old_endTime": "00:21.662",
-        "forward_shift_ms": 270,
-        "backward_shift_ms": 180,
-        "duration": 2.11
-    },
-    {
-        "id": 9,
-        "startTime": "00:00:21.842",
-        "endTime": "00:00:24.277",
-        "text": "这把可以说把长生的手法体现的淋漓尽致。",
-        "optimizedText": "这局比赛将长生的操作展现得淋漓尽致。",
-        "old_startTime": "00:22.022",
-        "old_endTime": "00:24.082",
-        "forward_shift_ms": 180,
-        "backward_shift_ms": 195,
-        "duration": 2.435
-    },
-    {
-        "id": 10,
-        "startTime": "00:00:24.277",
-        "endTime": "00:00:26.842",
-        "text": "说是目前KPL断档级中单丝毫不为过。",
-        "optimizedText": "称他是目前KPL独一档中单也毫不为过。",
-        "old_startTime": "00:24.472",
-        "old_endTime": "00:26.552",
-        "forward_shift_ms": 195,
-        "backward_shift_ms": 290,
-        "duration": 2.565
-    },
-    {
-        "id": 11,
-        "startTime": "00:00:26.842",
-        "endTime": "00:00:29.682",
-        "text": "另外一诺通过这局解锁了3300杀新里程碑。",
-        "optimizedText": "此外一诺凭这局解锁了三千三百杀里程碑。",
-        "old_startTime": "00:27.132",
-        "old_endTime": "00:29.472",
-        "forward_shift_ms": 290,
-        "backward_shift_ms": 210,
-        "duration": 2.84
-    },
-    {
-        "id": 12,
-        "startTime": "00:00:29.682",
-        "endTime": "00:00:31.427",
-        "text": "这个记录或许很难被打破。",
-        "optimizedText": "这个纪录恐怕很难被打破。",
-        "old_startTime": "00:29.892",
-        "old_endTime": "00:31.252",
-        "forward_shift_ms": 210,
-        "backward_shift_ms": 175,
-        "duration": 1.745
-    },
-    {
-        "id": 13,
-        "startTime": "00:00:31.427",
-        "endTime": "00:00:33.437",
-        "text": "到了第三局AG又打出了手法局。",
-        "optimizedText": "来到第三局AG又打出了操作局。",
-        "old_startTime": "00:31.602",
-        "old_endTime": "00:32.962",
-        "forward_shift_ms": 175,
-        "backward_shift_ms": 475,
-        "duration": 2.01
-    },
-    {
-        "id": 14,
-        "startTime": "00:00:33.437",
-        "endTime": "00:00:36.732",
-        "text": "双边阵容选出来也能打赢，或许只有目前的AG能做到。",
-        "optimizedText": "选出双战边阵容照样能赢，可能只有现在的AG能办到。",
-        "old_startTime": "00:33.912",
-        "old_endTime": "00:36.422",
-        "forward_shift_ms": 475,
-        "backward_shift_ms": 310,
-        "duration": 3.295
-    },
-    {
-        "id": 15,
-        "startTime": "00:00:36.732",
-        "endTime": "00:00:39.287",
-        "text": "大帅最后一大波大闪四个属实太C了。",
-        "optimizedText": "大帅最后一波闪现大四个着实是太秀了。",
-        "old_startTime": "00:37.042",
-        "old_endTime": "00:39.112",
-        "forward_shift_ms": 310,
-        "backward_shift_ms": 175,
-        "duration": 2.555
-    },
-    {
-        "id": 16,
-        "startTime": "00:00:39.287",
-        "endTime": "00:00:41.092",
-        "text": "不愧是AG本月唯一国服的含金量。",
-        "optimizedText": "不愧是AG本月唯一国标的含金量。",
-        "old_startTime": "00:39.462",
-        "old_endTime": "00:40.942",
-        "forward_shift_ms": 175,
-        "backward_shift_ms": 150,
-        "duration": 1.805
-    },
-    {
-        "id": 17,
-        "startTime": "00:00:41.092",
-        "endTime": "00:00:42.927",
-        "text": "各种刁钻的开团把KSG彻底打崩。",
-        "optimizedText": "各种刁钻的开团让KSG彻底崩溃。",
-        "old_startTime": "00:41.242",
-        "old_endTime": "00:42.662",
-        "forward_shift_ms": 150,
-        "backward_shift_ms": 265,
-        "duration": 1.835
-    },
-    {
-        "id": 18,
-        "startTime": "00:00:42.927",
-        "endTime": "00:00:47.402",
-        "text": "另外一诺的老夫子也很秀，能玩射手也能玩战边，难怪诺派会发扬光大。",
-        "optimizedText": "此外一诺的老夫子也很秀，可当射手可当战边，难怪诺派能发扬光大。",
-        "old_startTime": "00:43.192",
-        "old_endTime": "00:46.902",
-        "forward_shift_ms": 265,
-        "backward_shift_ms": 500,
-        "duration": 4.475
-    },
-    {
-        "id": 19,
-        "startTime": "00:01:32.844",
-        "endTime": "00:01:37.114",
-        "text": "随后AG又拿出复古阵容，孙膑加艾琳的下路组合许久没有见到。",
-        "optimizedText": "接着AG又拿出复古阵容，孙膑配艾琳的下路组合很久没有见了。",
-        "old_startTime": "01:33.344",
-        "old_endTime": "01:36.914",
-        "forward_shift_ms": 500,
-        "backward_shift_ms": 200,
-        "duration": 4.27
-    },
-    {
-        "id": 20,
-        "startTime": "00:01:37.114",
-        "endTime": "00:01:39.614",
-        "text": "但AG还是通过团战在前期取得优势。",
-        "optimizedText": "但AG依旧通过团战在前期建立优势。",
-        "old_startTime": "01:37.314",
-        "old_endTime": "01:39.304",
-        "forward_shift_ms": 200,
-        "backward_shift_ms": 310,
-        "duration": 2.5
-    },
-    {
-        "id": 21,
-        "startTime": "00:01:39.614",
-        "endTime": "00:01:41.789",
-        "text": "把孙膑体系的机动性发挥到了极致。",
-        "optimizedText": "将孙膑体系的机动性发挥到了极限。",
-        "old_startTime": "01:39.924",
-        "old_endTime": "01:41.514",
-        "forward_shift_ms": 310,
-        "backward_shift_ms": 275,
-        "duration": 2.175
-    },
-    {
-        "id": 22,
-        "startTime": "00:01:41.789",
-        "endTime": "00:01:43.734",
-        "text": "不过KSG这边的小控制很多。",
-        "optimizedText": "然而KSG这边的小控制技能很多。",
-        "old_startTime": "01:42.064",
-        "old_endTime": "01:43.514",
-        "forward_shift_ms": 275,
-        "backward_shift_ms": 220,
-        "duration": 1.945
-    },
-    {
-        "id": 23,
-        "startTime": "00:01:43.734",
-        "endTime": "00:01:46.864",
-        "text": "决胜时刻子阳的太乙站了出来，关键控制阻止了被AG速推。",
-        "optimizedText": "决胜时刻子阳的太乙挺身而出，关键控制阻止了AG的速推。",
-        "old_startTime": "01:43.954",
-        "old_endTime": "01:46.614",
-        "forward_shift_ms": 220,
-        "backward_shift_ms": 250,
-        "duration": 3.13
-    },
-    {
-        "id": 24,
-        "startTime": "00:01:46.864",
-        "endTime": "00:01:48.969",
-        "text": "可是AG的拉扯做的实在太好了。",
-        "optimizedText": "但是AG的拉扯战术用得实在太好。",
-        "old_startTime": "01:47.114",
-        "old_endTime": "01:48.744",
-        "forward_shift_ms": 250,
-        "backward_shift_ms": 225,
-        "duration": 2.105
-    },
-    {
-        "id": 25,
-        "startTime": "00:01:48.969",
-        "endTime": "00:01:50.789",
-        "text": "长生的火舞切后排非常果断。",
-        "optimizedText": "长生的不知火舞切后排十分果断。",
-        "old_startTime": "01:49.194",
-        "old_endTime": "01:50.554",
-        "forward_shift_ms": 225,
-        "backward_shift_ms": 235,
-        "duration": 1.82
-    },
-    {
-        "id": 26,
-        "startTime": "00:01:50.789",
-        "endTime": "00:01:53.529",
-        "text": "最后一波妖刀就算有三条命也没能力挽狂澜。",
-        "optimizedText": "最后一波妖刀即使有三条命也无力回天。",
-        "old_startTime": "01:51.024",
-        "old_endTime": "01:53.114",
-        "forward_shift_ms": 235,
-        "backward_shift_ms": 415,
-        "duration": 2.74
-    },
-    {
-        "id": 27,
-        "startTime": "00:01:53.529",
-        "endTime": "00:01:56.009",
-        "text": "萝卜这局的发挥确实被轩染对位。",
-        "optimizedText": "萝卜这局的发挥确实被轩染对位压制。",
-        "old_startTime": "01:53.944",
-        "old_endTime": "01:55.774",
-        "forward_shift_ms": 415,
-        "backward_shift_ms": 235,
-        "duration": 2.48
-    },
-    {
-        "id": 28,
-        "startTime": "00:01:56.009",
-        "endTime": "00:01:57.844",
-        "text": "直接成为了KSG这边的突破口。",
-        "optimizedText": "他直接成为KSG战队这边的突破口。",
-        "old_startTime": "01:56.244",
-        "old_endTime": "01:57.484",
-        "forward_shift_ms": 235,
-        "backward_shift_ms": 360,
-        "duration": 1.835
-    },
-    {
-        "id": 29,
-        "startTime": "00:01:57.844",
-        "endTime": "00:02:00.014",
-        "text": "虽然长生没有被评为这局MVP。",
-        "optimizedText": "尽管长生本局没能被评选为MVP。",
-        "old_startTime": "01:58.204",
-        "old_endTime": "01:59.854",
-        "forward_shift_ms": 360,
-        "backward_shift_ms": 160,
-        "duration": 2.17
-    },
-    {
-        "id": 30,
-        "startTime": "00:02:00.014",
-        "endTime": "00:02:04.884",
-        "text": "但是纵观整场比赛来看，长生的手法和意识都在大气层，而且在局内从来不刷KDA。",
-        "optimizedText": "但纵观整场比赛的表现来看，长生的操作和意识属顶尖水准，且在游戏里从来不刷KDA。",
-        "old_startTime": "02:00.174",
-        "old_endTime": "02:04.384",
-        "forward_shift_ms": 160,
-        "backward_shift_ms": 500,
-        "duration": 4.87
-    },
-    {
-        "id": 31,
-        "startTime": "00:02:37.793",
-        "endTime": "00:02:41.898",
-        "text": "在赢下这场比赛之后，AG的大场连胜记录已经到达22场。",
-        "optimizedText": "在赢下这场对局之后，AG的大场连胜纪录已来到了22场。",
-        "old_startTime": "02:38.293",
-        "old_endTime": "02:41.523",
-        "forward_shift_ms": 500,
-        "backward_shift_ms": 375,
-        "duration": 4.105
-    },
-    {
-        "id": 32,
-        "startTime": "00:02:41.898",
-        "endTime": "00:02:43.178",
-        "text": "更为恐怖的是。",
-        "optimizedText": "更加令人恐惧的是。",
-        "old_startTime": "02:42.273",
-        "old_endTime": "02:42.923",
-        "forward_shift_ms": 375,
-        "backward_shift_ms": 255,
-        "duration": 1.28
-    },
-    {
-        "id": 33,
-        "startTime": "00:02:43.178",
-        "endTime": "00:02:45.883",
-        "text": "曾经认为有望终结AG连胜的队伍，都在翻车或者被AG拿下。",
-        "optimizedText": "那些曾被认为有望终结AG连胜的队伍，都翻车或者被AG拿下。",
-        "old_startTime": "02:43.433",
-        "old_endTime": "02:45.543",
-        "forward_shift_ms": 255,
-        "backward_shift_ms": 340,
-        "duration": 2.705
-    },
-    {
-        "id": 34,
-        "startTime": "00:02:45.883",
-        "endTime": "00:02:48.728",
-        "text": "AG不仅有一诺这样越打越妖的老将。",
-        "optimizedText": "AG不仅有一诺这样越战越勇的老将。",
-        "old_startTime": "02:46.223",
-        "old_endTime": "02:48.333",
-        "forward_shift_ms": 340,
-        "backward_shift_ms": 395,
-        "duration": 2.845
-    },
-    {
-        "id": 35,
-        "startTime": "00:02:48.728",
-        "endTime": "00:02:52.553",
-        "text": "还有大帅轩染长生钟意这样强力的年轻选手，队伍五个位置完全没有破绽。",
-        "optimizedText": "还有大帅轩染长生钟意等强力的年轻选手，队伍五个位置几乎毫无破绽。",
-        "old_startTime": "02:49.123",
-        "old_endTime": "02:52.223",
-        "forward_shift_ms": 395,
-        "backward_shift_ms": 330,
-        "duration": 3.825
-    },
-    {
-        "id": 36,
-        "startTime": "00:02:52.553",
-        "endTime": "00:02:54.913",
-        "text": "甚至AG有全胜结束第2轮的可能。",
-        "optimizedText": "甚至AG都有全胜结束第二轮的可能。",
-        "old_startTime": "02:52.883",
-        "old_endTime": "02:54.493",
-        "forward_shift_ms": 330,
-        "backward_shift_ms": 420,
-        "duration": 2.36
-    },
-    {
-        "id": 37,
-        "startTime": "00:02:54.913",
-        "endTime": "00:02:59.848",
-        "text": "另外就在KPL夏季赛火爆进行的同时，隔壁CS的某牙钢盔杯也在火热进行中。",
-        "optimizedText": "此外就在KPL夏季赛火热进行的同时，隔壁CS的虎牙钢盔杯也在火热进行中。",
-        "old_startTime": "02:55.333",
-        "old_endTime": "02:59.553",
-        "forward_shift_ms": 420,
-        "backward_shift_ms": 295,
-        "duration": 4.935
-    },
-    {
-        "id": 38,
-        "startTime": "00:02:59.848",
-        "endTime": "00:03:08.028",
-        "text": "RA轻松打进决赛，CS boy透露钢盔杯还有下一届，能让更多CNCS年轻人展示自己，对CS感兴趣的小伙伴也可以去某牙观赛。",
-        "optimizedText": "RA轻松打进决赛，CSBOY透露钢盔杯会有下一届，能让更多CNCS年轻人展示自己，对CS感兴趣的朋友们也能去虎牙观赛。",
-        "old_startTime": "03:00.143",
-        "old_endTime": "03:07.673",
-        "forward_shift_ms": 295,
-        "backward_shift_ms": 355,
-        "duration": 8.18
-    },
-    {
-        "id": 39,
-        "startTime": "00:03:08.028",
-        "endTime": "00:03:11.193",
-        "text": "那么最后大家认为，AG的连胜记录会持续到多少场呢？",
-        "optimizedText": "那么最后各位觉得，AG的连胜纪录会持续到多少场呢？",
-        "old_startTime": "03:08.383",
-        "old_endTime": "03:11.193",
-        "forward_shift_ms": 355,
-        "backward_shift_ms": 0,
-        "duration": 3.165
-    }
-]
+        {
+            "id": 1,
+            "startTime": "00:00:00.376",
+            "endTime": "00:00:03.812",
+            "text": "AG让一追三击败KSG，实现跨赛季大场22连胜。",
+            "optimizedText": "AG以三比一逆转KSG，达成跨赛季大场22连胜。",
+            "old_startTime": "00:00:00.752",
+            "old_endTime": "00:03.482",
+            "forward_shift_ms": 376,
+            "backward_shift_ms": 330,
+            "duration": 3.436
+        },
+        {
+            "id": 2,
+            "startTime": "00:00:03.812",
+            "endTime": "00:00:06.562",
+            "text": "一诺成功将击杀记录刷新到三千三。",
+            "optimizedText": "一诺选手成功将击杀数刷新到3300。",
+            "old_startTime": "00:04.142",
+            "old_endTime": "00:06.182",
+            "forward_shift_ms": 330,
+            "backward_shift_ms": 380,
+            "duration": 2.75
+        },
+        {
+            "id": 3,
+            "startTime": "00:00:06.562",
+            "endTime": "00:00:09.807",
+            "text": "战文欲直接开启文艺复兴，拿小乔还有孙膑也能取胜。",
+            "optimizedText": "张角想直接上演文艺复兴，用小乔孙膑阵容也能取胜。",
+            "old_startTime": "00:06.942",
+            "old_endTime": "00:09.522",
+            "forward_shift_ms": 380,
+            "backward_shift_ms": 285,
+            "duration": 3.245
+        },
+        {
+            "id": 4,
+            "startTime": "00:00:09.807",
+            "endTime": "00:00:12.042",
+            "text": "手握满级号真的就可以为所欲为。",
+            "optimizedText": "手持顶级号真的就能如此为所欲为。",
+            "old_startTime": "00:10.092",
+            "old_endTime": "00:11.752",
+            "forward_shift_ms": 285,
+            "backward_shift_ms": 290,
+            "duration": 2.235
+        },
+        {
+            "id": 5,
+            "startTime": "00:00:12.042",
+            "endTime": "00:00:14.937",
+            "text": "都说被AG标记成强队的队伍下场都很惨。",
+            "optimizedText": "据说被AG认证为强队的队伍结局都很惨。",
+            "old_startTime": "00:12.332",
+            "old_endTime": "00:14.652",
+            "forward_shift_ms": 290,
+            "backward_shift_ms": 285,
+            "duration": 2.895
+        },
+        {
+            "id": 6,
+            "startTime": "00:00:14.937",
+            "endTime": "00:00:17.217",
+            "text": "在第一局输给KSG之后AG彻底觉醒。",
+            "optimizedText": "在首局败给KSG之后AG便彻底觉醒。",
+            "old_startTime": "00:15.222",
+            "old_endTime": "00:17.062",
+            "forward_shift_ms": 285,
+            "backward_shift_ms": 155,
+            "duration": 2.28
+        },
+        {
+            "id": 7,
+            "startTime": "00:00:17.217",
+            "endTime": "00:00:19.732",
+            "text": "第2局的长生直接把小乔玩成轰炸机。",
+            "optimizedText": "第二局里长生直接把小乔玩成轰炸机。",
+            "old_startTime": "00:17.372",
+            "old_endTime": "00:19.462",
+            "forward_shift_ms": 155,
+            "backward_shift_ms": 270,
+            "duration": 2.515
+        },
+        {
+            "id": 8,
+            "startTime": "00:00:19.732",
+            "endTime": "00:00:21.842",
+            "text": "配合大帅双大团战毁天灭地。",
+            "optimizedText": "再配合大帅双大招团战毁天灭地。",
+            "old_startTime": "00:20.002",
+            "old_endTime": "00:21.662",
+            "forward_shift_ms": 270,
+            "backward_shift_ms": 180,
+            "duration": 2.11
+        },
+        {
+            "id": 9,
+            "startTime": "00:00:21.842",
+            "endTime": "00:00:24.277",
+            "text": "这把可以说把长生的手法体现的淋漓尽致。",
+            "optimizedText": "这局比赛将长生的操作展现得淋漓尽致。",
+            "old_startTime": "00:22.022",
+            "old_endTime": "00:24.082",
+            "forward_shift_ms": 180,
+            "backward_shift_ms": 195,
+            "duration": 2.435
+        },
+        {
+            "id": 10,
+            "startTime": "00:00:24.277",
+            "endTime": "00:00:26.842",
+            "text": "说是目前KPL断档级中单丝毫不为过。",
+            "optimizedText": "称他是目前KPL独一档中单也毫不为过。",
+            "old_startTime": "00:24.472",
+            "old_endTime": "00:26.552",
+            "forward_shift_ms": 195,
+            "backward_shift_ms": 290,
+            "duration": 2.565
+        },
+        {
+            "id": 11,
+            "startTime": "00:00:26.842",
+            "endTime": "00:00:29.682",
+            "text": "另外一诺通过这局解锁了3300杀新里程碑。",
+            "optimizedText": "此外一诺凭这局解锁了三千三百杀里程碑。",
+            "old_startTime": "00:27.132",
+            "old_endTime": "00:29.472",
+            "forward_shift_ms": 290,
+            "backward_shift_ms": 210,
+            "duration": 2.84
+        },
+        {
+            "id": 12,
+            "startTime": "00:00:29.682",
+            "endTime": "00:00:31.427",
+            "text": "这个记录或许很难被打破。",
+            "optimizedText": "这个纪录恐怕很难被打破。",
+            "old_startTime": "00:29.892",
+            "old_endTime": "00:31.252",
+            "forward_shift_ms": 210,
+            "backward_shift_ms": 175,
+            "duration": 1.745
+        },
+        {
+            "id": 13,
+            "startTime": "00:00:31.427",
+            "endTime": "00:00:33.437",
+            "text": "到了第三局AG又打出了手法局。",
+            "optimizedText": "来到第三局AG又打出了操作局。",
+            "old_startTime": "00:31.602",
+            "old_endTime": "00:32.962",
+            "forward_shift_ms": 175,
+            "backward_shift_ms": 475,
+            "duration": 2.01
+        },
+        {
+            "id": 14,
+            "startTime": "00:00:33.437",
+            "endTime": "00:00:36.732",
+            "text": "双边阵容选出来也能打赢，或许只有目前的AG能做到。",
+            "optimizedText": "选出双战边阵容照样能赢，可能只有现在的AG能办到。",
+            "old_startTime": "00:33.912",
+            "old_endTime": "00:36.422",
+            "forward_shift_ms": 475,
+            "backward_shift_ms": 310,
+            "duration": 3.295
+        },
+        {
+            "id": 15,
+            "startTime": "00:00:36.732",
+            "endTime": "00:00:39.287",
+            "text": "大帅最后一大波大闪四个属实太C了。",
+            "optimizedText": "大帅最后一波闪现大四个着实是太秀了。",
+            "old_startTime": "00:37.042",
+            "old_endTime": "00:39.112",
+            "forward_shift_ms": 310,
+            "backward_shift_ms": 175,
+            "duration": 2.555
+        },
+        {
+            "id": 16,
+            "startTime": "00:00:39.287",
+            "endTime": "00:00:41.092",
+            "text": "不愧是AG本月唯一国服的含金量。",
+            "optimizedText": "不愧是AG本月唯一国标的含金量。",
+            "old_startTime": "00:39.462",
+            "old_endTime": "00:40.942",
+            "forward_shift_ms": 175,
+            "backward_shift_ms": 150,
+            "duration": 1.805
+        },
+        {
+            "id": 17,
+            "startTime": "00:00:41.092",
+            "endTime": "00:00:42.927",
+            "text": "各种刁钻的开团把KSG彻底打崩。",
+            "optimizedText": "各种刁钻的开团让KSG彻底崩溃。",
+            "old_startTime": "00:41.242",
+            "old_endTime": "00:42.662",
+            "forward_shift_ms": 150,
+            "backward_shift_ms": 265,
+            "duration": 1.835
+        },
+        {
+            "id": 18,
+            "startTime": "00:00:42.927",
+            "endTime": "00:00:47.402",
+            "text": "另外一诺的老夫子也很秀，能玩射手也能玩战边，难怪诺派会发扬光大。",
+            "optimizedText": "此外一诺的老夫子也很秀，可当射手可当战边，难怪诺派能发扬光大。",
+            "old_startTime": "00:43.192",
+            "old_endTime": "00:46.902",
+            "forward_shift_ms": 265,
+            "backward_shift_ms": 500,
+            "duration": 4.475
+        },
+        {
+            "id": 19,
+            "startTime": "00:01:32.844",
+            "endTime": "00:01:37.114",
+            "text": "随后AG又拿出复古阵容，孙膑加艾琳的下路组合许久没有见到。",
+            "optimizedText": "接着AG又拿出复古阵容，孙膑配艾琳的下路组合很久没有见了。",
+            "old_startTime": "01:33.344",
+            "old_endTime": "01:36.914",
+            "forward_shift_ms": 500,
+            "backward_shift_ms": 200,
+            "duration": 4.27
+        },
+        {
+            "id": 20,
+            "startTime": "00:01:37.114",
+            "endTime": "00:01:39.614",
+            "text": "但AG还是通过团战在前期取得优势。",
+            "optimizedText": "但AG依旧通过团战在前期建立优势。",
+            "old_startTime": "01:37.314",
+            "old_endTime": "01:39.304",
+            "forward_shift_ms": 200,
+            "backward_shift_ms": 310,
+            "duration": 2.5
+        },
+        {
+            "id": 21,
+            "startTime": "00:01:39.614",
+            "endTime": "00:01:41.789",
+            "text": "把孙膑体系的机动性发挥到了极致。",
+            "optimizedText": "将孙膑体系的机动性发挥到了极限。",
+            "old_startTime": "01:39.924",
+            "old_endTime": "01:41.514",
+            "forward_shift_ms": 310,
+            "backward_shift_ms": 275,
+            "duration": 2.175
+        },
+        {
+            "id": 22,
+            "startTime": "00:01:41.789",
+            "endTime": "00:01:43.734",
+            "text": "不过KSG这边的小控制很多。",
+            "optimizedText": "然而KSG这边的小控制技能很多。",
+            "old_startTime": "01:42.064",
+            "old_endTime": "01:43.514",
+            "forward_shift_ms": 275,
+            "backward_shift_ms": 220,
+            "duration": 1.945
+        },
+        {
+            "id": 23,
+            "startTime": "00:01:43.734",
+            "endTime": "00:01:46.864",
+            "text": "决胜时刻子阳的太乙站了出来，关键控制阻止了被AG速推。",
+            "optimizedText": "决胜时刻子阳的太乙挺身而出，关键控制阻止了AG的速推。",
+            "old_startTime": "01:43.954",
+            "old_endTime": "01:46.614",
+            "forward_shift_ms": 220,
+            "backward_shift_ms": 250,
+            "duration": 3.13
+        },
+        {
+            "id": 24,
+            "startTime": "00:01:46.864",
+            "endTime": "00:01:48.969",
+            "text": "可是AG的拉扯做的实在太好了。",
+            "optimizedText": "但是AG的拉扯战术用得实在太好。",
+            "old_startTime": "01:47.114",
+            "old_endTime": "01:48.744",
+            "forward_shift_ms": 250,
+            "backward_shift_ms": 225,
+            "duration": 2.105
+        },
+        {
+            "id": 25,
+            "startTime": "00:01:48.969",
+            "endTime": "00:01:50.789",
+            "text": "长生的火舞切后排非常果断。",
+            "optimizedText": "长生的不知火舞切后排十分果断。",
+            "old_startTime": "01:49.194",
+            "old_endTime": "01:50.554",
+            "forward_shift_ms": 225,
+            "backward_shift_ms": 235,
+            "duration": 1.82
+        },
+        {
+            "id": 26,
+            "startTime": "00:01:50.789",
+            "endTime": "00:01:53.529",
+            "text": "最后一波妖刀就算有三条命也没能力挽狂澜。",
+            "optimizedText": "最后一波妖刀即使有三条命也无力回天。",
+            "old_startTime": "01:51.024",
+            "old_endTime": "01:53.114",
+            "forward_shift_ms": 235,
+            "backward_shift_ms": 415,
+            "duration": 2.74
+        },
+        {
+            "id": 27,
+            "startTime": "00:01:53.529",
+            "endTime": "00:01:56.009",
+            "text": "萝卜这局的发挥确实被轩染对位。",
+            "optimizedText": "萝卜这局的发挥确实被轩染对位压制。",
+            "old_startTime": "01:53.944",
+            "old_endTime": "01:55.774",
+            "forward_shift_ms": 415,
+            "backward_shift_ms": 235,
+            "duration": 2.48
+        },
+        {
+            "id": 28,
+            "startTime": "00:01:56.009",
+            "endTime": "00:01:57.844",
+            "text": "直接成为了KSG这边的突破口。",
+            "optimizedText": "他直接成为KSG战队这边的突破口。",
+            "old_startTime": "01:56.244",
+            "old_endTime": "01:57.484",
+            "forward_shift_ms": 235,
+            "backward_shift_ms": 360,
+            "duration": 1.835
+        },
+        {
+            "id": 29,
+            "startTime": "00:01:57.844",
+            "endTime": "00:02:00.014",
+            "text": "虽然长生没有被评为这局MVP。",
+            "optimizedText": "尽管长生本局没能被评选为MVP。",
+            "old_startTime": "01:58.204",
+            "old_endTime": "01:59.854",
+            "forward_shift_ms": 360,
+            "backward_shift_ms": 160,
+            "duration": 2.17
+        },
+        {
+            "id": 30,
+            "startTime": "00:02:00.014",
+            "endTime": "00:02:04.884",
+            "text": "但是纵观整场比赛来看，长生的手法和意识都在大气层，而且在局内从来不刷KDA。",
+            "optimizedText": "但纵观整场比赛的表现来看，长生的操作和意识属顶尖水准，且在游戏里从来不刷KDA。",
+            "old_startTime": "02:00.174",
+            "old_endTime": "02:04.384",
+            "forward_shift_ms": 160,
+            "backward_shift_ms": 500,
+            "duration": 4.87
+        },
+        {
+            "id": 31,
+            "startTime": "00:02:37.793",
+            "endTime": "00:02:41.898",
+            "text": "在赢下这场比赛之后，AG的大场连胜记录已经到达22场。",
+            "optimizedText": "在赢下这场对局之后，AG的大场连胜纪录已来到了22场。",
+            "old_startTime": "02:38.293",
+            "old_endTime": "02:41.523",
+            "forward_shift_ms": 500,
+            "backward_shift_ms": 375,
+            "duration": 4.105
+        },
+        {
+            "id": 32,
+            "startTime": "00:02:41.898",
+            "endTime": "00:02:43.178",
+            "text": "更为恐怖的是。",
+            "optimizedText": "更加令人恐惧的是。",
+            "old_startTime": "02:42.273",
+            "old_endTime": "02:42.923",
+            "forward_shift_ms": 375,
+            "backward_shift_ms": 255,
+            "duration": 1.28
+        },
+        {
+            "id": 33,
+            "startTime": "00:02:43.178",
+            "endTime": "00:02:45.883",
+            "text": "曾经认为有望终结AG连胜的队伍，都在翻车或者被AG拿下。",
+            "optimizedText": "那些曾被认为有望终结AG连胜的队伍，都翻车或者被AG拿下。",
+            "old_startTime": "02:43.433",
+            "old_endTime": "02:45.543",
+            "forward_shift_ms": 255,
+            "backward_shift_ms": 340,
+            "duration": 2.705
+        },
+        {
+            "id": 34,
+            "startTime": "00:02:45.883",
+            "endTime": "00:02:48.728",
+            "text": "AG不仅有一诺这样越打越妖的老将。",
+            "optimizedText": "AG不仅有一诺这样越战越勇的老将。",
+            "old_startTime": "02:46.223",
+            "old_endTime": "02:48.333",
+            "forward_shift_ms": 340,
+            "backward_shift_ms": 395,
+            "duration": 2.845
+        },
+        {
+            "id": 35,
+            "startTime": "00:02:48.728",
+            "endTime": "00:02:52.553",
+            "text": "还有大帅轩染长生钟意这样强力的年轻选手，队伍五个位置完全没有破绽。",
+            "optimizedText": "还有大帅轩染长生钟意等强力的年轻选手，队伍五个位置几乎毫无破绽。",
+            "old_startTime": "02:49.123",
+            "old_endTime": "02:52.223",
+            "forward_shift_ms": 395,
+            "backward_shift_ms": 330,
+            "duration": 3.825
+        },
+        {
+            "id": 36,
+            "startTime": "00:02:52.553",
+            "endTime": "00:02:54.913",
+            "text": "甚至AG有全胜结束第2轮的可能。",
+            "optimizedText": "甚至AG都有全胜结束第二轮的可能。",
+            "old_startTime": "02:52.883",
+            "old_endTime": "02:54.493",
+            "forward_shift_ms": 330,
+            "backward_shift_ms": 420,
+            "duration": 2.36
+        },
+        {
+            "id": 37,
+            "startTime": "00:02:54.913",
+            "endTime": "00:02:59.848",
+            "text": "另外就在KPL夏季赛火爆进行的同时，隔壁CS的某牙钢盔杯也在火热进行中。",
+            "optimizedText": "此外就在KPL夏季赛火热进行的同时，隔壁CS的虎牙钢盔杯也在火热进行中。",
+            "old_startTime": "02:55.333",
+            "old_endTime": "02:59.553",
+            "forward_shift_ms": 420,
+            "backward_shift_ms": 295,
+            "duration": 4.935
+        },
+        {
+            "id": 38,
+            "startTime": "00:02:59.848",
+            "endTime": "00:03:08.028",
+            "text": "RA轻松打进决赛，CS boy透露钢盔杯还有下一届，能让更多CNCS年轻人展示自己，对CS感兴趣的小伙伴也可以去某牙观赛。",
+            "optimizedText": "RA轻松打进决赛，CSBOY透露钢盔杯会有下一届，能让更多CNCS年轻人展示自己，对CS感兴趣的朋友们也能去虎牙观赛。",
+            "old_startTime": "03:00.143",
+            "old_endTime": "03:07.673",
+            "forward_shift_ms": 295,
+            "backward_shift_ms": 355,
+            "duration": 8.18
+        },
+        {
+            "id": 39,
+            "startTime": "00:03:08.028",
+            "endTime": "00:03:11.193",
+            "text": "那么最后大家认为，AG的连胜记录会持续到多少场呢？",
+            "optimizedText": "那么最后各位觉得，AG的连胜纪录会持续到多少场呢？",
+            "old_startTime": "03:08.383",
+            "old_endTime": "03:11.193",
+            "forward_shift_ms": 355,
+            "backward_shift_ms": 0,
+            "duration": 3.165
+        }
+    ]
     try:
         # 尝试查找一个常见的系统字体
         font_file_path = ""
@@ -1608,6 +1621,7 @@ def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.m
     subprocess.run(cmd, check=True)
     print(f"[SUCCESS] 合并完成，输出文件：{output_path}")
 
+
 def re_edit_video_ffmpeg(video_path, time_segments, output_path="output_video_ffmpeg.mp4"):
     """
     使用 FFmpeg 根据给定的时间段列表重新剪辑视频。
@@ -1773,6 +1787,7 @@ def get_video_duration_seconds(video_path: str) -> float | None:
         print(f"[ERROR] Could not parse duration from ffprobe output: '{proc.stdout}'")
         return None
 
+
 def _get_image_dimensions(image_path: str) -> tuple[int, int] or None:
     # (此辅助函数无需修改)
     command = [
@@ -1823,6 +1838,18 @@ def create_enhanced_cover(
         'vibrant_yellow': {'fontcolor': '#FFD700', 'shadowcolor': 'black@0.85'},
         'cyber_cyan': {'fontcolor': '0x00FFFF', 'shadowcolor': 'black@0.4'},
         'energetic_orange': {'fontcolor': '#FF6347', 'shadowcolor': 'white@0.8'},
+        'neon_magenta': {'fontcolor': '#FF00FF', 'shadowcolor': 'black@0.7'},  # 强烈、骚动感，适合潮流/娱乐
+        'electric_purple': {'fontcolor': '#8A2BE2', 'shadowcolor': 'black@0.6'},  # 科幻/科技风
+        'hot_pink': {'fontcolor': '#FF1493', 'shadowcolor': 'black@0.7'},  # 青年/时尚向
+        'neon_orange': {'fontcolor': '#FF4500', 'shadowcolor': 'black@0.75'},  # 活力火爆型（通知/CTA）
+        'lime_neon': {'fontcolor': '#CCFF00', 'shadowcolor': 'black@0.8'},  # 非常抓眼球的高亮绿
+        'teal_turquoise': {'fontcolor': '#00CED1', 'shadowcolor': 'black@0.5'},  # 清爽又醒目，适合科技/医疗类
+        'cobalt_blue': {'fontcolor': '#0047AB', 'shadowcolor': 'white@0.85'},  # 稳重但显眼，适合专业/财经
+        'crimson_red': {'fontcolor': '#DC143C', 'shadowcolor': 'black@0.6'},  # 强烈紧迫感（促销/警示）
+        'neon_blue': {'fontcolor': '#1E90FF', 'shadowcolor': 'black@0.6'},  # 网络感强，适合视频标题
+        'solar_gold': {'fontcolor': '#FFB400', 'shadowcolor': 'black@0.8'},  # 黄金感，传达价值/热度
+        'icy_cyan': {'fontcolor': '#B0F2FF', 'shadowcolor': 'black@0.9'},  # 冰爽高亮，适合科技/潮流背景
+        'pink_purple_gradient': {'fontcolor': '#FF6EC7', 'shadowcolor': 'black@0.6'},  # 单色代替：建议配合轻微渐变背景
 
     }
 
@@ -1848,7 +1875,8 @@ def create_enhanced_cover(
 
     escaped_font_path = font_path.replace(':', '\\:') if os.name == 'nt' else font_path
 
-    position_map = {'center': img_h / 2, 'top_third': (img_h / 2 - true_high / 2 + font_size / 2), 'bottom_third': img_h * 0.75}
+    position_map = {'center': img_h / 2, 'top_third': (img_h / 2 - true_high / 2 + font_size / 2),
+                    'bottom_third': img_h * 0.75}
     block_y_center = position_map.get(position, img_h * 0.5)  # 默认居中
     start_y = block_y_center - total_text_height / 2
 
@@ -1889,11 +1917,11 @@ def create_enhanced_cover(
         return None
 
 
-
 import sys
 import os
 import shutil
 import subprocess
+
 
 # --- 辅助函数 ---
 
@@ -1906,7 +1934,7 @@ def _probe_has_audio(path: str) -> bool:
 
     cmd = [
         "ffprobe", "-v", "error",
-        "-select_streams", "a:0",      # 只选择第一个音频流
+        "-select_streams", "a:0",  # 只选择第一个音频流
         "-show_entries", "stream=codec_type",
         "-of", "json",
         path
@@ -1920,6 +1948,7 @@ def _probe_has_audio(path: str) -> bool:
         # 如果 ffprobe 失败 (例如，文件不是媒体文件)，或找不到 ffprobe，则认为没有音频
         return False
 
+
 def _check_ffmpeg_installed():
     """
     检查并确保 FFmpeg 和 ffprobe 可执行文件存在于系统路径中。
@@ -1929,6 +1958,7 @@ def _check_ffmpeg_installed():
         raise FileNotFoundError("错误：找不到 FFmpeg。请安装 FFmpeg 并确保其路径已加入系统环境变量中。")
     if not shutil.which("ffprobe"):
         raise FileNotFoundError("错误：找不到 ffprobe。请安装 FFmpeg 并确保其路径已加入系统环境变量中。")
+
 
 def _run_command(cmd: list, output_path: str, show_progress: bool) -> bool:
     """
@@ -1981,9 +2011,11 @@ def _run_command(cmd: list, output_path: str, show_progress: bool) -> bool:
         print(f"❌ 执行命令时发生未知错误: {e}", file=sys.stderr)
         return False
 
+
 # --- 核心处理函数 (参数微调版) ---
 
-def process_subtle_zoom_crop(input_path: str, output_path: str, scale_factor: float = 1.02, show_progress: bool = True) -> bool:
+def process_subtle_zoom_crop(input_path: str, output_path: str, scale_factor: float = 1.02,
+                             show_progress: bool = True) -> bool:
     """
     (微调版) 将视频放大一个极小的比例 (默认2%) 并从中心裁切，几乎不影响观感。
 
@@ -1999,7 +2031,7 @@ def process_subtle_zoom_crop(input_path: str, output_path: str, scale_factor: fl
         print(e, file=sys.stderr)
         return False
 
-    print(f"🎬 开始微调任务 [放大 {scale_factor*100}% 并裁切]: '{input_path}' -> '{output_path}'")
+    print(f"🎬 开始微调任务 [放大 {scale_factor * 100}% 并裁切]: '{input_path}' -> '{output_path}'")
 
     # 构建基础命令
     cmd = [
@@ -2020,7 +2052,8 @@ def process_subtle_zoom_crop(input_path: str, output_path: str, scale_factor: fl
     return _run_command(cmd, output_path, show_progress)
 
 
-def process_subtle_speed_change(input_path: str, output_path: str, speed_multiplier: float = 0.99, show_progress: bool = True) -> bool:
+def process_subtle_speed_change(input_path: str, output_path: str, speed_multiplier: float = 0.99,
+                                show_progress: bool = True) -> bool:
     """
     (微调版) 对视频和音频进行几乎无法感知的速度调整 (默认减速1%)。
 
@@ -2040,12 +2073,12 @@ def process_subtle_speed_change(input_path: str, output_path: str, speed_multipl
         print("错误: 速度乘数对于音频处理('atempo'滤镜)必须在 0.5 到 100.0 之间。", file=sys.stderr)
         return False
 
-    print(f"🎬 开始微调任务 [速度调整为 {speed_multiplier*100}%]: '{input_path}' -> '{output_path}'")
+    print(f"🎬 开始微调任务 [速度调整为 {speed_multiplier * 100}%]: '{input_path}' -> '{output_path}'")
 
     cmd = [
         "ffmpeg", "-hide_banner", "-v", "error",
         "-i", input_path,
-        "-vf", f"setpts={1.0/speed_multiplier}*PTS",
+        "-vf", f"setpts={1.0 / speed_multiplier}*PTS",
     ]
 
     # 因为音频被 atempo 滤镜处理过，不能再用 acodec='copy'，必须重新编码
@@ -2059,7 +2092,8 @@ def process_subtle_speed_change(input_path: str, output_path: str, speed_multipl
     return _run_command(cmd, output_path, show_progress)
 
 
-def process_color_filter(input_path: str, output_path: str, filter_type: str = 'subtle', show_progress: bool = True) -> bool:
+def process_color_filter(input_path: str, output_path: str, filter_type: str = 'subtle',
+                         show_progress: bool = True) -> bool:
     """
     为视频应用调色滤镜，新增 'subtle' (微调) 类型。
     'subtle' 类型：轻微改变亮度和饱和度，肉眼难以察觉。
@@ -2117,10 +2151,10 @@ def _check_video_integrity(path: str) -> bool:
     print(f"🕵️  正在对 '{os.path.basename(path)}' 进行完整性检查...")
     cmd = [
         "ffmpeg",
-        "-v", "error",       # 只显示致命错误
+        "-v", "error",  # 只显示致命错误
         "-i", path,
-        "-f", "null",        # 不输出文件，只进行解码和处理
-        "-"                  # 输出到 stdout (被 null muxer 丢弃)
+        "-f", "null",  # 不输出文件，只进行解码和处理
+        "-"  # 输出到 stdout (被 null muxer 丢弃)
     ]
     try:
         # 使用 subprocess.run 来执行命令。如果ffmpeg因错误退出，会抛出异常。

@@ -658,7 +658,7 @@ def add_good_comment_for_video(user_name='qiqi'):
     # 过滤出已经处理过的
     videos_to_process = [video for video in temp_found_videos if video['bvid'] not in processed_bvids]
     print(f"{user_name} 找到 {len(videos_to_process)} 个未处理的视频。总共视频数量：{len(temp_found_videos)}")
-
+    videos_to_process = videos_to_process[:10]
     for video in videos_to_process:
         try:
             bvid = video['bvid']
@@ -911,7 +911,7 @@ def auto_replay(user_name):
 # --- 常量定义 ---
 RECORD_EXPIRATION_DAYS = 5
 MAX_PROCESSING_ATTEMPTS = 10
-DEFAULT_MAX_REPLIES_PER_RUN = 3
+DEFAULT_MAX_REPLIES_PER_RUN = 2
 REDUCED_MAX_REPLIES_PER_RUN = 1
 EXISTING_REPLIES_THRESHOLD = 2
 RETRY_INTERVAL_SECONDS = 10
@@ -1142,7 +1142,7 @@ def process_user(user):
         start_time = time.time()
         print(f"[{time.strftime('%X')}] 子进程开始处理用户: {user}")
         add_good_comment_for_video(user)
-        auto_replay_refactored(user)
+        # auto_replay_refactored(user)
         print(f"[{time.strftime('%X')}] 子进程完成用户: {user} 处理，耗时: {time.time() - start_time:.2f} 秒")
     except Exception as e:
         print(f"[{time.strftime('%X')}] 子进程处理用户 {user} 时出错: {e}")
@@ -1164,8 +1164,8 @@ if __name__ == '__main__':
     username_list = []
     config = init_config()
     for key,value in config.items():
-        if 'ruru' == value['name']:
-            continue
+        # if 'ruru' == value['name']:
+        #     continue
         username_list.append(value['name'])
 
 
