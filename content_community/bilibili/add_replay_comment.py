@@ -473,6 +473,7 @@ def add_replay_comment_for_video(user_name='qiqi'):
     all_params = config_map[uid].get('all_params', {})
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token,all_params=all_params)
     temp_found_videos = bvid_file_data.get(user_name, [])
+    temp_found_videos = temp_found_videos[:10]
     metadata_cache_with_uploads_back = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     metadata_cache_with_uploads = read_json(
         '../../LLM/TikTokDownloader/metadata_cache_with_uploads0824.json')
@@ -587,15 +588,31 @@ def run_once(username_list):
     print("--- 所有用户处理完成 ---")
 
 def test_comment():
+    config = init_config()
     commenters = _initialize_commenters(config, user_to_exclude='oo')
     comment_text = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}]"
     comment_type = 1
+    # for key, commenter in commenters.items():
+    #     posted_rpid = commenter.post_comment(
+    #         'BV1c3t1zDEzw', comment_text, comment_type,
+    #         like_video=True)
+
     for key, commenter in commenters.items():
-        posted_rpid = commenter.post_comment(
-            'BV1c3t1zDEzw', comment_text, comment_type,
-            like_video=True)
+        print("-" * 30)
+        print("步骤 3: 尝试发送一条弹幕...")
+        danmaku_text = f"大家怎么样，心情都好"
+        danmaku_time_ms = 1000
+        danmaku_sent = commenter.send_danmaku(
+            bvid='BV1c3t1zDEzw', msg=danmaku_text, progress=danmaku_time_ms, is_up=False
+        )
+        if danmaku_sent:
+            print(f"{key} 弹幕发送流程成功完成！")
+        else:
+            print(f"{key} 弹幕发送流程失败。")
 
 if __name__ == '__main__':
+    # test_comment()
+
 
     # gen_all_type_image()
 

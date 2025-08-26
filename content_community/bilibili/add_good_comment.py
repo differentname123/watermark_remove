@@ -632,6 +632,7 @@ def add_good_comment_for_video(user_name='qiqi'):
     all_params = config_map[uid].get('all_params', {})
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token,all_params=all_params)
     temp_found_videos = bvid_file_data.get(user_name, [])
+    temp_found_videos = temp_found_videos[:10]
     metadata_cache_with_uploads_back = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     metadata_cache_with_uploads = read_json(
         '../../LLM/TikTokDownloader/metadata_cache_with_uploads0817.json')
@@ -909,7 +910,7 @@ def auto_replay(user_name):
 
 
 # --- 常量定义 ---
-RECORD_EXPIRATION_DAYS = 5
+RECORD_EXPIRATION_DAYS = 2
 MAX_PROCESSING_ATTEMPTS = 10
 DEFAULT_MAX_REPLIES_PER_RUN = 2
 REDUCED_MAX_REPLIES_PER_RUN = 1
@@ -1142,7 +1143,7 @@ def process_user(user):
         start_time = time.time()
         print(f"[{time.strftime('%X')}] 子进程开始处理用户: {user}")
         add_good_comment_for_video(user)
-        # auto_replay_refactored(user)
+        auto_replay_refactored(user)
         print(f"[{time.strftime('%X')}] 子进程完成用户: {user} 处理，耗时: {time.time() - start_time:.2f} 秒")
     except Exception as e:
         print(f"[{time.strftime('%X')}] 子进程处理用户 {user} 时出错: {e}")
@@ -1161,12 +1162,12 @@ def run_once(username_list):
 if __name__ == '__main__':
     username_list = [ 'mama', 'nana', 'ruru', 'jie', 'jun', 'xiaosu', 'yan', 'xiaohao', 'chabian']
     username_list = ['jie']
-    # username_list = []
-    # config = init_config()
-    # for key,value in config.items():
-    #     # if 'ruru' == value['name']:
-    #     #     continue
-    #     username_list.append(value['name'])
+    username_list = []
+    config = init_config()
+    for key,value in config.items():
+        # if 'ruru' == value['name']:
+        #     continue
+        username_list.append(value['name'])
 
 
     # 无限循环：每轮执行一次 run_once

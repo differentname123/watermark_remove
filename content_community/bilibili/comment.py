@@ -436,7 +436,7 @@ class BilibiliCommenter:
                 print(f"弹幕发送成功！Dmid: {dmid}")
                 return True
             else:
-                print(f"弹幕发送失败，错误码：{result.get('code')}, 信息：{result.get('message')}")
+                print(f"弹幕发送失败，错误码：{result.get('code')}, 信息：{result.get('message')} {self.all_params}")
                 return False
         except requests.exceptions.RequestException as e:
             print(f"请求弹幕发送接口时发生错误：{e}")
@@ -923,11 +923,11 @@ if __name__ == "__main__":
     # commenter.pin_comment(target_bvid, 271871684816)
     #
     # --- 步骤 1: 发送一条顶级评论 (现在会先点赞视频) ---
-    print("-" * 30)
-    print("步骤 1: 尝试发送一条顶级评论...")
-    posted_rpid = commenter.post_comment(
-        target_bvid, comment_text, comment_type,
-        like_video=True    )
+    # print("-" * 30)
+    # print("步骤 1: 尝试发送一条顶级评论...")
+    # posted_rpid = commenter.post_comment(
+    #     target_bvid, comment_text, comment_type,
+    #     like_video=True    )
 
     # # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
     # if posted_rpid:
@@ -947,19 +947,19 @@ if __name__ == "__main__":
     #     print("-" * 30)
     #     print("顶级评论发送失败，无法进行回复操作。")
     # #
-    # # # --- 步骤 3: 发送一条弹幕 ---
-    # # print("-" * 30)
-    # # print("步骤 3: 尝试发送一条弹幕...")
-    # # danmaku_text = f"大家怎么样，心情都好"
-    # # danmaku_time_ms = 2100
-    # # danmaku_sent = commenter.send_danmaku(
-    # #     bvid=target_bvid, msg=danmaku_text, progress=danmaku_time_ms, is_up=True
-    # # )
-    # # if danmaku_sent:
-    # #     print("弹幕发送流程成功完成！")
-    # # else:
-    # #     print("弹幕发送流程失败。")
-    # #
+    # --- 步骤 3: 发送一条弹幕 ---
+    print("-" * 30)
+    print("步骤 3: 尝试发送一条弹幕...")
+    danmaku_text = f"大家怎么样，心情都好"
+    danmaku_time_ms = 1000
+    danmaku_sent = commenter.send_danmaku(
+        bvid=target_bvid, msg=danmaku_text, progress=danmaku_time_ms, is_up=False
+    )
+    if danmaku_sent:
+        print("弹幕发送流程成功完成！")
+    else:
+        print("弹幕发送流程失败。")
+
     # # # --- 步骤 4: 查询用户投稿视频 (修正了结果处理的BUG) ---
     # # print("-" * 30)
     # # print("步骤 4: 尝试查询用户投稿视频...")

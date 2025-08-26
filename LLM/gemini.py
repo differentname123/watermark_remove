@@ -439,7 +439,7 @@ if __name__ == "__main__":
     # 再次调用，观察排序是否根据上次成功结果发生变化
     print("\n[TEST] 再次测试 get_llm_content (观察密钥顺序是否变化)")
     start_time = time.time()
-    result = get_llm_content(prompt="再给我讲个笑话吧")
+    result = get_llm_content(prompt="再给我讲个笑话吧", model_name="gemini-2.5-flash")
     if result:
         print("\n[RESULT] 模型输出：\n", result)
     else:

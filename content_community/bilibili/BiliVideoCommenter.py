@@ -17,8 +17,8 @@ from content_community.bilibili.comment import BilibiliCommenter
 URL_MODIFY_RELATION = "https://api.bilibili.com/x/relation/modify"
 
 # --- 2. 全局配置 ---
-total_cookie = get_config("tao_bilibili_total_cookie")
-csrf_token = get_config("tao_bilibili_csrf_token")
+total_cookie = get_config("dan_bilibili_total_cookie")
+csrf_token = get_config("dan_bilibili_csrf_token")
 
 CONFIG = {
     "STRATEGIES": {
@@ -644,7 +644,7 @@ def follower_worker(csrf_token):
                     processed_fids.add(fid)
 
                     # 随机暂停一段时间再执行关注，模拟人类行为
-                    time.sleep(random.uniform(2, 10))
+                    time.sleep(random.uniform(20, 30))
                     success = modify_relation(fid, 1, csrf_token)
 
             save_processed_set(processed_fids, CONFIG['PROCESSED_FIDS_FILE'])

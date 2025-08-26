@@ -446,21 +446,22 @@ def auto_upload():
 
         # ---------- 预处理：在尾部插入引导图片 ----------
         new_video_path = current_video_path.replace('.mp4', '_new.mp4')
-        try:
-            t0 = time.time()
-            image_duration = int(duration / 100)
-            image_duration = max(1, image_duration)
-            print(f"🔄 尾部插图处理：视频时长 {duration} 秒，插图持续 {image_duration} 秒。 文件路径：{current_video_path} -> {new_video_path}")
-            final_jpg_path = f'{userName}_final.jpg'
-            if not os.path.exists(final_jpg_path):
-                final_jpg_path = 'final.jpg'
-                print(f"⚠️ 尾部插图文件 {final_jpg_path} 不存在，使用默认图片。")
-            add_image_to_video_end(current_video_path, final_jpg_path, new_video_path, image_duration)
-            video_path = new_video_path
-            stage_times['尾部插图'] = time.time() - t0
-        except Exception as e:
-            stage_times['尾部插图'] = time.time() - t0
-            print(f"⚠️ 尾部插图失败，继续使用原视频：{e}")
+        if duration < 600:
+            try:
+                t0 = time.time()
+                image_duration = int(duration / 100)
+                image_duration = max(1, image_duration)
+                print(f"🔄 尾部插图处理：视频时长 {duration} 秒，插图持续 {image_duration} 秒。 文件路径：{current_video_path} -> {new_video_path}")
+                final_jpg_path = f'{userName}_final.jpg'
+                if not os.path.exists(final_jpg_path):
+                    final_jpg_path = 'final.jpg'
+                    print(f"⚠️ 尾部插图文件 {final_jpg_path} 不存在，使用默认图片。")
+                add_image_to_video_end(current_video_path, final_jpg_path, new_video_path, image_duration)
+                video_path = new_video_path
+                stage_times['尾部插图'] = time.time() - t0
+            except Exception as e:
+                stage_times['尾部插图'] = time.time() - t0
+                print(f"⚠️ 尾部插图失败，继续使用原视频：{e}")
 
         # 视频细节调整（当 duration < 600）
         if duration < 600:

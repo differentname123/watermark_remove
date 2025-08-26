@@ -1112,6 +1112,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                     print(f"弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
                 else:
                     print(f"弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
+                    time.sleep(random.uniform(10, 15))
                 break
         # time.sleep(random.uniform(5, 15))
     hudong_info['danmu_used'] = danmu_used_list
