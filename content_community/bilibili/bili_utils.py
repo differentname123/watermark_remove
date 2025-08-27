@@ -10,6 +10,7 @@
 """
 import json
 import re
+from collections import defaultdict
 
 import requests
 import time
@@ -424,7 +425,7 @@ def check_duplicate_video(meta_data):
                 # 只保留指定的键
                 filtered_data = {key: data.get(key, '') for key in bilibili_key_list}
                 temp_duration = time_to_ms(filtered_data.get('duration', '0:0')) / 1000
-                if abs(temp_duration - douyin_duration) <= 1:
+                if abs(temp_duration - douyin_duration) <= 10:
                     filtered_data['duration'] = temp_duration
                     result_list.append(filtered_data)
             if not result_list:
@@ -989,9 +990,49 @@ def block_all_author(mid_list=None):
         time.sleep(2)  # 每个用户间隔 2 秒
     print(f"[完成] 所有用户拉黑操作完成，耗时 {time.time() - start_time:.2f} 秒")
 
+def get_all_income():
+    result_dict = defaultdict(lambda: {"total": 0, "details": []})
+    config_map = init_config()
+
+    for uid, value in config_map.items():
+        total_cookie = value.get("total_cookie", "")
+        user_name = value.get("name", "")
+        # 查询激励情况
+        income_data = get_bilibili_income_detail(total_cookie)
+
+        if not income_data:
+            print(f"\n用户 {user_name} 未能获取数据，请检查 cookie 是否过期。")
+            continue
+
+        # print(f"\n成功获取 {user_name} 的收入明细数据：")
+        # print(json.dumps(income_data, indent=4, ensure_ascii=False))
+
+        # 遍历 list
+        for item in income_data.get("data", {}).get("list", []):
+            name = item["name"]
+            amt = item["incentive_amt"]
+
+            result_dict[name]["total"] += amt
+            result_dict[name]["details"].append({
+                "user": user_name,
+                "incentive_amt": amt
+            })
+
+    # 打印最终统计结果
+    print("\n===== 最终统计结果 =====")
+    for name, data in result_dict.items():
+        print(f"{name}: 总和={data['total']}")
+        for detail in data["details"]:
+            print(f"  - {detail['user']}: {detail['incentive_amt']}")
+
+    return result_dict
+
+
 
 
 if __name__ == '__main__':
+    get_all_income()
+
 
     COOKIE = get_config("jie_bilibili_total_cookie")
 
@@ -1029,16 +1070,7 @@ if __name__ == '__main__':
     # print(result)
 
 
-    # 查询激励情况
-    income_data = get_bilibili_income_detail(COOKIE)
 
-    # 3. 处理并打印返回结果
-    if income_data:
-        print("成功获取收入明细数据：")
-        # 使用 json.dumps 进行格式化打印，使其更易读
-        print(json.dumps(income_data, indent=4, ensure_ascii=False))
-    else:
-        print("\n未能获取数据。请检查上面的错误信息，确认 cookie 是否正确且未过期。")
 
     #
     #
