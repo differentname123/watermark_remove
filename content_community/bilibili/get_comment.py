@@ -21,15 +21,45 @@ def get_bilibili_comments(bvid: str):
         "Referer": f"https://www.bilibili.com/video/{bvid}"
     }
 
+    # 本地代理，仅用于按需重试（不会修改全局环境变量）
+    _proxies = {
+        "http": "http://127.0.0.1:7890",
+        "https": "http://127.0.0.1:7890",
+    }
+
+    def _get_with_412_proxy_fallback(url, headers=None, params=None, timeout=10):
+        """
+        尝试正常请求；如果响应状态码为 412，则只对该次请求使用代理重试一次。
+        成功返回 requests.Response，错误会抛出相应的异常以便外层捕获处理。
+        """
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+        except requests.exceptions.RequestException:
+            # 网络错误等，直接抛出给上层处理（不自动使用代理，保持行为一致）
+            raise
+
+        # 如果服务端直接返回 412，则尝试使用代理重试一次（仅此请求）
+        if resp.status_code == 412:
+            print(f"请求 {url} 返回 412，尝试使用代理重试一次...")
+            try:
+                resp = requests.get(url, headers=headers, params=params, proxies=_proxies, timeout=timeout)
+            except requests.exceptions.RequestException:
+                # 代理重试也失败，抛出异常让上层处理和打印
+                raise
+
+        # 最终检查状态码（非 2xx 将抛出 HTTPError）
+        resp.raise_for_status()
+        return resp
+
     # --- 1. 通过 bvid 获取视频的 aid ---
     view_url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
     try:
-        view_response = requests.get(view_url, headers=headers)
-        view_response.raise_for_status()  # 捕获 HTTP 错误
+        view_response = _get_with_412_proxy_fallback(view_url, headers=headers)
         view_data = view_response.json()
     except requests.exceptions.HTTPError as http_err:
         print(f"HTTP error occurred while fetching video info: {http_err}")
-        print(f"Response: {view_response.content}")
+        resp_content = getattr(http_err.response, "content", None)
+        print(f"Response: {resp_content}")
         return None
     except requests.exceptions.RequestException as e:
         print(f"请求视频信息时发生错误: {e}")
@@ -58,12 +88,12 @@ def get_bilibili_comments(bvid: str):
     }
 
     try:
-        comment_response = requests.get(reply_url, headers=headers, params=params)
-        comment_response.raise_for_status()
+        comment_response = _get_with_412_proxy_fallback(reply_url, headers=headers, params=params)
         comment_data = comment_response.json()
     except requests.exceptions.HTTPError as http_err:
         print(f"获取评论时发生 HTTP 错误: {http_err}")
-        print(f"Response: {comment_response.content}")
+        resp_content = getattr(http_err.response, "content", None)
+        print(f"Response: {resp_content}")
         return None
     except requests.exceptions.RequestException as e:
         print(f"请求评论时发生错误: {e}")
@@ -93,9 +123,10 @@ def get_bilibili_comments(bvid: str):
     return None
 
 
+
 if __name__ == "__main__":
     # 示例：输入 BV号 获取对应视频的评论
-    bvid = "BV19qtBzUE78"  # 请替换成需要查询的 BV 号
+    bvid = "BV11de1z3Ewd"  # 请替换成需要查询的 BV 号
     comments = get_bilibili_comments(bvid)
 
     if comments:

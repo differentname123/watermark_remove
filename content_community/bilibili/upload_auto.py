@@ -350,6 +350,10 @@ def auto_upload():
         print(f"❌ 无可用任务：{METADATA_FILE} 为空或不存在。")
         return
 
+    if not upload_log and (len(metadata_cache) - len(upload_log)) > 20:
+        print(f"❌ 无可用任务：{UPLOAD_LOG_FILE} 为空或不存在。")
+        return
+
     futures = []  # 保存提交到各账号 executor 的 future（如需等待可用）
     new_uploads_made = False
     error_count = 0
