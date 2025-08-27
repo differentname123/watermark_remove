@@ -374,7 +374,7 @@ def gen_property_good(video_info):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            raw = get_llm_content(prompt=prompt, model_name="gemini-2.5-flash-lite")
+            raw = get_llm_content(prompt=prompt, model_name="gemini-2.5-flash")
             video_info = string_to_object(raw)
             return video_info , format_video_info
         except Exception as e:
@@ -452,7 +452,7 @@ def gen_final_property_good(video_info, property_goods):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            raw = get_llm_content(prompt=prompt, model_name="gemini-2.5-flash-lite")
+            raw = get_llm_content(prompt=prompt, model_name="gemini-2.5-flash")
             video_info = string_to_object(raw)
             return video_info
         except Exception as e:

@@ -11,7 +11,7 @@ from content_community.bilibili.BiliVideoCommenter import load_processed_set
 # 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-total_cookie = get_config("bilibili_total_cookie")
+total_cookie = get_config("ning_bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为
@@ -152,7 +152,13 @@ def modify_relation(fid, action_type):
     fid: 目标用户的UID
     action_type: 1 为关注, 2 为取消关注
     """
-    action_text = "关注" if action_type == 1 else "取消关注"
+    if action_type == 1:
+        action_text = "关注"
+    elif action_type == 5:
+        action_text = "拉黑"
+    else:
+        action_text = "取消关注"
+
     payload = {
         "fid": fid,
         "act": action_type,
@@ -228,7 +234,7 @@ def main_task():
     logging.info("\n--- 阶段 1: 开始清理非互关用户 ---")
     followers_set = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
     update_followers(followers_set)
-    followings_set = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
+    followings_set = set()
     followings_set = {str(fid) for fid in followings_set}
 
     followers_fids_set = load_processed_set("followers_fids.json")
@@ -253,9 +259,9 @@ def main_task():
                     successful_unfollows += 1
                 else:
                     failed_unfollows += 1
-                if successful_unfollows > 1000:
-                    logging.info("已取消关注超过 500 人，停止后续操作。")
-                    break
+                # if successful_unfollows > 600:
+                #     logging.info("已取消关注超过 500 人，停止后续操作。")
+                #     break
 
                 delay = random.uniform(MIN_OPERATION_DELAY_SEC, MAX_OPERATION_DELAY_SEC)
                 delay = delay / 10
@@ -281,6 +287,7 @@ def main_task():
 
     # 2. 创建一个空列表，用于存放最终需要 follow 的 FID (保持顺序)
     followers_to_follow_list = []
+    failed_set = load_processed_set("failed_set.json")
 
     # 3. 使用一个集合来跟踪已经添加到列表中的 FID，避免重复
     already_added_to_list = set()
@@ -290,7 +297,7 @@ def main_task():
     print("\n--- Identifying Prioritized FIDs to follow ---")
     for fid in followers_fids_set:
         if fid not in new_followings_set:
-            if fid not in already_added_to_list:  # 确保不会重复添加 (虽然这里不应该重复)
+            if fid not in already_added_to_list and fid not in failed_set:  # 确保不会重复添加 (虽然这里不应该重复)
                 followers_to_follow_list.append(fid)
                 already_added_to_list.add(fid)
                 # print(f"Added prioritized FID: {fid}") # 可选：用于调试
@@ -300,11 +307,10 @@ def main_task():
     print("--- Identifying Remaining FIDs to follow ---")
     for fid in processed_fids_set:
         if fid not in new_followings_set:
-            if fid not in already_added_to_list:  # 检查是否已经从 followers_fids.json 添加过了
+            if fid not in already_added_to_list and fid not in failed_set:  # 确保不会重复添加 (虽然这里不应该重复)
                 followers_to_follow_list.append(fid)
                 already_added_to_list.add(fid)
     followers_to_follow = already_added_to_list
-    failed_set = load_processed_set("failed_set.json")
     if not followers_to_follow:
         logging.info("所有粉丝均已关注，阶段 2 无需操作。")
     else:
@@ -320,9 +326,10 @@ def main_task():
             if modify_relation(fid, 1):  # 1 代表关注
                 successful_follows += 1
             else:
+                time.sleep(600)
                 failed_follows += 1
                 failed_set.add(fid)  # 将失败的 FID 添加到集合中
-            if successful_follows > 500:
+            if successful_follows > 5000:
                 logging.info("已回关超过 500 人，停止后续操作。")
                 break
 

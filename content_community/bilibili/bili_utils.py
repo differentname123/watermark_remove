@@ -16,7 +16,11 @@ import time
 import random
 
 from LLM.gemini import get_llm_content
-from common_utils.common_utils import get_config, read_json, time_to_ms, string_to_object, save_json
+from common_utils.common_utils import get_config, read_json, time_to_ms, string_to_object, save_json, init_config
+
+URL_MODIFY_RELATION = "https://api.bilibili.com/x/relation/modify"
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
 
 base_prompt = """
             # 角色
@@ -414,7 +418,7 @@ def check_duplicate_video(meta_data):
                 'duration': douyin_duration,
             }
             data_list = fetch_from_search(key_word=douyin_full_title)
-            bilibili_key_list = ['author', 'bvid', 'title', 'description', 'duration']
+            bilibili_key_list = ['author', 'bvid', 'title', 'description', 'duration', 'mid']
             result_list = []
             for data in data_list:
                 # 只保留指定的键
@@ -440,9 +444,11 @@ def check_duplicate_video(meta_data):
                 print(f"[提示] 检查到重复视频: {target_value.get('title')} (BVID: {target_value.get('bvid')})")
                 user_map_info[douyin_username] = {
                     "bilibili_username": target_value.get('author', ''),
-                    "bilibili_bvid": target_value.get('bvid', '')
+                    "bilibili_bvid": target_value.get('bvid', ''),
+                    "mid": target_value.get('mid', '')
                 }
                 save_json(user_map_file, user_map_info)
+                block_all_author([target_value.get('mid', '')])
                 return True
 
             # 未检测到重复
@@ -858,9 +864,141 @@ def update_bili_user_sign(cookie_str: str, user_sign: str, timeout: int = 10):
     except ValueError:
         return resp.text
 
+
+def _parse_cookie_string(cookie_string):
+    """返回 (cookies_dict, bili_jct_value)"""
+    parsed = {}
+    bili_jct = ""
+    for part in cookie_string.split(';'):
+        part = part.strip()
+        if not part:
+            continue
+        if '=' in part:
+            k, v = part.split('=', 1)
+            parsed[k] = v
+            if k == 'bili_jct':
+                bili_jct = v
+    return parsed, bili_jct
+
+def modify_relation(fid, action_type, cookie_str, url: str = URL_MODIFY_RELATION, timeout: int = 10, retries: int = 1):
+    """
+    精简版 modify_relation（使用 print 而非 logging）。
+    参数:
+      - fid: 目标 UID（字符串或数字）
+      - action_type: 1=关注, 2=取消关注, 5=拉黑（按你原逻辑）
+      - cookie_str: 完整 Cookie 字符串（如 "SESSDATA=...; bili_jct=...; ..."），若为 None 则使用模块内 FULL_COOKIE_STRING
+      - url, timeout, retries: 可选
+    返回: (success: bool, result: dict or str)
+    """
+    cookie_string = cookie_str
+    if not cookie_string:
+        print("ERROR: 未提供 cookie_str（请传入或在模块中定义 FULL_COOKIE_STRING 或 环境变量 BILI_COOKIE）。")
+        return False, "no_cookie"
+
+    cookies, csrf = _parse_cookie_string(cookie_string)
+    if not cookies.get("SESSDATA") or not csrf:
+        print("ERROR: cookie 中缺少 SESSDATA 或 bili_jct（CSRF token）。")
+        return False, "missing_sessdata_or_csrf"
+
+    if action_type == 1:
+        action_text = "关注"
+    elif action_type == 5:
+        action_text = "拉黑"
+    else:
+        action_text = "取消关注"
+
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://space.bilibili.com/",
+        "Origin": "https://space.bilibili.com"
+    }
+
+    payload = {
+        "fid": str(fid),
+        "act": int(action_type),
+        "re_src": 11,
+        "csrf": csrf
+    }
+
+    last_err = None
+    for attempt in range(1, retries + 2):  # 总尝试次数 = retries + 1
+        try:
+            print(f"INFO: 尝试 {action_text} UID:{fid}（第 {attempt} 次）...")
+            resp = requests.post(url, data=payload, headers=headers, cookies=cookies, timeout=timeout)
+            resp.raise_for_status()
+            try:
+                j = resp.json()
+            except ValueError:
+                print(f"ERROR: {action_text} UID:{fid} — 响应不是 JSON，status={resp.status_code}")
+                return False, f"non_json_status_{resp.status_code}"
+
+            if j.get("code") == 0:
+                print(f"SUCCESS: 成功{action_text} UID: {fid}")
+                return True, j
+            else:
+                print(f"ERROR: {action_text} UID:{fid} 失败: {j.get('message')} (Code: {j.get('code')})")
+                return False, j
+
+        except requests.exceptions.RequestException as e:
+            last_err = e
+            print(f"WARN: 第 {attempt} 次请求失败: {e}")
+            if attempt <= retries:
+                wait = random.uniform(0.5, 1.5) * attempt
+                print(f"INFO: 等待 {wait:.2f}s 后重试...")
+                time.sleep(wait)
+            else:
+                print(f"ERROR: 达到最大重试次数，操作失败: {e}")
+                return False, str(e)
+
+    return False, str(last_err or "unknown_error")
+
+def block_all_author(mid_list=None):
+    """
+    拉黑所有原作者用户
+    """
+    start_time = time.time()
+    # ---------- 文件路径常量 ----------
+
+    config_map = init_config()
+
+    if not mid_list:
+        user_map_info_file = '../../LLM/TikTokDownloader/douyin_bilibili_user_map.json'  # 权威源
+        user_map_info = read_json(user_map_info_file)
+        mid_list = []
+        for key, value in user_map_info.items():
+            mid = value.get("mid")
+            if mid and mid not in mid_list:
+                mid_list.append(mid)
+    print(f"[提示] 共有 {len(mid_list)} 个不同的 B 站用户需要拉黑  用户数量为{len(config_map)}")
+
+    for mid in mid_list:
+        for uid, value in config_map.items():
+            total_cookie = value.get("total_cookie", "")
+            name = value.get("name", "")
+            if not total_cookie:
+                print(f"[跳过] 用户 {uid} 未配置 total_cookie，无法拉黑")
+                continue
+            if mid == uid:
+                print(f"[跳过] 用户 {uid} 不能拉黑自己")
+                continue
+            print(f"[提示] 使用用户 {uid} 的账号尝试拉黑 {mid}")
+            success, result = modify_relation(fid=mid, action_type=5, cookie_str=total_cookie)
+            if success:
+                print(f"[成功] 用户 {name} 成功拉黑 {mid}")
+        time.sleep(2)  # 每个用户间隔 2 秒
+    print(f"[完成] 所有用户拉黑操作完成，耗时 {time.time() - start_time:.2f} 秒")
+
+
+
 if __name__ == '__main__':
 
-    COOKIE = get_config("chabian_bilibili_total_cookie")
+    COOKIE = get_config("jie_bilibili_total_cookie")
+
+
+    # # 进行拉黑 关注 取消关注
+    # block_all_author()
+
 
     # 更新个性签名
     # result = update_bili_user_sign(COOKIE, "测试个性签名")
@@ -902,7 +1040,8 @@ if __name__ == '__main__':
     else:
         print("\n未能获取数据。请检查上面的错误信息，确认 cookie 是否正确且未过期。")
 
-
+    #
+    #
     # meta_data =       {
     #             "collection_time": "2025-08-20 00:51:36",
     #             "id": "7447738126698548537",
