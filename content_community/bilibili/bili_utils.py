@@ -860,7 +860,7 @@ def update_bili_user_sign(cookie_str: str, user_sign: str, timeout: int = 10):
 
 if __name__ == '__main__':
 
-    COOKIE = get_config("hao_bilibili_total_cookie")
+    COOKIE = get_config("tao_bilibili_total_cookie")
 
     # 更新个性签名
     # result = update_bili_user_sign(COOKIE, "测试个性签名")

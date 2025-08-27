@@ -59,6 +59,7 @@ accounts = {
     'jj': 'jj',
     'hao': 'hao',
     'xiaohao': 'xiaohao',
+    'dan': 'dan',
 
 }
 
@@ -636,8 +637,8 @@ def auto_upload():
         # 主循环继续处理下一条任务（不等待上传完成）
 
     # 如果需要在一次运行结束前等待所有后台上传完成，可取消下面注释：
-    # print("等待所有后台上传完成...")
-    # concurrent.futures.wait(futures, timeout=None)
+    print("等待所有后台上传完成...")
+    concurrent.futures.wait(futures, timeout=None)
 
     # 处理被跳过的 persistent tasks
     if len(temp_set) > 0:
