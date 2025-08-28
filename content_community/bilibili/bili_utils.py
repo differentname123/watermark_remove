@@ -991,42 +991,69 @@ def block_all_author(mid_list=None):
     print(f"[完成] 所有用户拉黑操作完成，耗时 {time.time() - start_time:.2f} 秒")
 
 def get_all_income():
-    result_dict = defaultdict(lambda: {"total": 0, "details": []})
     config_map = init_config()
+
+    # 先收集所有 name
+    all_names = set()
+    user_data = {}
 
     for uid, value in config_map.items():
         total_cookie = value.get("total_cookie", "")
         user_name = value.get("name", "")
-        # 查询激励情况
         income_data = get_bilibili_income_detail(total_cookie)
 
         if not income_data:
             print(f"\n用户 {user_name} 未能获取数据，请检查 cookie 是否过期。")
+            user_data[user_name] = {}
             continue
 
         # print(f"\n成功获取 {user_name} 的收入明细数据：")
         # print(json.dumps(income_data, indent=4, ensure_ascii=False))
 
-        # 遍历 list
+        # 存储该用户的收入
+        user_income = {}
         for item in income_data.get("data", {}).get("list", []):
             name = item["name"]
             amt = item["incentive_amt"]
+            user_income[name] = amt
+            all_names.add(name)
 
-            result_dict[name]["total"] += amt
-            result_dict[name]["details"].append({
-                "user": user_name,
-                "incentive_amt": amt
-            })
+        user_data[user_name] = user_income
 
-    # 打印最终统计结果
+    # 统一补齐：没有的补 0
+    result_dict = {}
+    for name in all_names:
+        details = []
+        total = 0
+        for user, udata in user_data.items():
+            amt = udata.get(name, 0)
+            total += amt
+            details.append({"user": user, "incentive_amt": amt})
+
+        # detail 按收益降序排列
+        details.sort(key=lambda x: x["incentive_amt"], reverse=True)
+
+        result_dict[name] = {"total": total, "details": details}
+
+    # 降序排序（按照日期）
+    def parse_date_from_name(n):
+        import re, datetime
+        m = re.match(r"(\d{4})年(\d{2})月(\d{2})日", n)
+        if m:
+            y, mth, d = map(int, m.groups())
+            return datetime.date(y, mth, d)
+        return datetime.date.min
+
+    sorted_result = dict(sorted(result_dict.items(), key=lambda x: parse_date_from_name(x[0]), reverse=False))
+
+    # 打印结果
     print("\n===== 最终统计结果 =====")
-    for name, data in result_dict.items():
+    for name, data in sorted_result.items():
         print(f"{name}: 总和={data['total']}")
         for detail in data["details"]:
             print(f"  - {detail['user']}: {detail['incentive_amt']}")
 
-    return result_dict
-
+    return sorted_result
 
 
 
