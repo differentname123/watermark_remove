@@ -156,6 +156,9 @@ def maintenance_replay(cookie):
             total_reply += reply + '\n\n'
         result = set_bili_reply(title=total_title, reply=total_reply, key1=total_key1, key2=total_key2, cookie_str=cookie)
         print(f'添加总回复关键词 {total_title} 结果: {result}')
+
+        result = set_bili_reply(title=total_title, reply=total_reply, key1=total_key1, key2=total_key2, cookie_str=cookie,replay_type=3)
+        print(f'添加收到消息 {total_title} 结果: {result}')
     except Exception as e:
         print(f"维护回复关键词时发生错误: {e}")
         traceback.print_exc()
@@ -163,11 +166,6 @@ def maintenance_replay(cookie):
 def load_all_replay_info():
     local_replay_info_file = f'{BASE_DIR}/replay_info.json'
     local_replay_info = read_json(local_replay_info_file)
-    for local_replay in local_replay_info:
-        title = local_replay.get('title', '')
-        detail_info_path = f"{BASE_DIR}/{title}.json"
-        detail_info = read_json(detail_info_path)
-        local_replay['detail_info'] = detail_info
     return local_replay_info
 
 def gen_final_property_replay(video_info, all_replay_info):
@@ -206,7 +204,7 @@ def gen_final_property_replay(video_info, all_replay_info):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            raw = get_llm_content(prompt=prompt, model_name="gemini-2.5-flash-lite")
+            raw = get_llm_content(prompt=prompt, model_name="gemini-2.5-flash")
             video_info = string_to_object(raw)
             return video_info
         except Exception as e:
@@ -476,7 +474,7 @@ def add_replay_comment_for_video(user_name='qiqi'):
     temp_found_videos = temp_found_videos[:10]
     metadata_cache_with_uploads_back = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     metadata_cache_with_uploads = read_json(
-        '../../LLM/TikTokDownloader/metadata_cache_with_uploads0824.json')
+        '../../LLM/TikTokDownloader/metadata_cache_with_uploads0828.json')
     metadata_cache_with_uploads.update(metadata_cache_with_uploads_back)
     all_records = read_json(all_records_file)
     success_bvids = []
@@ -618,9 +616,9 @@ if __name__ == '__main__':
 
 
     username_list = [ 'mama', 'nana', 'ruru', 'jie', 'jun', 'xiaosu', 'yan', 'xiaohao', 'chabian']
-    cookie_list = []
-    # username_list = ['jie']
-    username_list = ['mama']
+    cookie_list = [get_config('jie_bilibili_total_cookie')]
+    username_list = ['jj', 'lin']
+    # username_list = ['mama']
     config = init_config()
     # for key,value in config.items():
     #     # if 'ruru' == value['name']:
@@ -628,7 +626,7 @@ if __name__ == '__main__':
     #     username_list.append(value['name'])
     #     cookie_list.append(value['total_cookie'])
 
-    #
+
     # for cookie in cookie_list:
     #     maintenance_replay(cookie)
 

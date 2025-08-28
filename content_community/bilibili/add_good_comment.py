@@ -697,7 +697,7 @@ def add_good_comment_for_video(user_name='qiqi'):
                 property_goods = search_goods(keyword_list)
                 all_records[bvid]['property_goods'] = filter_property_good(property_goods)
                 save_json_safe(all_records_file, all_records)
-                if 'final_goods' in record and record['final_goods'] and True:
+                if 'final_goods' in record and record['final_goods'] and False:
                     print(f"视频 {bvid} 已经有最终商品信息，跳过。")
                     final_goods = record['final_goods']
                 else:
@@ -1103,7 +1103,7 @@ def auto_replay_refactored(user_name: str):
         # 3.1. 前置检查
         skip_reason = _should_skip_video(record, bvid, today)
         if skip_reason:
-            print(f"⏭️  跳过: {skip_reason}")
+            # print(f"⏭️  跳过: {skip_reason}")
             # 注意：即使跳过，我们也更新处理日期和次数，防止无限次检查
             record['last_processed_date'] = today
             # 仅在非“达到上限”原因跳过时增加处理次数

@@ -525,7 +525,7 @@ def get_bilibili_income_detail(cookie_string: str) -> dict | None:
 
 BILI_REPLY_URL = "https://api.vc.bilibili.com/x/im/auto_reply/set_reply_text"
 
-def set_bili_reply(title: str, reply: str, key1: str, key2: str, cookie_str: str, csrf: str | None = None, timeout: int = 10):
+def set_bili_reply(title: str, reply: str, key1: str, key2: str, cookie_str: str, csrf: str | None = None, timeout: int = 10, replay_type=2):
     """
     向 B 站自动回复接口提交设置（模拟 fetch 请求）。
     必填参数:
@@ -572,7 +572,7 @@ def set_bili_reply(title: str, reply: str, key1: str, key2: str, cookie_str: str
 
     # 构造表单数据（与 fetch 的 body 保持一致字段）
     payload = {
-        "type": "2",
+        "type": replay_type,
         "reply": reply,
         "id": "0",
         "title": title,
@@ -652,6 +652,7 @@ def set_bili_keys_reply(keys_reply: str,
     # 表单数据
     payload = {
         "keys_reply": keys_reply,
+        "recv_reply": keys_reply,
         "build": "0",
         "mobi_app": "web",
         "csrf": csrf_token

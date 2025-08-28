@@ -1548,6 +1548,21 @@ def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.m
         if not os.path.exists(p):
             raise FileNotFoundError(f"未找到文件: {p}")
 
+    # --- 新增：单视频情况直接复制 ---
+    if len(video_paths) == 1:
+        print("[INFO] 只有一个输入视频，直接复制到输出文件")
+        cmd = [
+            "ffmpeg", "-y",
+            "-loglevel", "error",
+            "-i", video_paths[0],
+            "-c", "copy",
+            output_path
+        ]
+        print(" ".join(cmd))
+        subprocess.run(cmd, check=True)
+        print(f"[SUCCESS] 复制完成，输出文件：{output_path}")
+        return
+
     # 你现有的探测函数，保持不变
     ref_w, ref_h, ref_fps, ref_sar = probe_video_new(video_paths[0])
     print(f"[INFO] 参考视频参数: {ref_w}×{ref_h}, fps={ref_fps:.2f}, SAR={ref_sar}")
@@ -1559,7 +1574,6 @@ def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.m
         inputs += ["-i", path]
 
         if idx == 0:
-            # 首段不缩放，但固定像素格式，避免后续 concat 触发格式协商
             vf_filters.append(
                 f"[{idx}:v]"
                 f"setsar=1,"
@@ -1567,7 +1581,6 @@ def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.m
                 f"setpts=PTS-STARTPTS[v{idx}]"
             )
         else:
-            # 其他段：缩放/填充，并固定颜色矩阵与范围，最后统一为 yuv420p
             vf_filters.append(
                 f"[{idx}:v]"
                 f"scale={ref_w}:{ref_h}:force_original_aspect_ratio=decrease"
@@ -1579,7 +1592,6 @@ def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.m
                 f"setpts=PTS-STARTPTS[v{idx}]"
             )
 
-        # 音频：统一到 48kHz 立体声，保持音量为 1（与原代码一致）
         vf_filters.append(
             f"[{idx}:a]"
             f"volume=1,"
@@ -1588,7 +1600,6 @@ def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.m
             f"asetpts=PTS-STARTPTS[a{idx}]"
         )
 
-    # 拼接
     concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(video_paths)))
     vf_filters.append(f"{concat_inputs}concat=n={len(video_paths)}:v=1:a=1[outv][outa]")
 

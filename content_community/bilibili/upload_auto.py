@@ -21,7 +21,7 @@ import traceback
 
 from common_utils.common_utils import get_config, format_seconds_to_mmss
 from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover, \
-    merge_videos_ffmpeg, apply_all_subtle_tweaks, _get_video_resolution, process_video_with_template
+    merge_videos_ffmpeg, apply_all_subtle_tweaks, _get_video_resolution, process_video_with_template, probe_duration
 from common_utils.video_utils_cut import text_image_to_video_with_subtitles
 from content_community.app.remake_video import remake_video_robust
 
@@ -332,6 +332,319 @@ def upload_worker(upload_params, key, updated_entry, files_to_cleanup, stage_tim
 
 
 # ---------- auto_upload：完整实现（主线程做预处理，上传按账号串行提交） ----------
+import os
+import time
+import copy
+import traceback
+import concurrent.futures
+from typing import Dict, Any, Tuple, List, Set
+
+# -------------- 注意 --------------
+# 下面的代码依赖你原有模块里的函数与全局变量（不要删改）：
+# load_json, save_json, remake_video_robust, add_image_to_video_end, apply_all_subtle_tweaks,
+# merge_videos_ffmpeg, _get_video_resolution, text_image_to_video_with_subtitles,
+# add_template, create_enhanced_cover, fetch_bili_topics, time_str_to_seconds,
+# account_executors, upload_worker, config_map, error_user_map,
+# METADATA_FILE, UPLOAD_LOG_FILE, persistent_tasks_file
+# ---------------------------------
+
+# 我们在模块级保留 upload_log_global 的声明，和原来行为一致（worker 使用时仍受 upload_lock 保护）
+upload_log_global = {}
+
+def _load_metadata_and_log() -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """加载 metadata 与 upload_log，并设置 upload_log_global（与原脚本行为一致）"""
+    global upload_log_global
+    metadata_cache: dict = load_json(METADATA_FILE, default={})
+    upload_log: dict = load_json(UPLOAD_LOG_FILE, default={})
+    upload_log_global = upload_log
+    return metadata_cache, upload_log
+
+def _basic_task_checks(key: str, value: Dict[str, Any], video_id_key) -> Tuple[bool, str]:
+    """
+    基本合法性检查。返回 (should_skip(bool), reason(str))。
+    不做任何副作用，只用于上游决定是否跳过。
+    """
+    status = value.get('status', '未处理')
+    if status == 'error':
+        return True, f"⚠️ 跳过 {key}：之前处理失败，已标记"
+    if video_id_key in upload_log_global and upload_log_global[video_id_key].get("upload_info"):
+        return True, f"⏭️ 跳过 {key}：已记录上传成功"
+    metadata = value.get('metadata')
+    if not (isinstance(metadata, list) and metadata):
+        return True, f"⏭️ 跳过 {key}：metadata 字段缺失或格式错误。{metadata}"
+    video_id = metadata[0].get('id')
+    if not video_id:
+        return True, f"⏭️ 跳过 {key}：metadata 中缺少 id。"
+    video_path = value.get('video_path')
+    if not video_path or not os.path.exists(video_path):
+        return True, f"⏭️ 跳过 {key} (ID: {video_id})：视频文件缺失 -> {video_path}"
+
+    best_scheme = value.get('best_scheme') or get_best_plan_by_potential(value.get('title_schemes', {}))
+    if not best_scheme:
+        return True, f"⏭️ 跳过 {key}：无法选取投稿方案。"
+    return False, ""
+
+def _select_config_for_user(userName: str) -> Tuple[str, Any]:
+    """
+    选择 config（保留原逻辑：若 userName 不在 config_map，回退到 'base' 并打印提示）
+    返回实际使用的 userName 与 config
+    """
+    if userName in error_user_map:
+        return "error_user", None
+    if userName not in config_map.keys():
+        print(f"⚠️ 跳过 {userName} 用户上传 请检查配置数据。")
+        userName = 'base'
+    config = config_map.get(userName, config_map['base'])
+    return userName, config
+
+def _preprocess_media_steps(
+    key: str,
+    value: Dict[str, Any],
+    best_scheme: Dict[str, Any],
+    userName: str
+) -> Tuple[str, str, Dict[str, float], List[str]]:
+    """
+    执行视频 / 封面等一系列预处理步骤（复刻原逻辑的顺序与异常处理）。
+    返回：
+      - video_path: 最终用于上传的视频路径
+      - cover_path: 最终用于上传的封面路径
+      - stage_times: 每一步耗时字典
+      - files_to_cleanup: 可能需要清理的临时文件列表（与原脚本相同内容）
+    """
+    stage_times: Dict[str, float] = {}
+    metadata = value.get('metadata', [])
+    generation_options = value.get('generation_options', {}) or {}
+
+    # 初始设定（和原脚本保持一致）
+    video_path = value.get('video_path')
+    current_video_path = video_path
+    duration = metadata[0].get('duration', "00:10")
+    duration = time_str_to_seconds(duration)
+
+    # 初始化可能产生的临时路径变量（与原脚本一致名称）
+    new_video_path = None
+    temp_video_path = None
+    tweak_video_path = None
+    addPrologue_video_path = None
+    template_video_path = None
+
+    # --------- 重制视频分支（原脚本里始终 False） ---------
+    # 保留原来判断（即：永远不会执行），以确保逻辑一致
+    if generation_options.get('remake_video', False) and False:
+        t0 = time.time()
+        print(f"🔄 重制视频 {video_path}... userName: {userName}")
+        try:
+            final_video_path = remake_video_robust(video_path, bgm_library_path='../app/bgm_audio', force_regenerate=True)
+            if final_video_path and os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0:
+                print(f"✅ 重制视频成功，保存为 {final_video_path}")
+                video_path = final_video_path
+                current_video_path = final_video_path
+            else:
+                upload_log_global[key] = upload_log_global.get(key, {})
+                upload_log_global[key]['status'] = 'error'
+                save_json(UPLOAD_LOG_FILE, upload_log_global)
+                print(f"❌ 重制视频失败")
+            stage_times['重制视频'] = time.time() - t0
+        except Exception as e:
+            stage_times['重制视频'] = time.time() - t0
+            upload_log_global[key] = upload_log_global.get(key, {})
+            upload_log_global[key]['status'] = 'error'
+            save_json(UPLOAD_LOG_FILE, upload_log_global)
+            print(f"❌ 重制视频失败：{e}")
+
+    # # ---------- 预处理：在尾部插入引导图片 ----------
+    # new_video_path = current_video_path.replace('.mp4', '_new.mp4')
+    # if duration < 600:
+    #     try:
+    #         t0 = time.time()
+    #         image_duration = int(duration / 100)
+    #         image_duration = max(1, image_duration)
+    #         print(f"🔄 尾部插图处理：视频时长 {duration} 秒，插图持续 {image_duration} 秒。 文件路径：{current_video_path} -> {new_video_path}")
+    #         final_jpg_path = f'{userName}_final.jpg'
+    #         if not os.path.exists(final_jpg_path):
+    #             final_jpg_path = 'final.jpg'
+    #             print(f"⚠️ 尾部插图文件 {final_jpg_path} 不存在，使用默认图片。")
+    #         add_image_to_video_end(current_video_path, final_jpg_path, new_video_path, image_duration)
+    #         video_path = new_video_path
+    #         stage_times['尾部插图'] = time.time() - t0
+    #     except Exception as e:
+    #         stage_times['尾部插图'] = time.time() - t0
+    #         print(f"⚠️ 尾部插图失败，继续使用原视频：{e}")
+
+    # 视频细节调整（当 duration < 600）
+    if duration < 600:
+        tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
+        try:
+            t0 = time.time()
+            result = apply_all_subtle_tweaks(video_path, output_path=tweak_video_path)
+            if os.path.exists(tweak_video_path) and result and os.path.getsize(tweak_video_path) > 0:
+                video_path = tweak_video_path
+                print(f"✅ 视频细节调整成功，保存为 {tweak_video_path}")
+            else:
+                print(f"❌ 视频细节调整失败，继续使用原视频。")
+            stage_times['视频细节调整'] = time.time() - t0
+        except Exception as e:
+            stage_times['视频细节调整'] = time.time() - t0
+            print(f"⚠️ 视频细节调整失败：{e}")
+
+    # 添加结尾片段
+    temp_video_path = video_path.replace('.mp4', '_temp.mp4')
+    try:
+        if generation_options.get('add_epilogue', False):
+            t0 = time.time()
+            print(f"🔄 添加结尾视频片段到 {video_path}... userName: {userName}")
+            copyright_video_path = f'{userName}_final.mp4'
+            if not os.path.exists(copyright_video_path):
+                copyright_video_path = 'final.mp4'
+                print(f"⚠️ 版权视频文件 {copyright_video_path} 不存在，使用默认视频。")
+            video_path_list = [video_path, copyright_video_path]
+            merge_videos_ffmpeg(video_path_list, output_path=temp_video_path)
+            if os.path.exists(temp_video_path) and os.path.getsize(temp_video_path) > 0:
+                video_path = temp_video_path
+                print(f"✅ 合并视频成功，保存为 {temp_video_path}")
+            stage_times['添加结尾片段'] = time.time() - t0
+    except Exception as e:
+        stage_times['添加结尾片段'] = time.time() - t0
+        print(f"⚠️ 合并视频失败：{e}")
+
+    # 封面路径选择（遵循原脚本判断优先级）
+    cover_path = (
+        metadata[0].get('abs_cover_path') if os.path.exists(metadata[0].get('abs_cover_path', ''))
+        else best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
+    )
+
+    # 添加开场白
+    addPrologue_video_path = video_path.replace('.mp4', '_prologue.mp4')
+    if generation_options.get('add_prologue', False):
+        print(f"🔄 添加开场白到 {video_path}... userName: {userName}")
+        try:
+            t0 = time.time()
+            width, height = _get_video_resolution(video_path)
+            resolution = (width, height)
+            addPrologueStr = best_scheme.get('开场白', {}).get('脚本', '')
+            if not addPrologueStr:
+                print(f"⚠️ 开场白脚本为空，跳过添加开场白。")
+
+            temp_video_path = text_image_to_video_with_subtitles(text=addPrologueStr, image_path=cover_path, output_path=addPrologue_video_path, resolution=resolution)
+            if os.path.exists(temp_video_path):
+                print(f"✅ 添加开场白成功，保存为 {temp_video_path}")
+                merge_videos_ffmpeg([temp_video_path, video_path], output_path=addPrologue_video_path)
+                if os.path.exists(addPrologue_video_path) and os.path.getsize(addPrologue_video_path) > 0:
+                    video_path = addPrologue_video_path
+                    print(f"✅ 合并开场白视频成功，保存为 {addPrologue_video_path}")
+            stage_times['添加开场白'] = time.time() - t0
+        except Exception as e:
+            stage_times['添加开场白'] = time.time() - t0
+            print(f"⚠️ 添加开场白失败：{e}")
+
+    # 添加模板
+    template_video_path = video_path.replace('.mp4', '_template.mp4')
+    if generation_options.get('need_template', False):
+        try:
+            t0 = time.time()
+            add_template(video_path, template_video_path, userName)
+            if os.path.exists(template_video_path) and os.path.getsize(template_video_path) > 0:
+                video_path = template_video_path
+                print(f"✅ 添加模板成功，保存为 {template_video_path}")
+            stage_times['添加模板'] = time.time() - t0
+        except Exception as e:
+            stage_times['添加模板'] = time.time() - t0
+            print(f"⚠️ 添加模板失败：{e}")
+
+    # 封面增强处理
+    try:
+        t0 = time.time()
+        output_image_path = cover_path.replace('.jpg', '_enhanced.jpg')
+        create_enhanced_cover(
+            input_image_path=cover_path,
+            output_image_path=output_image_path,
+            text_lines=[best_scheme.get('封面', {}).get('配文', '')],
+        )
+        cover_path = output_image_path if os.path.exists(output_image_path) else cover_path
+        stage_times['封面处理'] = time.time() - t0
+    except Exception as e:
+        stage_times['封面处理'] = time.time() - t0
+        traceback.print_exc()
+        print(f"⚠️  封面处理失败：{e}")
+
+    files_to_cleanup = [
+        video_path,
+        new_video_path,
+        temp_video_path,
+        tweak_video_path,
+        addPrologue_video_path,
+        template_video_path,
+    ]
+    return video_path, cover_path, stage_times, files_to_cleanup
+
+def _build_upload_params(
+    metadata_entry: Dict[str, Any],
+    best_scheme: Dict[str, Any],
+    cover_path: str,
+    video_path: str,
+    config: Any,
+    userName: str
+) -> Dict[str, Any]:
+    """基于 best_scheme 与 metadata 生成 upload_params（保留原逻辑）"""
+    metadata = metadata_entry.get('metadata', [])
+    origin_tag = metadata[0].get('tag', [])
+    if userName == 'ruru' and '娱乐盘点' not in origin_tag:
+        origin_tag.insert(0, '娱乐盘点')  # 放最前面
+    origin_tag.extend(metadata[0].get('text_extra', []))
+
+    title = best_scheme.get('标题', '欢迎来看我的视频！')
+    if len(title) > 80:
+        title = title[:70]
+        print(f"⚠️ 标题过长，已截断为：{title}")
+
+    human_type2 = best_scheme.get('分区编号', 21)
+    topic_json = fetch_bili_topics(config[2], type_pid=human_type2)
+    topic_name = '骑行去追夏天的风'  # 默认话题名称
+    topic_id = 1313687  # 默认话题ID
+    topic_detail = {
+        "from_topic_id": 1313687,
+        "from_source": "arc.web.recommend",
+        'topic_name': '骑行去追夏天的风'
+    }
+    # 尝试获取话题
+    if isinstance(topic_json, dict) and 'data' in topic_json:
+        topics = topic_json.get('data', {}).get('topics', [])
+        if topics:
+            topic_id = topics[0].get('topic_id', human_type2)
+            topic_name = topics[0].get('topic_name', '骑行去追夏天的风')
+            topic_detail['from_topic_id'] = topic_id
+            topic_detail['topic_name'] = topic_name
+    else:
+        print(f"⚠️ 获取分区 {human_type2} 的话题失败，使用默认值。{topic_json}")
+
+    description_json = best_scheme.get('简介', {})
+    target_keys = ["核心看点", "价值承诺", "互动引导", "补充信息"]
+    description = "\n".join(
+        str(description_json[k]) for k in target_keys if k in description_json
+    )
+    tags = best_scheme.get('标签', ['AI修复', '视频剪辑'])
+    origin_tag.extend(tags)
+    tags = list(set(origin_tag))
+    tags = [tag for tag in tags if len(tag) <= 18]
+    tags = tags[:12]
+    tags_str = ",".join(tags) if isinstance(tags, list) else str(tags)
+    dynamic = best_scheme.get('简介', {}).get('互动引导', '希望大家喜欢')
+
+    upload_params = {
+        "title": title,
+        "description": description,
+        "tags": tags_str,
+        "dynamic": dynamic,
+        "cover_path": cover_path,
+        "video_path": video_path,
+        "sessdata": config[0],
+        "bili_jct": config[1],
+        "human_type2": human_type2,
+        "topic_detail": topic_detail,
+        "topic_id": topic_id,
+    }
+    return upload_params
+
 def auto_upload():
     """
     非阻塞版 auto_upload（主线程负责预处理，投稿提交到每个账号的单线程 executor）：
@@ -341,9 +654,8 @@ def auto_upload():
     """
     global upload_log_global
 
-    temp_set = set()  # 临时集合，记录被跳过/需持久化的任务
-    metadata_cache: dict = load_json(METADATA_FILE, default={})
-    upload_log: dict = load_json(UPLOAD_LOG_FILE, default={})
+    temp_set: Set[str] = set()  # 临时集合，记录被跳过/需持久化的任务
+    metadata_cache, upload_log = _load_metadata_and_log()
     upload_log_global = upload_log  # 赋值全局，worker 会在后台修改（受 upload_lock 保护）
 
     if not metadata_cache:
@@ -357,284 +669,129 @@ def auto_upload():
     futures = []  # 保存提交到各账号 executor 的 future（如需等待可用）
     new_uploads_made = False
     error_count = 0
-
+    processed_video_id = []
     # 遍历所有权威元数据任务
     for key, value in metadata_cache.items():
-        start_time = time.time()
-
-        # 先把一些变量初始化，避免后续某些分支引用未定义变量
-        new_video_path = None
-        temp_video_path = None
-        tweak_video_path = None
-        addPrologue_video_path = None
-        template_video_path = None
-
-        stage_times = {}
-        updated_entry = copy.deepcopy(value)
-        status = value.get('status', '未处理')
-        if status == 'error':
-            print(f"⚠️ 跳过 {key}：之前处理失败，已标记")
-            error_count += 1
+        if key in processed_video_id:
             continue
-
-        # 已记录上传成功则跳过
-        if key in upload_log_global and upload_log_global[key].get("upload_info"):
-            continue
-
-        # 基本合法性检查
-        metadata = value.get('metadata')
         userName = value.get('userName', 'other')
+
+        start_time = time.time()
+        best_score_max = float('-inf')
+        should_skip = False
+        # 先把一些变量初始化（与原脚本一致）
+        updated_entry = copy.deepcopy(value)
+        video_id_list = value.get('video_id_list', [key])
+        # 排序video_id_list
+        video_id_list = sorted(video_id_list)
+        video_id_key = '_'.join(video_id_list)
+        processed_video_id.extend(video_id_list)
+
+        for video_id in video_id_list:
+            value_info = metadata_cache.get(video_id, {})
+            # 基本检查（同原逻辑）
+            should_skip, reason = _basic_task_checks(video_id, value_info, video_id_key)
+            if should_skip:
+                if '已记录上传成功' in reason:
+                    continue
+                # 某些检查需要增加 error_count 或打印额外信息（与原脚本行为一致）
+                if '之前处理失败' in reason:
+                    print(f"{reason} {userName}")
+                    error_count += 1
+                    break
+                else:
+                    print(f"{reason} {userName}")
+                    # 如果是 metadata 格式错误或缺少 id 或视频不存在等情况，直接 continue
+                    break
+
+        if should_skip:
+            continue
+
+
+        metadata = value.get('metadata')
         if userName in error_user_map:
             print(f"⚠️ 跳过 {userName} 用户上传：之前上传失败，错误信息：{error_user_map[userName]}")
             error_count += 1
             continue
+
+        # 选择 config（保留原逻辑）
         if userName not in config_map.keys():
             print(f"⚠️ 跳过 {userName} 用户上传 请检查配置数据。")
-            # 按原逻辑将 userName 兜到底层 base
             userName = 'base'
+            continue
         config = config_map.get(userName, config_map['base'])
         print(f"🔍 处理 {key} (用户: {userName})")
-
-        if not (isinstance(metadata, list) and metadata):
-            print(f"⏭️ 跳过 {key}：metadata 字段缺失或格式错误。{metadata}")
-            continue
-
-        # 选择最佳投稿方案
-        best_scheme = value.get('best_scheme') or get_best_plan_by_potential(value.get('title_schemes', {}))
-        if not best_scheme:
-            print(f"⏭️ 跳过 {key}：无法选取投稿方案。")
-            temp_set.add(key)
-            continue
-
-        video_id = metadata[0].get('id')
-        if not video_id:
-            print(f"⏭️ 跳过 {key}：metadata 中缺少 id。")
-            continue
-
-        video_path = value.get('video_path')
-        duration = metadata[0].get('duration', "00:10")
-        duration = time_str_to_seconds(duration)
-        if not video_path or not os.path.exists(video_path):
-            print(f"⏭️ 跳过 {key} (ID: {video_id})：视频文件缺失 -> {video_path}")
-            continue
-
-        current_video_path = video_path  # 默认使用原路径
-        generation_options = value.get('generation_options', {})
-
-        # （保留你原来的“重制视频”分支，但默认仍为 False）
-        if generation_options.get('remake_video', False) and False:
-            t0 = time.time()
-            print(f"🔄 重制视频 {video_path}... userName: {userName}")
-            try:
-                final_video_path = remake_video_robust(video_path, bgm_library_path='../app/bgm_audio', force_regenerate=True)
-                if final_video_path and os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0:
-                    print(f"✅ 重制视频成功，保存为 {final_video_path}")
-                    video_path = final_video_path
-                    current_video_path = final_video_path
-                else:
-                    upload_log_global[key] = upload_log_global.get(key, {})
-                    upload_log_global[key]['status'] = 'error'
-                    save_json(UPLOAD_LOG_FILE, upload_log_global)
-                    print(f"❌ 重制视频失败")
-                    error_count += 1
-                    stage_times['重制视频'] = time.time() - t0
-                    continue
-                stage_times['重制视频'] = time.time() - t0
-            except Exception as e:
-                stage_times['重制视频'] = time.time() - t0
-                upload_log_global[key] = upload_log_global.get(key, {})
-                upload_log_global[key]['status'] = 'error'
-                save_json(UPLOAD_LOG_FILE, upload_log_global)
-                print(f"❌ 重制视频失败：{e}")
-                error_count += 1
+        video_path_list = []
+        best_scheme_final = None
+        best_cover_path = None
+        all_files_to_cleanup = []
+        for video_id in video_id_list:
+            video_info = metadata_cache.get(video_id, {})
+            # 选择最佳投稿方案
+            best_scheme = value.get('best_scheme') or get_best_plan_by_potential(video_info.get('title_schemes', {}))
+            if not best_scheme:
+                print(f"⏭️ 跳过 {key}：无法选取投稿方案。")
+                temp_set.add(key)
                 continue
 
-        # ---------- 预处理：在尾部插入引导图片 ----------
-        new_video_path = current_video_path.replace('.mp4', '_new.mp4')
-        if duration < 600:
-            try:
-                t0 = time.time()
-                image_duration = int(duration / 100)
-                image_duration = max(1, image_duration)
-                print(f"🔄 尾部插图处理：视频时长 {duration} 秒，插图持续 {image_duration} 秒。 文件路径：{current_video_path} -> {new_video_path}")
-                final_jpg_path = f'{userName}_final.jpg'
-                if not os.path.exists(final_jpg_path):
-                    final_jpg_path = 'final.jpg'
-                    print(f"⚠️ 尾部插图文件 {final_jpg_path} 不存在，使用默认图片。")
-                add_image_to_video_end(current_video_path, final_jpg_path, new_video_path, image_duration)
-                video_path = new_video_path
-                stage_times['尾部插图'] = time.time() - t0
-            except Exception as e:
-                stage_times['尾部插图'] = time.time() - t0
-                print(f"⚠️ 尾部插图失败，继续使用原视频：{e}")
+            score = best_scheme.get("增长潜力", {}).get("爆款潜力指数", 0)
+            score = float(score)
 
-        # 视频细节调整（当 duration < 600）
-        if duration < 600:
-            tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
+
+            print(f"\n⏳ {userName} 开始处理任务 {key}，视频ID列表：{video_id_list}，时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+            # 执行一系列的媒体预处理与封面处理
             try:
-                t0 = time.time()
-                result = apply_all_subtle_tweaks(video_path, output_path=tweak_video_path)
-                if os.path.exists(tweak_video_path) and result and os.path.getsize(tweak_video_path) > 0:
-                    video_path = tweak_video_path
-                    print(f"✅ 视频细节调整成功，保存为 {tweak_video_path}")
+                video_path, cover_path, stage_times, files_to_cleanup = _preprocess_media_steps(video_id, video_info, best_scheme, userName)
+                if score > best_score_max:
+                    best_score_max = score
+                    best_scheme_final = best_scheme
+                    # 将video_path插入video_path_list第一个
+                    best_cover_path = cover_path
+                    video_path_list.insert(0, video_path)
                 else:
-                    print(f"❌ 视频细节调整失败，继续使用原视频。")
-                stage_times['视频细节调整'] = time.time() - t0
+                    video_path_list.append(video_path)
+                all_files_to_cleanup.extend(files_to_cleanup)
             except Exception as e:
-                stage_times['视频细节调整'] = time.time() - t0
-                print(f"⚠️ 视频细节调整失败：{e}")
+                # 严格保持原脚本在异常处的行为：记录错误并继续
+                print(f"⚠️ 处理媒体过程中出现异常：{e} {video_id} {userName}")
+                traceback.print_exc()
+                error_count += 1
+                break
+        final_output_path = video_path.replace('.mp4', '_final.mp4')
+        merge_videos_ffmpeg(video_path_list, output_path=final_output_path)
+        if os.path.exists(final_output_path) and os.path.getsize(final_output_path) > 0:
+            duration = probe_duration(final_output_path)
 
-        # 添加结尾片段
-        temp_video_path = video_path.replace('.mp4', '_temp.mp4')
-        try:
-            if generation_options.get('add_epilogue', False):
-                t0 = time.time()
-                print(f"🔄 添加结尾视频片段到 {video_path}... userName: {userName}")
-                copyright_video_path = f'{userName}_final.mp4'
-                if not os.path.exists(copyright_video_path):
-                    copyright_video_path = 'final.mp4'
-                    print(f"⚠️ 版权视频文件 {copyright_video_path} 不存在，使用默认视频。")
-                video_path_list = [video_path, copyright_video_path]
-                merge_videos_ffmpeg(video_path_list, output_path=temp_video_path)
-                if os.path.exists(temp_video_path) and os.path.getsize(temp_video_path) > 0:
-                    video_path = temp_video_path
-                    print(f"✅ 合并视频成功，保存为 {temp_video_path}")
-                stage_times['添加结尾片段'] = time.time() - t0
-        except Exception as e:
-            stage_times['添加结尾片段'] = time.time() - t0
-            print(f"⚠️ 合并视频失败：{e}")
+            # ---------- 预处理：在尾部插入引导图片 ----------
+            new_video_path = final_output_path.replace('.mp4', '_new.mp4')
+            if duration < 600:
+                try:
+                    t0 = time.time()
+                    image_duration = int(duration / 100)
+                    image_duration = max(1, image_duration)
+                    print(
+                        f"🔄 尾部插图处理：视频时长 {duration} 秒，插图持续 {image_duration} 秒。 文件路径：{final_output_path} -> {new_video_path}")
+                    final_jpg_path = f'{userName}_final.jpg'
+                    if not os.path.exists(final_jpg_path):
+                        final_jpg_path = 'final.jpg'
+                        print(f"⚠️ 尾部插图文件 {final_jpg_path} 不存在，使用默认图片。")
+                    add_image_to_video_end(final_output_path, final_jpg_path, new_video_path, image_duration)
+                    final_output_path = new_video_path
+                except Exception as e:
+                    print(f"⚠️ 尾部插图失败，继续使用原视频：{e}")
 
-        # 封面路径选择
-        cover_path = (
-            metadata[0].get('abs_cover_path') if os.path.exists(metadata[0].get('abs_cover_path', ''))
-            else best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
-        )
-
-        # 添加开场白
-        addPrologue_video_path = video_path.replace('.mp4', '_prologue.mp4')
-        if generation_options.get('add_prologue', False):
-            print(f"🔄 添加开场白到 {video_path}... userName: {userName}")
-            try:
-                t0 = time.time()
-                width, height = _get_video_resolution(video_path)
-                resolution = (width, height)
-                addPrologueStr = best_scheme.get('开场白', {}).get('脚本', '')
-                if not addPrologueStr:
-                    print(f"⚠️ 开场白脚本为空，跳过添加开场白。")
-
-                temp_video_path = text_image_to_video_with_subtitles(text=addPrologueStr, image_path=cover_path, output_path=addPrologue_video_path, resolution=resolution)
-                if os.path.exists(temp_video_path):
-                    print(f"✅ 添加开场白成功，保存为 {temp_video_path}")
-                    merge_videos_ffmpeg([temp_video_path, video_path], output_path=addPrologue_video_path)
-                    if os.path.exists(addPrologue_video_path) and os.path.getsize(addPrologue_video_path) > 0:
-                        video_path = addPrologue_video_path
-                        print(f"✅ 合并开场白视频成功，保存为 {addPrologue_video_path}")
-                stage_times['添加开场白'] = time.time() - t0
-            except Exception as e:
-                stage_times['添加开场白'] = time.time() - t0
-                print(f"⚠️ 添加开场白失败：{e}")
-
-        # 添加模板
-        template_video_path = video_path.replace('.mp4', '_template.mp4')
-        if generation_options.get('need_template', False):
-            try:
-                t0 = time.time()
-                add_template(video_path, template_video_path, userName)
-                if os.path.exists(template_video_path) and os.path.getsize(template_video_path) > 0:
-                    video_path = template_video_path
-                    print(f"✅ 添加模板成功，保存为 {template_video_path}")
-                stage_times['添加模板'] = time.time() - t0
-            except Exception as e:
-                stage_times['添加模板'] = time.time() - t0
-                print(f"⚠️ 添加模板失败：{e}")
-
-        # 封面增强处理
-        try:
-            t0 = time.time()
-            output_image_path = cover_path.replace('.jpg', '_enhanced.jpg')
-            create_enhanced_cover(
-                input_image_path=cover_path,
-                output_image_path=output_image_path,
-                text_lines=[best_scheme.get('封面', {}).get('配文', '')],
-            )
-            cover_path = output_image_path if os.path.exists(output_image_path) else cover_path
-            stage_times['封面处理'] = time.time() - t0
-        except Exception as e:
-            stage_times['封面处理'] = time.time() - t0
-            traceback.print_exc()
-            print(f"⚠️  封面处理失败：{e}")
-
-        # tags / title / description 等
-        origin_tag = metadata[0].get('tag', [])
-        if userName == 'ruru' and '娱乐盘点' not in origin_tag:
-            origin_tag.insert(0, '娱乐盘点')  # 放最前面
-        origin_tag.extend(metadata[0].get('text_extra', []))
-        title = best_scheme.get('标题', '欢迎来看我的视频！')
-        if len(title) > 80:
-            title = title[:70]
-            print(f"⚠️ 标题过长，已截断为：{title}")
-        human_type2 = best_scheme.get('分区编号', 21)
-        topic_json = fetch_bili_topics(config[2], type_pid=human_type2)
-        topic_name = '骑行去追夏天的风'  # 默认话题名称
-        topic_id = 1313687  # 默认话题ID
-        topic_detail = {
-            "from_topic_id": 1313687,
-            "from_source": "arc.web.recommend",
-            'topic_name': '骑行去追夏天的风'
-        }
-        # 尝试获取话题
-        if isinstance(topic_json, dict) and 'data' in topic_json:
-            topics = topic_json.get('data', {}).get('topics', [])
-            if topics:
-                topic_id = topics[0].get('topic_id', human_type2)
-                topic_name = topics[0].get('topic_name', '骑行去追夏天的风')
-                topic_detail['from_topic_id'] = topic_id
-                topic_detail['topic_name'] = topic_name
-        else:
-            print(f"⚠️ 获取分区 {human_type2} 的话题失败，使用默认值。{topic_json}")
-
-        description_json = best_scheme.get('简介', {})
-        target_keys = ["核心看点", "价值承诺", "互动引导", "补充信息"]
-        description = "\n".join(
-            str(description_json[k]) for k in target_keys if k in description_json
-        )
-        tags = best_scheme.get('标签', ['AI修复', '视频剪辑'])
-        origin_tag.extend(tags)
-        tags = list(set(origin_tag))
-        tags = [tag for tag in tags if len(tag) <= 18]
-        tags = tags[:12]
-        tags_str = ",".join(tags) if isinstance(tags, list) else str(tags)
-        dynamic = best_scheme.get('简介', {}).get('互动引导', '希望大家喜欢')
-
-        upload_params = {
-            "title": title,
-            "description": description,
-            "tags": tags_str,
-            "dynamic": dynamic,
-            "cover_path": cover_path,
-            "video_path": video_path,
-            "sessdata": config[0],
-            "bili_jct": config[1],
-            "human_type2": human_type2,
-            "topic_detail": topic_detail,
-            "topic_id": topic_id,
-        }
+        all_files_to_cleanup.append(final_output_path)
+        # 构建上传参数（title/description/tags/topic 等）
+        upload_params = _build_upload_params(value, best_scheme_final, best_cover_path, final_output_path, config, userName)
 
         # ---------- 非阻塞提交上传（按账号串行） ----------
-        print(f"🚀 准备为用户 {userName} 后台投稿 {key} (ID: {video_id}) - 《{title}》（按账号串行）")
-        files_to_cleanup = [
-            upload_params.get("video_path"),
-            new_video_path,
-            temp_video_path,
-            tweak_video_path,
-            addPrologue_video_path,
-            template_video_path,
-        ]
+        print(f"🚀 准备为用户 {userName} 后台投稿 {key} (ID: {video_id_key}) - 《{upload_params.get('title')}》（按账号串行）")
+
         task_stage_times = dict(stage_times)
 
         # 获取该账号的 executor（默认每账号单线程）
         account_executor = account_executors[userName]
-        future = account_executor.submit(upload_worker, upload_params, key, updated_entry, files_to_cleanup, task_stage_times, userName)
+        future = account_executor.submit(upload_worker, upload_params, video_id_key, updated_entry, all_files_to_cleanup, task_stage_times, userName)
         futures.append(future)
         new_uploads_made = True
 
@@ -653,6 +810,7 @@ def auto_upload():
         save_json(persistent_tasks_file, list(persistent_tasks))
 
     print(f"错误数量为{error_count}  全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+
 
 
 
