@@ -172,6 +172,7 @@ def gen_final_property_replay(video_info, all_replay_info):
     """
     根据视频信息生成合适的商品信息
     """
+    all_resource_title = [replay.get('title', '') for replay in all_replay_info]
     format_property_replay_list = []
     for replay in all_replay_info:
         temp_dict = {}
@@ -199,7 +200,7 @@ def gen_final_property_replay(video_info, all_replay_info):
 
     format_video_info['resources'] = format_property_replay_list
 
-    prompt = f"{final_prompt}\n输入信息如下:\n{format_video_info}"
+    prompt = f"{final_prompt}\n输入信息如下:\n{format_video_info}\ntitle字段必须是{all_resource_title}中的值，要为三个不同的的title生成评论"
 
     raw = ""
     for attempt in range(1, max_retries + 1):
@@ -397,7 +398,8 @@ def send_replay_comment(
     print(f"找到 {len(sorted_recs)} 条商品推荐，按预估点击率和评分排序。过滤前推荐数量: {len(recommendations)}")
     # 2. 获取完整商品信息列表
     property_goods = all_replay_info
-
+    # 将sorted_recs打乱顺序
+    random.shuffle(sorted_recs)
     for rec in sorted_recs:
         title: str = rec.get('title', '')
         if not title:
@@ -421,7 +423,7 @@ def send_replay_comment(
         key_list = key1.split('，')
         message_list = target_good.get('message', [])
         message = random.choice(message_list) if message_list else ''
-        comment_body = f"{pinned_text}\n{message}\n资料已经整理完毕，私信回复 {key_list[0]} 这{len(key_list[0])}个字，即可领取"
+        comment_body = f"{pinned_text}\n{message}\n收集整理的内容希望能够对大家有帮助\n资料已经整理完毕，私信回复 {key_list[0]} 这{len(key_list[0])}个字，即可领取"
         # comment_body = f"{pinned_text}\n{message}"
 
         # 4. 发布评论
@@ -569,7 +571,7 @@ def process_user(user):
         start_time = time.time()
         print(f"[{time.strftime('%X')}] 子进程开始处理用户: {user}")
         add_replay_comment_for_video(user)
-        # auto_replay_refactored(user)
+        auto_replay_refactored(user)
         print(f"[{time.strftime('%X')}] 子进程完成用户: {user} 处理，耗时: {time.time() - start_time:.2f} 秒")
     except Exception as e:
         print(f"[{time.strftime('%X')}] 子进程处理用户 {user} 时出错: {e}")

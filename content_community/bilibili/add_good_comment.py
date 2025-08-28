@@ -632,7 +632,7 @@ def add_good_comment_for_video(user_name='qiqi'):
     all_params = config_map[uid].get('all_params', {})
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token,all_params=all_params)
     temp_found_videos = bvid_file_data.get(user_name, [])
-    temp_found_videos = temp_found_videos[:20]
+    temp_found_videos = temp_found_videos[:10]
     metadata_cache_with_uploads_back = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
     metadata_cache_with_uploads = read_json(
         '../../LLM/TikTokDownloader/metadata_cache_with_uploads0817.json')
