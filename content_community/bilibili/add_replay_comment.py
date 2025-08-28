@@ -423,7 +423,31 @@ def send_replay_comment(
         key_list = key1.split('，')
         message_list = target_good.get('message', [])
         message = random.choice(message_list) if message_list else ''
-        comment_body = f"{pinned_text}\n{message}\n收集整理的内容希望能够对大家有帮助\n资料已经整理完毕，私信回复 {key_list[0]} 这{len(key_list[0])}个字，即可领取"
+
+        casual_phrases = [
+            "我把东西都整理好了，大家随便拿～",
+            "资料收拾好了，你们要哪个直接说。",
+            "都整理好啦，想要的来拿走不谢（开玩笑）。",
+            "资料已搞定，有需要的立刻来取～",
+            "我把资料整齐放好啦，大家慢慢看。",
+            "资料备好啦，需要的私信/评论喊我。",
+            "好东西已经打包完毕，来取吧。",
+            "我把资料整理成包了，想要的直接私聊。",
+            "资源已整理，大家随用。",
+            "资料已备齐，想拿走就来。",
+            "希望这些整理好的内容对大家有帮助。",
+            "我已把重要资料归类，便于大家查阅。",
+            "所有资料已按主题整理，方便快速获取。",
+            "资料已整理并校对完毕，如有错误请指出。",
+            "内容已整理完成，若发现问题请反馈。",
+            "资料已整理并标注来源，供参考与分享。",
+            "我已整理好资料并附上使用说明/阅读建议。",
+            "资料包已整理，包含目录与快速链接，便于查找。",
+            "资料已整合，欢迎大家检索并交流使用经验。",
+            "我已完成资料汇总，后续会定期更新并发布变更日志。"
+        ]
+        phrase = random.choice(casual_phrases)
+        comment_body = f"{pinned_text}\n{message}\n{phrase}\n资料已经整理完毕，私信回复 {key_list[0]} 这{len(key_list[0])}个字，即可领取"
         # comment_body = f"{pinned_text}\n{message}"
 
         # 4. 发布评论
