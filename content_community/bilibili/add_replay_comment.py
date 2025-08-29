@@ -94,12 +94,14 @@ final_prompt = """
 ```
 """
 
+
 def diff_replay_lists(current_replay_info, local_replay_info):
     """
     返回 (only_in_current, only_in_local)
     比较准则：只有当 'title','reply','key1','key2' 四个字段完全相同才视为相同条目（逐字符比较）。
     返回的列表保持原始输入顺序，元素为原始字典（未深拷贝，但未修改）。
     """
+
     def key(item):
         return (
             item.get('title'),
@@ -107,18 +109,21 @@ def diff_replay_lists(current_replay_info, local_replay_info):
             item.get('key1'),
             item.get('key2'),
         )
+
     local_keys = set(key(i) for i in local_replay_info)
     current_keys = set(key(i) for i in current_replay_info)
     only_in_current = [i for i in current_replay_info if key(i) not in local_keys]
     only_in_local = [i for i in local_replay_info if key(i) not in current_keys]
     return only_in_current, only_in_local
 
+
 def maintenance_replay(cookie):
     """
     维护指定用户的自动回复关键词，会和replay_info.json严格保持一致
     """
     try:
-        result = update_bili_user_sign(cookie, "私信发送 福利 有惊喜哦！！")
+        result = update_bili_user_sign(cookie,
+                                       "推荐一个工具，能够帮忙获取各种资源，破解游戏，破解app，付费教程等资源，只要是网上的资源都能够免费获取。私信发送 工具 获取！！")
         print(f"更新用户签名结果: {result}")
         # 打开自动回复
         keys_reply_value = '1'
@@ -130,13 +135,13 @@ def maintenance_replay(cookie):
         current_replay_info = get_bili_reply_text(cookie)
         current_replay_info = current_replay_info.get('data', {}).get('texts', [])
         only_in_current, only_in_local = diff_replay_lists(current_replay_info, local_replay_info)
-        print(f"当前回复关键词数量: {len(current_replay_info)} 待删除的数量: {len(only_in_current)} 待添加的数量: {len(only_in_local)}")
+        print(
+            f"当前回复关键词数量: {len(current_replay_info)} 待删除的数量: {len(only_in_current)} 待添加的数量: {len(only_in_local)}")
 
         for current in only_in_current:
             target_id = current.get('id')
             result = del_bili_reply_text(target_id, cookie)
             print(f"删除回复关键词 {target_id} 结果: {result}")
-
 
         for local in only_in_local:
             title = local.get('title', '')
@@ -154,19 +159,35 @@ def maintenance_replay(cookie):
         for local_replay in local_replay_info:
             reply = local_replay.get('reply', '')
             total_reply += reply + '\n\n'
-        result = set_bili_reply(title=total_title, reply=total_reply, key1=total_key1, key2=total_key2, cookie_str=cookie)
+
+        common_str = """
+如果没有你想要的内容，关注工具服务号获取最新内容，也能够直接帮你寻找内容
+内容直达，问题立解📲。
+想要就问，我们帮你找🔎。
+抢先推送，别再错过🔥。
+点我关注👇
+
+https://mp.weixin.qq.com/s/AVXadSsiqroC-Qh8USDzSA
+        """
+
+        total_reply += common_str
+        result = set_bili_reply(title=total_title, reply=total_reply, key1=total_key1, key2=total_key2,
+                                cookie_str=cookie)
         print(f'添加总回复关键词 {total_title} 结果: {result}')
 
-        result = set_bili_reply(title=total_title, reply=total_reply, key1=total_key1, key2=total_key2, cookie_str=cookie,replay_type=3)
+        result = set_bili_reply(title=total_title, reply=total_reply, key1=total_key1, key2=total_key2,
+                                cookie_str=cookie, replay_type=3)
         print(f'添加收到消息 {total_title} 结果: {result}')
     except Exception as e:
         print(f"维护回复关键词时发生错误: {e}")
         traceback.print_exc()
 
+
 def load_all_replay_info():
     local_replay_info_file = f'{BASE_DIR}/replay_info.json'
     local_replay_info = read_json(local_replay_info_file)
     return local_replay_info
+
 
 def gen_final_property_replay(video_info, all_replay_info):
     """
@@ -369,10 +390,11 @@ def auto_replay_refactored(user_name: str):
     except Exception as e:
         print(f"最终保存文件时出错: {e}")
 
+
 def send_replay_comment(
-    commenter: Any,
-    bvid: str,
-    record_info
+        commenter: Any,
+        bvid: str,
+        record_info
 ):
     """
     发送商品评论到指定的 B 站视频，并将评论置顶。
@@ -467,13 +489,15 @@ def send_replay_comment(
             # 将shill_comments打乱
             random.shuffle(shill_comments)
             record_info['shill_comments'] = shill_comments
-            print(f"✅ 已成功发送并置顶商品评论: 视频 {bvid}，商品 {title} “{rec.get('title', '')}” comment_body: {comment_body}")
+            print(
+                f"✅ 已成功发送并置顶商品评论: 视频 {bvid}，商品 {title} “{rec.get('title', '')}” comment_body: {comment_body}")
             time.sleep(60)
             return rpid, target_good.get('title', '')
 
     # 如果所有推荐都处理完仍未成功
     print(f"⚠️ 未能发送或置顶任何商品评论到视频 {bvid}")
     return None, None
+
 
 def add_replay_comment_for_video(user_name='qiqi'):
     """
@@ -495,7 +519,7 @@ def add_replay_comment_for_video(user_name='qiqi'):
     total_cookie = config_map[uid]['total_cookie']
     csrf_token = config_map[uid].get('BILI_JCT', '')
     all_params = config_map[uid].get('all_params', {})
-    commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token,all_params=all_params)
+    commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token, all_params=all_params)
     temp_found_videos = bvid_file_data.get(user_name, [])
     temp_found_videos = temp_found_videos[:10]
     metadata_cache_with_uploads_back = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
@@ -565,6 +589,7 @@ def add_replay_comment_for_video(user_name='qiqi'):
             all_records[bvid]['error_message'] = str(e)
             save_json_safe(all_records_file, all_records)
 
+
 def gen_all_type_image():
     all_replay_info = load_all_replay_info()
     current_date = datetime.date.today().isoformat()
@@ -611,6 +636,7 @@ def run_once(username_list):
 
     print("--- 所有用户处理完成 ---")
 
+
 def test_comment():
     config = init_config()
     commenters = _initialize_commenters(config, user_to_exclude='oo')
@@ -634,28 +660,26 @@ def test_comment():
         else:
             print(f"{key} 弹幕发送流程失败。")
 
+
 if __name__ == '__main__':
     # test_comment()
 
-
     # gen_all_type_image()
 
-
-    username_list = [ 'mama', 'nana', 'ruru', 'jie', 'jun', 'xiaosu', 'yan', 'xiaohao', 'chabian']
+    username_list = ['mama', 'nana', 'ruru', 'jie', 'jun', 'xiaosu', 'yan', 'xiaohao', 'chabian']
     cookie_list = [get_config('jie_bilibili_total_cookie')]
     username_list = ['jj', 'lin']
     # username_list = ['mama']
     config = init_config()
-    for key,value in config.items():
+    for key, value in config.items():
         # if 'ruru' == value['name']:
         #     continue
         username_list.append(value['name'])
         cookie_list.append(value['total_cookie'])
 
-
+    # cookie_list = list(set(cookie_list))
     # for cookie in cookie_list:
     #     maintenance_replay(cookie)
-
 
 
     # 无限循环：每轮执行一次 run_once
