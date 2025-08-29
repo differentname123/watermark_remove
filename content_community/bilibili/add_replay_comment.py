@@ -646,11 +646,11 @@ if __name__ == '__main__':
     username_list = ['jj', 'lin']
     # username_list = ['mama']
     config = init_config()
-    # for key,value in config.items():
-    #     # if 'ruru' == value['name']:
-    #     #     continue
-    #     username_list.append(value['name'])
-    #     cookie_list.append(value['total_cookie'])
+    for key,value in config.items():
+        # if 'ruru' == value['name']:
+        #     continue
+        username_list.append(value['name'])
+        cookie_list.append(value['total_cookie'])
 
 
     # for cookie in cookie_list:
@@ -660,6 +660,8 @@ if __name__ == '__main__':
 
     # 无限循环：每轮执行一次 run_once
     while True:
+        # 去重username_list
+        username_list = list(set(username_list))
         # 打乱username_list顺序
         random.shuffle(username_list)
         start_time = time.time()

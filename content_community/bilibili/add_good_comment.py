@@ -1098,7 +1098,6 @@ def auto_replay_refactored(user_name: str):
 
     for bvid, record in all_records.items():
         processed_count += 1
-        print(f"\n[{processed_count}/{total_records}] 正在处理视频 BVID: {bvid}...")
 
         # 3.1. 前置检查
         skip_reason = _should_skip_video(record, bvid, today)
@@ -1112,6 +1111,7 @@ def auto_replay_refactored(user_name: str):
             all_records[bvid] = record
             continue
 
+        print(f"\n[{processed_count}/{total_records}] 正在处理视频 BVID: {bvid}...")
         # 3.2. 核心处理逻辑
         try:
             updated_record = _process_single_video(bvid, record, commenter_pool, today)
