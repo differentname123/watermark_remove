@@ -14,12 +14,16 @@ import json
 import threading
 from queue import Queue, Empty
 from content_community.bilibili.get_comment import get_bilibili_comments
-from common_utils.common_utils import get_config, init_config
+from common_utils.common_utils import get_config, init_config, merge_json_files
 # 评论相关代码保留，但暂时不使用
 from content_community.bilibili.comment import BilibiliCommenter
 from content_community.bilibili.get_danmu import gen_proper_comment
 from content_community.bilibili.watch_video import watch_video
 
+bvid_file_path = '../../LLM/TikTokDownloader/back_up/bvid_file.json'
+all_bvid_file_path = '../../LLM/TikTokDownloader/back_up/all_bvid_file.json'
+
+interaction_data_file = '../../LLM/TikTokDownloader/back_up/interaction_data.json'
 
 
 # --- 1. 全局常量 ---
@@ -1214,13 +1218,10 @@ def fun():
             )
             print(f"已创建评论者 {name} (UID: {key})")
 
-        interaction_data = load_processed_dict('../../LLM/TikTokDownloader/interaction_data.json')
-        metadata_cache_with_uploads = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
-        metadata_cache_with_uploads_back = load_processed_dict('../../LLM/TikTokDownloader/metadata_cache_with_uploads0828.json')
-        metadata_cache_with_uploads_back.update(metadata_cache_with_uploads)
-        metadata_cache_with_uploads = metadata_cache_with_uploads_back
-        bvid_file_path = 'bvid_file.json'
+        interaction_data = load_processed_dict(interaction_data_file)
+        metadata_cache_with_uploads = merge_json_files('../../LLM/TikTokDownloader/back_up', "metadata_cache_with_uploads")
         bvid_file_data = load_processed_dict(bvid_file_path)
+        all_bvid_file_data = load_processed_dict(all_bvid_file_path)
 
         bvid_uid_map = {}
         all_found_videos = []
@@ -1229,11 +1230,15 @@ def fun():
             if uid in ['443415885']:
                 continue
             logging.info(f"  > 正在获取UP主(UID: {uid} {name})的最新动态...")
-            temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=50)
+            temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=1000)
             bvid_uid_map.update({video.get('bvid'): uid for video in temp_found_videos if 'bvid' in video})
             all_found_videos.extend(temp_found_videos)
             bvid_file_data[name] = temp_found_videos
-        save_json(bvid_file_path, bvid_file_data)
+            for video in temp_found_videos:
+                all_bvid_file_data[video.get('bvid')] = video
+
+            save_json(all_bvid_file_path, all_bvid_file_data)
+            save_json(bvid_file_path, bvid_file_data)
 
         all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
         all_found_videos = all_found_videos[:100]
@@ -1250,7 +1255,7 @@ def fun():
 
             hudong_info = process_single_video(bvid, hudong_info, uid, commenter_map, today)
             interaction_data[bvid] = {'hudong': hudong_info}
-            save_json('../../LLM/TikTokDownloader/interaction_data.json', interaction_data)
+            save_json(interaction_data_file, interaction_data)
             print(f"视频 {bvid} 的互动信息已生成并保存。耗时: {time.time() - start_time:.2f} 秒")
             if stop_event.is_set():
                 print("检测到停止请求，退出当前任务...")

@@ -1608,3 +1608,22 @@ def process_product_title(title_string: str) -> dict:
 
     # 3. 返回结构化的结果
     return clean_text
+
+
+def merge_json_files(path_dir, target_name):
+    """将目录下以 target_name 开头的文件汇总成一个字典并返回"""
+    # 获取目录下所有符合条件的文件路径
+    file_paths = [os.path.join(path_dir, f) for f in os.listdir(path_dir) if f.startswith(target_name)]
+    print("找到的文件列表：", len(file_paths))
+    # 按照文件的修改时间排序
+    file_paths.sort(key=lambda x: os.path.getmtime(x))
+
+    # 创建一个空字典来汇总数据
+    merged_dict = {}
+
+    # 逐个读取文件并更新字典
+    for file_path in file_paths:
+        file_data = read_json(file_path)
+        merged_dict.update(file_data)
+
+    return merged_dict

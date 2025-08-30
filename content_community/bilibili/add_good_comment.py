@@ -10,7 +10,8 @@ from typing import Any, Dict, List, Optional
 from multiprocessing import Pool
 
 from LLM.gemini import get_llm_content
-from common_utils.common_utils import read_json, get_config, save_json_safe, init_config, process_product_title
+from common_utils.common_utils import read_json, get_config, save_json_safe, init_config, process_product_title, \
+    merge_json_files
 from content_community.bilibili.add_good_comment_kouling import search_goods
 from content_community.bilibili.bili_utils import fetch_goods, update_short_url, list_selection_car_items
 from content_community.bilibili.comment import BilibiliCommenter
@@ -21,7 +22,7 @@ from common_utils.common_utils import string_to_object, save_json_safe, read_jso
 from content_community.taobao.taobao_utils import add_to_favorites, creat_and_favorite
 
 BASE_DIR = 'goods_info'
-
+bvid_file_path = '../../LLM/TikTokDownloader/back_up/bvid_file.json'
 
 # success_bvids_file = f"{BASE_DIR}/all_goods_bvid.json"
 
@@ -616,7 +617,6 @@ def add_good_comment_for_video(user_name='qiqi'):
     """
     为视频增加合适的商品链接
     """
-    bvid_file_path = 'bvid_file.json'
     bvid_file_data = read_json(bvid_file_path)
     print(f"\n\n开始为用户 {user_name} 的视频增加商品评论...")
     config_map = init_config()
@@ -634,10 +634,8 @@ def add_good_comment_for_video(user_name='qiqi'):
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token,all_params=all_params)
     temp_found_videos = bvid_file_data.get(user_name, [])
     temp_found_videos = temp_found_videos[:10]
-    metadata_cache_with_uploads_back = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
-    metadata_cache_with_uploads = read_json(
-        '../../LLM/TikTokDownloader/metadata_cache_with_uploads0817.json')
-    metadata_cache_with_uploads.update(metadata_cache_with_uploads_back)
+
+    metadata_cache_with_uploads = merge_json_files('../../LLM/TikTokDownloader/back_up', "metadata_cache_with_uploads")
     all_records = read_json(all_records_file)
     success_bvids = []
     for rec in all_records.values():

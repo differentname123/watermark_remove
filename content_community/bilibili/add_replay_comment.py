@@ -9,7 +9,8 @@ from typing import Any, Dict, List, Optional
 from multiprocessing import Pool
 
 from LLM.gemini import get_llm_content
-from common_utils.common_utils import read_json, get_config, save_json_safe, init_config, process_product_title
+from common_utils.common_utils import read_json, get_config, save_json_safe, init_config, process_product_title, \
+    merge_json_files
 from common_utils.video_utils import create_enhanced_cover
 from content_community.bilibili.add_good_comment import format_title, _initialize_commenters, _should_skip_video, \
     RETRY_INTERVAL_SECONDS, REDUCED_MAX_REPLIES_PER_RUN, EXISTING_REPLIES_THRESHOLD, DEFAULT_MAX_REPLIES_PER_RUN, \
@@ -25,6 +26,8 @@ from common_utils.common_utils import string_to_object, save_json_safe, read_jso
 from content_community.taobao.taobao_utils import add_to_favorites, creat_and_favorite
 
 BASE_DIR = 'replay_info'
+bvid_file_path = '../../LLM/TikTokDownloader/back_up/bvid_file.json'
+
 
 final_prompt = """
 你是一位“置顶神评”工程的**首席架构师**，一位精通用户心理、专注“无痕转化”的顶级专家。你的唯一任务是：在收到短视频的JSON数据后，设计并产出1-2条具备病毒式传播潜力的置顶神评，实现“情绪共鸣最大化”与“资源引导率最大化”的双重目标。**严格遵循所有指令，最终仅返回一个纯净的JSON对象。**
@@ -506,7 +509,6 @@ def add_replay_comment_for_video(user_name='qiqi'):
     为视频增加合适的商品链接
     """
     all_replay_info = load_all_replay_info()
-    bvid_file_path = 'bvid_file.json'
     bvid_file_data = read_json(bvid_file_path)
     print(f"\n\n开始为用户 {user_name} 的视频增加网盘评论...")
     config_map = init_config()
@@ -524,10 +526,8 @@ def add_replay_comment_for_video(user_name='qiqi'):
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token, all_params=all_params)
     temp_found_videos = bvid_file_data.get(user_name, [])
     temp_found_videos = temp_found_videos[:10]
-    metadata_cache_with_uploads_back = read_json('../../LLM/TikTokDownloader/metadata_cache_with_uploads.json')
-    metadata_cache_with_uploads = read_json(
-        '../../LLM/TikTokDownloader/metadata_cache_with_uploads0828.json')
-    metadata_cache_with_uploads.update(metadata_cache_with_uploads_back)
+    metadata_cache_with_uploads = merge_json_files('../../LLM/TikTokDownloader/back_up', "metadata_cache_with_uploads")
+
     all_records = read_json(all_records_file)
     success_bvids = []
     for rec in all_records.values():

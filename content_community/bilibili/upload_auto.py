@@ -74,9 +74,9 @@ error_user_map = {}
 from content_community.bilibili.bilibili_uploader import upload_to_bilibili, fetch_bili_topics
 
 # ---------- 文件路径常量 ----------
-METADATA_FILE = '../../LLM/TikTokDownloader/metadata_cache.json'           # 权威源
-UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/metadata_cache_with_uploads.json'  # 上传日志
-persistent_tasks_file = "../../LLM/TikTokDownloader/persistent_tasks.json"
+METADATA_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache.json'           # 权威源
+UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志
+persistent_tasks_file = "../../LLM/TikTokDownloader/back_up/persistent_tasks.json"
 
 # ---------- 工具函数 ----------
 def load_json(path: str, default):
