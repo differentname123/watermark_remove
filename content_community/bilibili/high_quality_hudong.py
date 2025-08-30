@@ -1094,9 +1094,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 if danmaku_sent:
                     owner_danmu_used_list.append(danmu_text)
                     success_owner_danmu_count += 1
-                    print(f"弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
+                    print(f"{success_owner_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
                 else:
-                    print(f"弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
+                    print(f"{success_owner_danmu_count} 弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
                     time.sleep(random.uniform(10, 15))
                 break
             time.sleep(random.uniform(10, 15))
@@ -1127,9 +1127,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 if danmaku_sent:
                     danmu_used_list.append(danmu_text)
                     success_other_danmu_count += 1
-                    print(f"弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
+                    print(f"{success_other_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
                 else:
-                    print(f"弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
+                    print(f"{success_other_danmu_count} 弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
                     time.sleep(random.uniform(10, 15))
                 break
         # time.sleep(random.uniform(5, 15))
@@ -1166,9 +1166,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 if posted_rpid:
                     comment_used_list.append(comment_text)
                     success_comment_count += 1
-                    print(f"评论发送流程成功完成！ {comment_text} BVID: {bvid} | UID: {uid} {success_comment_count}")
+                    print(f"{success_comment_count} 评论发送流程成功完成！ {comment_text} BVID: {bvid} | UID: {uid} ")
                 else:
-                    print(f"评论发送流程失败。  {comment_text} BVID: {bvid} | UID: {uid}")
+                    print(f"{success_comment_count}评论发送流程失败。  {comment_text} BVID: {bvid} | UID: {uid}")
                 break
             else:
                 if comment_text in comment_used_list:
@@ -1185,9 +1185,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 if posted_rpid:
                     comment_used_list.append(comment_text)
                     success_comment_count += 1
-                    print(f"评论发送流程成功完成！ {comment_text} BVID: {bvid} | UID: {uid} {success_comment_count}")
+                    print(f"{success_comment_count}评论发送流程成功完成！ {comment_text} BVID: {bvid} | UID: {uid}")
                 else:
-                    print(f"评论发送流程失败。  {comment_text} BVID: {bvid} | UID: {uid}")
+                    print(f"{success_comment_count}评论发送流程失败。  {comment_text} BVID: {bvid} | UID: {uid}")
                 break
     hudong_info['comment_used'] = comment_used_list
     hudong_info['last_processed_date'] = today
