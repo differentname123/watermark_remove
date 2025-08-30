@@ -1,4 +1,5 @@
 import datetime
+import math
 import multiprocessing
 import os
 import random
@@ -411,7 +412,7 @@ def gen_final_property_good(video_info, property_goods):
     """
     根据视频信息生成合适的商品信息
     """
-    print(f"正在生成最终商品信息，视频信息")
+    print(f"正在生成最终商品信息，视频信息 商品长度为{len(property_goods)}")
     property_goods_list = filter_property_good(property_goods)
 
     format_property_goods_list = []
@@ -693,8 +694,12 @@ def add_good_comment_for_video(user_name='qiqi'):
                 #     print(f"视频 {bvid} 已经候选商品信息，跳过。")
                 #     property_goods = record['property_goods']
                 # else:
-                print(f"为视频 {bvid} 生成商品信息，关键词列表长度 {len(keyword_list)} 关键词列表：{keyword_list}")
-                property_goods = search_goods(keyword_list)
+                limit_count = 50
+                top_n = limit_count / len(keyword_list) if len(keyword_list) > 0 else 5
+                # 向上取整
+                top_n = math.ceil(top_n)
+                print(f"为视频 {bvid} 生成商品信息，关键词列表长度 {len(keyword_list)} 关键词列表：{keyword_list} 每个关键词抓取 {top_n} 个商品")
+                property_goods = search_goods(keyword_list, top_n)
                 all_records[bvid]['property_goods'] = filter_property_good(property_goods)
                 save_json_safe(all_records_file, all_records)
                 if 'final_goods' in record and record['final_goods'] and False:

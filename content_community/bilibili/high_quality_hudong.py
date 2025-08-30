@@ -1064,29 +1064,29 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     owner_danmu_list = hudong_info.get('owner_danmu', [])
     owner_danmu_used_list = hudong_info.get('owner_danmu_used', [])
     owner_danmu_used_list.extend(exist_danmu_text)
+    if owner_commenter:
+        for detail_owner_danmu in owner_danmu_list:
+            danmaku_time_ms = detail_owner_danmu['建议时间戳'] * 1000  # 转换为毫秒
+            danmu_text_list = detail_owner_danmu['推荐弹幕内容']
+            for danmu_text in danmu_text_list:
+                if danmu_text in owner_danmu_used_list or len(danmu_text) == 0:
+                    continue
+                danmaku_sent = owner_commenter.send_danmaku(
+                    bvid=bvid,
+                    msg=danmu_text,
+                    progress=danmaku_time_ms,
+                    is_up=True
+                )
 
-    for detail_owner_danmu in owner_danmu_list:
-        danmaku_time_ms = detail_owner_danmu['建议时间戳'] * 1000  # 转换为毫秒
-        danmu_text_list = detail_owner_danmu['推荐弹幕内容']
-        for danmu_text in danmu_text_list:
-            if danmu_text in owner_danmu_used_list or len(danmu_text) == 0:
-                continue
-            danmaku_sent = owner_commenter.send_danmaku(
-                bvid=bvid,
-                msg=danmu_text,
-                progress=danmaku_time_ms,
-                is_up=True
-            )
-
-            if danmaku_sent:
-                owner_danmu_used_list.append(danmu_text)
-                print(f"弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
-            else:
-                print(f"弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
-                time.sleep(random.uniform(10, 15))
-            break
-        time.sleep(random.uniform(10, 15))
-    hudong_info['owner_danmu_used'] = owner_danmu_used_list
+                if danmaku_sent:
+                    owner_danmu_used_list.append(danmu_text)
+                    print(f"弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
+                else:
+                    print(f"弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
+                    time.sleep(random.uniform(10, 15))
+                break
+            time.sleep(random.uniform(10, 15))
+        hudong_info['owner_danmu_used'] = owner_danmu_used_list
 
 
     danmu_list = hudong_info.get('danmu_list', [])
@@ -1204,6 +1204,8 @@ def fun():
         commenter_map = {}
         for key, detail_config in config_map.items():
             name = detail_config.get('name', key)
+            if name in ['nana', 'xiaohao']:
+                continue
             all_params = detail_config.get('all_params', {})
             commenter_map[key] = BilibiliCommenter(
                 total_cookie=detail_config.get('total_cookie', ''),
@@ -1224,9 +1226,9 @@ def fun():
         all_found_videos = []
         for uid in config_map.keys():
             name = config_map[uid].get('name', uid)
-            if uid in ['443415885', '3546717871934392']:
+            if uid in ['443415885']:
                 continue
-            logging.info(f"  > 正在获取UP主(UID: {uid})的最新动态...")
+            logging.info(f"  > 正在获取UP主(UID: {uid} {name})的最新动态...")
             temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=50)
             bvid_uid_map.update({video.get('bvid'): uid for video in temp_found_videos if 'bvid' in video})
             all_found_videos.extend(temp_found_videos)

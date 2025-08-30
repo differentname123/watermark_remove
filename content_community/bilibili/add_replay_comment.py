@@ -426,6 +426,8 @@ def send_replay_comment(
         title: str = rec.get('title', '')
         if not title:
             continue
+        if title not in ["终极应用", "福利游戏"]:
+            continue
 
         # 3. 在 property_goods 找到对应商品
         target_good: Optional[Dict[str, Any]] = next(

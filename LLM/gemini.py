@@ -333,7 +333,7 @@ def get_llm_content_gemini2flash(prompt: str = '你好，Gemini！请介绍一�
         api_key = API_KEY_MAP.get(key_name)
         if not api_key: continue
         try:
-            print(f"[INFO] 正在使用名为 '{key_name}' 的 API Key...")
+            print(f"[INFO] 正在使用名为 '{key_name}' 的 API Key... prompt length: {len(prompt)}")
             client = genai.Client(api_key=api_key)
             contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
             config = types.GenerateContentConfig(response_mime_type="text/plain")
@@ -359,7 +359,7 @@ def get_llm_content_sub(prompt: str = '你好，Gemini！请介绍一下你自�
         try:
             api_key_manager.record_success(key_name)  # 成功，记录
 
-            print(f"[INFO] 正在使用名为 '{key_name}' 的 API Key...")
+            print(f"[INFO] 正在使用名为 '{key_name}' 的 API Key... prompt length: {len(prompt)}")
             client = genai.Client(api_key=api_key)
             contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
             config = types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=24576),
@@ -403,7 +403,7 @@ def analyze_images_gemini(prompt='每张图片的内容是什么', image_paths=[
         try:
             api_key_manager.record_success(key_name)  # 成功，记录
 
-            print(f"[INFO] 正在使用名为 '{key_name}' 的 API Key 尝试分析图片...")
+            print(f"[INFO] 正在使用名为 '{key_name}' 的 API Key 尝试分析图片... prompt length: {len(prompt)}, 图片数量: {len(image_paths)}")
             genai_flash.configure(api_key=api_key)
             prompt_parts = [prompt, "下面我将以'文件名:'的格式，在每个图片前提供其名称，请据此作答。"]
             for path in image_paths:

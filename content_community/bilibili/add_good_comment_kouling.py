@@ -123,7 +123,7 @@ def add_products_from_csv(csv_file_path, model, collection, price_field="promo_p
     embeddings = model.encode(
         documents_to_add,
         batch_size=32,
-        show_progress_bar=True,
+        show_progress_bar=False,
         normalize_embeddings=True
     )
 
@@ -404,7 +404,7 @@ def merge_all_goods(base_dir=BASE_DIR) -> str:
 def search_products(query, model, collection, top_n=5):
     """执行语义搜索"""
     # print(f"\n--- 正在搜索: '{query}' ---")
-    query_embedding = model.encode(query, normalize_embeddings=True).tolist()
+    query_embedding = model.encode(query, normalize_embeddings=True, show_progress_bar=False).tolist()
 
     results = collection.query(
         query_embeddings=[query_embedding],
@@ -424,7 +424,7 @@ def search_products(query, model, collection, top_n=5):
 
     return formatted_results
 
-def search_goods(key_word_list=['零食']):
+def search_goods(key_word_list=['零食'], top_n=5):
     """
     根据关键词搜索商品并返回商品列表。
     """
@@ -449,7 +449,7 @@ def search_goods(key_word_list=['零食']):
     # add_products_from_csv(csv_path, model, collection)
 
     for q in key_word_list:
-        search_results = search_products(q, model, collection, top_n=5)
+        search_results = search_products(q, model, collection, top_n=top_n)
         # print(f"{q} 搜索结果:\n{search_results}")
         result_list.extend(search_results if search_results else [])
     final_result_list = [result['metadata'] for result in result_list if 'metadata' in result]
