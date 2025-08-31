@@ -1026,10 +1026,10 @@ def path_exists(path) -> bool:
 def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     if not today:
         today = datetime.date.today().isoformat()
-    # if hudong_info.get('last_processed_date') == today:
-    #     print(f"今日已处理，跳过 BVID: {bvid}")
-    #     return hudong_info
-
+    if hudong_info.get('last_processed_date') == today:
+        if hudong_info['last_processed_date_count'] > 3:
+            print("今天已经处理过3次，跳过。", hudong_info['last_processed_date_count'])
+            return hudong_info
 
     result = gen_proper_comment(bvid, dont_need_comment=True)
     exist_comment = result.get('已有评论', [])
@@ -1144,8 +1144,8 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     # 打乱顺序
     random.shuffle(commenter_list)
     for commenter in commenter_list:
-        if success_comment_count > max_success_comment_count:
-            print("已达到最大成功评论数，停止处理。")
+        if success_comment_count >= max_success_comment_count:
+            print("已达到最大成功评论数，停止处理。", success_comment_count)
             break
         for detail_comment in comment_list:
             comment_text = detail_comment[0]
@@ -1190,6 +1190,11 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                     print(f"{success_comment_count}评论发送流程失败。  {comment_text} BVID: {bvid} | UID: {uid}")
                 break
     hudong_info['comment_used'] = comment_used_list
+    if hudong_info.get('last_processed_date') == today:
+        last_count = int(hudong_info.get('last_processed_date_count', 0) or 0)
+        hudong_info['last_processed_date_count'] = last_count + 1
+    else:
+        hudong_info['last_processed_date_count'] = 1
     hudong_info['last_processed_date'] = today
     return hudong_info
 
