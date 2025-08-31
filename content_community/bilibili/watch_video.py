@@ -123,110 +123,173 @@ def get_video_info(session: requests.Session, bvid: str):
 
 
 def simulate_watch_video(sessdata: str, bili_jct: str, bvid: str):
-    session = create_session()
+    """
+    模拟观看B站视频以完成播放上报。————（保持原签名，不新增参数）
+    """
+    # 最小化改动：内部控制是否输出详细信息（不改签名）
+    DEBUG = False  # 将其设为 True 可恢复原先较多的 INFO 输出
+    PROGRESS_REPORT_INTERVAL = 10  # 心跳进度打印间隔（秒）
+    try:
+        session = create_session()
+    except Exception as e:
+        print(f"[ERROR] 创建 session 失败: {e}")
+        return
+
+    video_url = f"https://www.bilibili.com/video/{bvid}"
+
+    # [修正] 添加了更完整的请求头（保持原有）
     session.headers.update({
-        "Origin": "https://www.bilibili.com"
+        "Origin": "https://www.bilibili.com",
+        "Referer": video_url,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
     })
-    session.cookies.set("SESSDATA", sessdata)
-    session.cookies.set("bili_jct", bili_jct)
+    session.cookies.set("SESSDATA", sessdata, domain=".bilibili.com")
+    session.cookies.set("bili_jct", bili_jct, domain=".bilibili.com")
 
     try:
         nav = session.get("https://api.bilibili.com/x/web-interface/nav", timeout=REQUEST_TIMEOUT)
         nav.raise_for_status()
         viewer_mid = nav.json()['data']['mid']
     except Exception as e:
-        logging.error(f"获取账号 mid 失败: {e}")
+        print(f"[ERROR] 获取账号 mid 失败: {e}")
         return
 
     info = get_video_info(session, bvid)
     if not info:
         return
     aid, cid, duration, title = info.values()
-    logging.info(f"开始模拟观看: 《{title}》 (aid={aid}, cid={cid}, duration={duration}s)")
+    # 仅保留重要的开始信息
+    print(f"[INFO] 开始模拟观看: 《{title}》 (bvid={bvid}, duration={duration}s)")
 
     signer = WbiSigner(session)
 
-    # 1/3: 模拟开始播放
+    # 0/4 获取播放地址
     try:
-        stime = int(time.time()) - 2
-        url_params = {
-            'w_aid': aid, 'w_part': 1, 'w_ftime': stime,
-            'w_stime': stime, 'w_type': 3, 'web_location': 1315873
+        playurl_params = {
+            'avid': aid, 'cid': cid, 'bvid': bvid,
+            'qn': 64, 'fnval': 16, 'fourk': 1
         }
-        signed = signer.sign_url_params(url_params)
-        final_url = f"https://api.bilibili.com/x/click-interface/click/web/h5?{urllib.parse.urlencode(signed)}"
-        res = session.post(final_url, data={
-            'mid': viewer_mid,
-            'aid': aid,
-            'cid': cid,
-            'part': 1,
-            'lv': 2,
-            'ftime': stime,
-            'stime': stime,
-            'type': 3,
-            'sub_type': 0,
-            'refer_url': 'https://member.bilibili.com/',
-            'outer': 0,
-            'statistics': json.dumps({"appId": 100, "platform": 5, "abtest": "", "version": ""}),
-            'mobi_app': 'web', 'device': 'web', 'platform': 'web',
-            'spmid': '333.788.0.0', 'from_spmid': '333.788.0.0',
-            'session': md5(str(time.time()).encode()).hexdigest(), 'csrf': bili_jct
-        }, timeout=REQUEST_TIMEOUT)
+        signed_params = signer.sign_url_params(playurl_params)
+        playurl = f"https://api.bilibili.com/x/player/wbi/playurl?{urllib.parse.urlencode(signed_params)}"
+        res = session.get(playurl, timeout=REQUEST_TIMEOUT)
+        res.raise_for_status()
+        if res.json().get('code') == 0:
+            if DEBUG:
+                print("[INFO] 获取播放地址成功")
+        else:
+            print(f"[WARN] 获取播放地址失败: {res.json()}")
+            return
+    except Exception as e:
+        print(f"[ERROR] 获取播放地址出错: {e}")
+        return
+    session_id = md5(str(time.time()).encode()).hexdigest()
+
+    # 1/4 播放开始事件
+    try:
+        stime = int(time.time())
+        res = session.post(
+            "https://api.bilibili.com/x/click-interface/click/web/h5",
+            data={
+                'aid': aid, 'cid': cid, 'bvid': bvid, 'mid': viewer_mid,
+                'part': 1, 'lv': 2, 'ftime': stime, 'stime': stime,
+                'type': 3, 'sub_type': 0, 'csrf': bili_jct,
+                'refer_url': video_url,
+                'spmid': '333.788.0.0', 'from_spmid': '333.337.search-card.all.click',
+                'session': session_id,
+            },
+            timeout=REQUEST_TIMEOUT
+        )
         res.raise_for_status()
         d = res.json()
         if d.get('code') == 0:
-            logging.info("开始播放请求成功")
+            if DEBUG:
+                print("[INFO] 开始播放请求(h5)成功")
         else:
-            logging.warning(f"开始播放请求失败: {d}")
+            print(f"[WARN] 开始播放请求(h5)失败: {d}")
     except Exception as e:
-        logging.error(f"播发请求出错: {e}")
+        print(f"[ERROR] 开始播放请求(h5)出错: {e}")
         return
 
-    # 2/3: 心跳
-    # logging.info("开始心跳模拟...")
+    # 2/4 心跳
+    if DEBUG:
+        print("[INFO] 开始心跳模拟...")
     start_ts = int(time.time())
     played = 0
-    while played < duration and played < 100:
+    # 将最大观看时长上限改为 60s（最小改动）
+    watch_duration = min(duration, 60)
+
+    # 获取心跳间隔（优先使用全局 HEARTBEAT_INTERVAL，否则回退到 5）
+    try:
+        hb_interval = HEARTBEAT_INTERVAL
+    except NameError:
+        hb_interval = 5
+
+    next_report = PROGRESS_REPORT_INTERVAL
+
+    while played < watch_duration:
         try:
-            payload = {
-                'aid': aid, 'cid': cid, 'bvid': bvid, 'mid': viewer_mid,
-                'csrf': bili_jct, 'played_time': played,
-                'realtime': played, 'start_ts': start_ts,
-                'play_type': 0, 'type': 3, 'sub_type': 0,
-                'dt': 2, 'last_play_progress_time': played,
+            heartbeat_url_params = {
+                'w_start_ts': start_ts,
+                'w_mid': viewer_mid,
+                'w_aid': aid,
+                'w_cid': cid,
+                'w_bvid': bvid,
+                'w_played_time': played,
+                'w_real_played_time': played,
+                'w_video_duration': duration,
+                'w_last_play_progress_time': played,
+                'web_location': 1315873
             }
-            hb = session.post(
-                "https://api.bilibili.com/x/click-interface/web/heartbeat",
-                data=payload, timeout=REQUEST_TIMEOUT
-            ).json()
+            signed_params = signer.sign_url_params(heartbeat_url_params)
+            heartbeat_url = f"https://api.bilibili.com/x/click-interface/web/heartbeat?{urllib.parse.urlencode(signed_params)}"
+
+            post_data = {
+                'aid': aid, 'cid': cid, 'mid': viewer_mid, 'csrf': bili_jct,
+                'played_time': played, 'realtime': played, 'start_ts': start_ts,
+                'play_type': 1 if played == 0 else 0,
+                'type': 3, 'sub_type': 0, 'dt': 2,
+                'last_play_progress_time': played,
+                'session': session_id,
+            }
+
+            res = session.post(heartbeat_url, data=post_data, timeout=REQUEST_TIMEOUT)
+            res.raise_for_status()
+            hb = res.json()
+
             if hb.get('code') == 0:
-                # logging.info(f"心跳: {played}/{duration}s")
-                pass
+                # 只在间隔时报告一次（减少日志）
+                if played >= next_report:
+                    # print(f"[INFO] 心跳: {played}/{watch_duration}s")
+                    next_report += PROGRESS_REPORT_INTERVAL
             else:
-                logging.warning(f"心跳失败: {hb}")
-                if hb.get('code') == -101:
+                print(f"[WARN] 心跳失败: {hb}")
+                if hb.get('code') == -101:  # 未登录
                     break
         except Exception as e:
-            logging.error(f"心跳异常: {e}")
+            print(f"[ERROR] 心跳异常: {e}")
             break
-        time.sleep(HEARTBEAT_INTERVAL)
-        played = min(played + HEARTBEAT_INTERVAL, duration)
 
-    # 3/3: 上报历史
+        time.sleep(hb_interval + random.uniform(-1, 2))
+        # 注意：这里把累加的上限改为 watch_duration（原代码累加到 duration）
+        played = min(played + hb_interval, watch_duration)
+
+    # 3/4 上报历史记录
     try:
         rpt = session.post(
             "https://api.bilibili.com/x/v2/history/report",
-            data={"aid": aid, "cid": cid, "progress": duration, "csrf": bili_jct},
+            data={"aid": aid, "cid": cid, "progress": played, "csrf": bili_jct},
             timeout=REQUEST_TIMEOUT
         ).json()
         if rpt.get('code') == 0:
-            logging.info("历史记录上报成功")
+            if DEBUG:
+                print(f"[INFO] 历史记录上报成功, 进度: {played}s")
         else:
-            logging.warning(f"上报失败: {rpt}")
+            print(f"[WARN] 上报历史失败: {rpt}")
     except Exception as e:
-        logging.error(f"上报历史异常: {e}")
+        print(f"[ERROR] 上报历史异常: {e}")
 
-    logging.info("模拟观看完成！")
+    print(f"[INFO] 4/4: 《{title}》模拟观看完成！ 实际观看 {played}s（上限 60s）。")
+
 
 
 def simulate_watch_video_with_log(sessdata, bili_jct, bvid):
@@ -277,10 +340,10 @@ if __name__ == "__main__":
     # 打乱bv_list
     import random
     random.shuffle(bv_list)
-
+    bv_list = ['BV1hUa5zZEzw']
     try:
         while True:
-            bv_list = load_processed_dict('../../LLM/TikTokDownloader/bvid_list.json').get('bvid_list', bv_list)
+            # bv_list = load_processed_dict('../../LLM/TikTokDownloader/bvid_list.json').get('bvid_list', bv_list)
             for bv in bv_list:
                 logging.info(f"开始视频 {bv} 模拟任务...")
                 run_parallel_watch(config_list, bv)

@@ -1132,7 +1132,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 else:
                     print(f"{success_other_danmu_count} 弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
                     time.sleep(random.uniform(10, 15))
-                break
+            break
         # time.sleep(random.uniform(5, 15))
     hudong_info['danmu_used'] = danmu_used_list
 
@@ -1263,8 +1263,10 @@ def fun():
         all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
         all_found_videos = all_found_videos[:100]
         print(f"共找到 {len(all_found_videos)} 个视频。")
+        count = 0
         for video in all_found_videos:
             print(f"正在处理视频 BVID: {video.get('bvid', '未知')}...")
+            count += 1
             start_time = time.time()
             bvid = video.get('bvid')
             uid = bvid_uid_map.get(bvid, '未知UID')
@@ -1276,7 +1278,7 @@ def fun():
             hudong_info = process_single_video(bvid, hudong_info, uid, commenter_map, today)
             interaction_data[bvid] = {'hudong': hudong_info}
             save_json(interaction_data_file, interaction_data)
-            print(f"视频 {bvid} 的互动信息已生成并保存。耗时: {time.time() - start_time:.2f} 秒")
+            print(f"视频 {bvid} 的互动信息已生成并保存。耗时: {time.time() - start_time:.2f} 秒 进度: {count}/{len(all_found_videos)}")
             if stop_event.is_set():
                 print("检测到停止请求，退出当前任务...")
                 return  # 停止当前执行，退出
@@ -1308,4 +1310,4 @@ if __name__ == '__main__':
 
     # 主线程可用于其他任务，或者继续保持程序运行
     while True:
-        time.sleep(1)
+        time.sleep(10)
