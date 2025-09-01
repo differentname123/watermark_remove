@@ -12,7 +12,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from common_utils.common_utils import get_config, init_config
-
+import random
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -216,7 +216,7 @@ def simulate_watch_video(sessdata: str, bili_jct: str, bvid: str):
     start_ts = int(time.time())
     played = 0
     # 将最大观看时长上限改为 60s（最小改动）
-    watch_duration = min(duration, 60)
+    watch_duration = min(duration, 10)
 
     # 获取心跳间隔（优先使用全局 HEARTBEAT_INTERVAL，否则回退到 5）
     try:
@@ -340,7 +340,7 @@ if __name__ == "__main__":
     # 打乱bv_list
     import random
     random.shuffle(bv_list)
-    bv_list = ['BV1hUa5zZEzw']
+    bv_list = ['BV1XwaGzHEZq']
     try:
         while True:
             # bv_list = load_processed_dict('../../LLM/TikTokDownloader/bvid_list.json').get('bvid_list', bv_list)

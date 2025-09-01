@@ -1028,7 +1028,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
         today = datetime.date.today().isoformat()
     if hudong_info.get('last_processed_date') == today:
         hudong_info['last_processed_date_count'] = hudong_info.get('last_processed_date_count', 0)
-        if hudong_info['last_processed_date_count'] > 3:
+        if hudong_info['last_processed_date_count'] > 4:
             print("今天已经处理过3次，跳过。", hudong_info['last_processed_date_count'])
             return hudong_info
 
