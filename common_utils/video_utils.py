@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import json
 import tempfile
+from typing import Union
 
 import ffmpeg
 from PIL import ImageFont
@@ -2377,3 +2378,101 @@ def transform_voice_identity(
     ]
 
     return _run_command(cmd, output_path, show_progress)
+
+
+def _format_time(time_value: Union[str, int, float]) -> str:
+    """将时间值格式化为 ffmpeg 兼容的字符串。"""
+    if isinstance(time_value, str):
+        # 如果是字符串，直接返回，假设用户提供了正确的格式
+        return time_value
+    if isinstance(time_value, (int, float)):
+        # 如果是数字，我们假定单位是毫秒
+        # 将其转换为秒，并格式化为 SS.mmm
+        return f"{time_value / 1000:.3f}"
+    raise TypeError(
+        f"不支持的时间格式: {type(time_value)}。请输入字符串或代表毫秒的数字。"
+    )
+
+
+def clip_video_ms(
+        input_path: str,
+        start_time: Union[str, int, float],
+        end_time: Union[str, int, float],
+        output_path: str
+):
+    """
+    使用 ffmpeg 精确截取指定时间段的视频片段。
+
+    此函数通过重新编码视频来确保截取的起点绝对精确，从而避免
+    因关键帧问题导致的“有声无画”现象。
+
+    优点:
+    - 时间点精确到毫秒。
+    - 保证输出的视频文件能正常播放。
+
+    缺点:
+    - 处理速度比流复制慢，因为它需要CPU进行视频编码计算。
+
+    Args:
+        input_path (str): 输入视频文件的完整路径。
+        start_time (Union[str, int, float]):
+            截取片段的开始时间 (毫秒数或 "HH:MM:SS.mmm" 字符串)。
+        end_time (Union[str, int, float]):
+            截取片段的结束时间，格式同 start_time。
+        output_path (str): 输出视频文件的保存路径。
+
+    Returns:
+        bool: 如果截取成功返回 True，否则返回 False。
+        str: 返回 ffmpeg 的输出信息（成功时）或错误信息（失败时）。
+    """
+    try:
+        start_formatted = _format_time(start_time)
+        end_formatted = _format_time(end_time)
+    except TypeError as e:
+        print(e)
+        return False, str(e)
+
+    # 构建 ffmpeg 命令
+    # -i [输入文件] 放在 -ss 之前，进行精确截取
+    # 不使用 -c copy，强制 ffmpeg 进行重新编码
+    command = (
+        f"ffmpeg -i {shlex.quote(input_path)} "
+        f"-ss {shlex.quote(start_formatted)} "
+        f"-to {shlex.quote(end_formatted)} "
+        f"-y {shlex.quote(output_path)}"
+    )
+
+    print("模式: 精确重编码 (速度较慢)")
+    print(f"正在执行命令: {command}")
+
+    try:
+        # 执行命令并等待完成
+        result = subprocess.run(
+            command,
+            shell=True,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding='utf-8'
+        )
+        success_message = f"视频精确截取成功！已保存至: {output_path}"
+        print(success_message)
+        # ffmpeg 正常运行时会将大量信息输出到 stderr
+        return True, result.stderr or success_message
+
+    except FileNotFoundError:
+        error_message = "错误：找不到 ffmpeg 命令。请确保 ffmpeg 已正确安装并已添加到系统环境变量 PATH 中。"
+        print(error_message)
+        return False, error_message
+
+    except subprocess.CalledProcessError as e:
+        # 如果 ffmpeg 返回非零退出码，说明出错了
+        error_message = f"ffmpeg 执行出错：\n{e.stderr}"
+        print(error_message)
+        return False, error_message
+
+    except Exception as e:
+        # 捕获其他可能的异常
+        error_message = f"发生未知错误: {e}"
+        print(error_message)
+        return False, error_message

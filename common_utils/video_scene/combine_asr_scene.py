@@ -12,10 +12,14 @@ import collections
 import os
 
 from common_utils.ASR.asr_fusion import gen_precise_asr
-from common_utils.common_utils import read_json, time_to_ms, save_json
+from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time
 from common_utils.image_utils import save_frames_around_timestamp
 from common_utils.split_scenes import find_and_split_scenes
-from common_utils.video_utils import extract_audio_from_video
+from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
+from common_utils.video_utils import extract_audio_from_video, clip_video_ms, merge_videos_ffmpeg, probe_duration, \
+    add_subtitles_to_video
+from common_utils.video_utils1 import redub_video_with_ffmpeg
+from common_utils.video_utils2 import add_bgm_to_video
 
 
 def find_silent_scene_timestamps(scenes: dict,
@@ -360,7 +364,7 @@ def find_asr_at_boundaries_sorted_by_overlap(scenes: dict, asr_results: list, wi
 def asr_and_scene(video_path):
     scene_info_dict = find_and_split_scenes(
         video_path,
-        high_threshold=50,  # 初始高阈值
+        high_threshold=40,  # 初始高阈值
         max_scenes=20,  # 期望的最大场景数
         min_scene_len=25,  # 最小场景长度（帧）
         step=5  # 阈值调整步长
@@ -406,9 +410,196 @@ def get_detail_seg(video_path):
     print(result)
     return result
 
+def get_scene_word(scene_info, asr_list, need_detail=False):
+    # 按场景开始时间排序并准备容器
+    scenes = sorted(
+        [(name, time_to_ms(t[0]), time_to_ms(t[1])) for name, t in scene_info.items()],
+        key=lambda x: x[1]
+    )
+    if not scenes:
+        return {}
+
+    res_map = {name: [] for name, _, _ in scenes}
+
+    for w in asr_list:
+        ws, we = int(w['start']), int(w['end'])
+        placed = False
+
+        for i, (name, s_start, s_end) in enumerate(scenes):
+            # 完全在场景内
+            if ws >= s_start and we <= s_end:
+                res_map[name].append(w); placed = True; break
+            # 跨过当前场景结束 -> 放到下一个场景（无下一个则放当前）
+            if ws < s_end and we > s_end:
+                next_name = scenes[i+1][0] if i+1 < len(scenes) else name
+                res_map[next_name].append(w); placed = True; break
+            # 从前一场景延伸进来，end 落在当前场景内
+            if ws < s_start and we > s_start and we <= s_end:
+                res_map[name].append(w); placed = True; break
+
+        # 回退策略：放到首或尾场景
+        if not placed:
+            if we <= scenes[0][1]:
+                res_map[scenes[0][0]].append(w)
+            else:
+                res_map[scenes[-1][0]].append(w)
+
+    # 构造输出，增加 last_end_ms / last_end_time
+    out = {}
+    for name, s_start, s_end in scenes:
+        words = res_map[name]
+        text = "".join(x['word'] for x in words)
+        last_end_ms = max((int(x['end']) for x in words), default=None)
+        out[name] = {
+            "times": (s_start if callable(globals().get('ms_to_time')) else s_start,
+                      s_end if callable(globals().get('ms_to_time')) else s_end),
+            "text": text,
+            "last_end_ms": last_end_ms        }
+        if need_detail:
+            out[name]["words"] = words
+
+    return out
+
+def reorganize_scene_asr(scene_map):
+    """
+    将类似
+      {'场景1': [ { 'times': (0,4683), 'text': '...' }, ... ], ...}
+    的数据重组织为
+      {'场景1': {'start_time': 0, 'end_time': 4683, 'end_t': 4683, 'asr_list': [...]}, ...}
+    """
+    out = {}
+    for scene, entries in scene_map.items():
+        starts = []
+        ends = []
+        texts = []
+
+        for e in entries or []:
+            # times 可能是 tuple/list，也可能是字符串或缺失，尽量转换为 int
+            times = e.get('times') if isinstance(e, dict) else None
+            if times and len(times) >= 2:
+                try:
+                    starts.append(int(times[0]))
+                    ends.append(int(times[1]))
+                except Exception:
+                    pass
+
+            # 文本字段可能叫 'text'，也可能别的名字，优先取 text
+            txt = None
+            if isinstance(e, dict):
+                txt = e.get('text') or e.get('asr') or e.get('sentence') or e.get('word')
+            if txt is None:
+                txt = ""
+            texts.append(txt)
+
+        start_time = min(starts) if starts else None
+        end_time = max(ends) if ends else None
+
+        out[scene] = {
+            "start_time": start_time,
+            "end_time": end_time,
+            "asr_list": texts
+        }
+
+    return out
+
+
+def fun():
+    video_path = 'test1.mp4'
+    scene_info = video_path.replace('.mp4', '.json')
+    scenes = read_json(scene_info)
+    ASR_FILES, ASR_FILES = gen_precise_asr(video_path, '')
+    result_dict = {}
+    for ASR_FILE in ASR_FILES:
+        asr_list = read_json(ASR_FILE)
+        temp = get_scene_word(scenes, asr_list)
+        for key, value in temp.items():
+            value['ASR_FILE'] = ASR_FILE
+            if key not in result_dict:
+                result_dict[key] = []
+            result_dict[key].append(value)
+    print(result_dict)
+
+    sentence_info = reorganize_scene_asr(result_dict)
+    print(sentence_info)
+
+def split_video():
+    video_path = 'test1.mp4'
+    scene_info = video_path.replace('.mp4', '.json')
+    scenes = read_json(scene_info)
+    count = 0
+    for key, value in scenes.items():
+        count += 1
+        start_time = value[0]
+        end_time = value[1]
+        clip_video_ms(video_path, start_time, end_time, f'scenes/{count}.mp4')
+
+
+def gen_new_video():
+    # 读取test1_scene_format_new_script.json
+    script_info = read_json('test1_scene_format_new_script.json')
+    acts = script_info['new_video_script']['acts']
+    audio_video_path_list = []
+    for act in acts:
+        scenes = act['scenes']
+        for scene in scenes:
+            original_scene_ref = scene['original_scene_ref']
+            original_video_path = f'scenes/{original_scene_ref}.mp4'
+            text = scene['new_script_text']
+            output_path = f'scenes/{original_scene_ref}_new.mp4'
+            audio_video_path = output_path.replace('.mp4', '_av.mp4')
+            # if os.path.exists(audio_video_path):
+            #     audio_video_path_list.append(audio_video_path)
+            #     continue
+            video_duration = probe_duration(original_video_path)
+            audio_path = output_path.replace('.mp4', '.wav')
+            duration = generate_audio_and_get_duration_sync(
+                text=text,
+                output_filename=str(audio_path),
+                voice_name="zh-CN-YunjianNeural",
+                trim_silence=False,
+                # rate="+15%",
+                # pitch='+10Hz',
+            )
+
+            segments_info = [{
+                'startTime': "00:00:00.000",
+                'endTime': ms_to_time(video_duration * 1000),
+                'outputPath': str(audio_path),
+                'trimmedDuration': duration,
+            }]
+            redub_video_with_ffmpeg(original_video_path, segments_info, output_path=str(audio_video_path))
+
+            subtitle_data = [{
+                'startTime': "00:00:00.000",
+                'endTime': ms_to_time(duration * 1000),
+                'optimizedText': text
+            }]
+            subtitle_video_path = output_path.replace('.mp4', '_sub.mp4')
+            add_subtitles_to_video(
+                video_path=str(audio_video_path),
+                subtitles_info=subtitle_data,
+                output_path=str(subtitle_video_path),
+                font_size=70,
+                bottom_margin=30
+            )
+
+            audio_video_path_list.append(subtitle_video_path)
+
+    merge_videos_ffmpeg(audio_video_path_list, output_path=f'scenes/final_video.mp4')
+    bgm_path = r"W:\project\python_project\watermark_remove\content_community\app\bgm_audio" + os.sep + '4f7ed367245a6ba525d07f21d4790a25.wav'
+    if bgm_path and os.path.exists(bgm_path):
+        # print(f"正在为视频添加背景音乐: {bgm_path}")
+        final_with_bgm_path = 'scenes/final_video_with_bgm.mp4'
+        add_bgm_to_video(f'scenes/final_video.mp4', bgm_path, str(final_with_bgm_path))
+
 
 if __name__ == '__main__':
-    video_path = 'test1.mp4'
-    get_detail_seg(video_path)
+    gen_new_video()
+    # split_video()
+    #
+    # fun()
+    #
+    # video_path = 'test1.mp4'
+    # # get_detail_seg(video_path)
     # asr_and_scene('test1.mp4')
-
+    #

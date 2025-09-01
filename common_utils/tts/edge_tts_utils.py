@@ -114,12 +114,40 @@ def generate_audio_and_get_duration_sync(
     【重构版本】生成、处理并保存高质量音频。
 
     流程:
+    0. 如果文本为空，则直接生成1秒静音并返回。
     1. 使用 edge-tts 生成原始 MP3。
     2. 使用 librosa 加载并切除首尾静音（如果启用）。
     3. 将处理后的音频保存为临时的 WAV 文件（无损格式，适合处理）。
     4. 使用 ffmpeg 的 loudnorm 对 WAV 文件进行响度归一化。
     5. 返回最终音频的时长。
     """
+    # ==================== 新增代码块: 处理空文本 ====================
+    # 如果 text 是 None，或者去除首尾空白后为空字符串
+    if not text or not text.strip():
+        print(f"ⓘ 文本为空，正在为 '{output_filename}' 生成 1 秒静音。")
+        try:
+            duration_seconds = 1.0
+            sample_rate = 24000  # 为静音选择一个合理的默认采样率, edge-tts 通常使用 24kHz
+
+            # 创建一个持续1秒、全为0的音频数组 (代表静音)
+            silent_audio = np.zeros(int(sample_rate * duration_seconds), dtype=np.float32)
+
+            # 确保输出目录存在
+            output_path = Path(output_filename)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # 直接保存为最终的音频文件
+            sf.write(str(output_path), silent_audio, sample_rate)
+
+            print(f"✓ 成功生成静音文件: {output_filename}")
+            return duration_seconds
+        except Exception as e:
+            import traceback
+            print(f"❌ 在生成静音文件时发生错误: {e}")
+            traceback.print_exc()
+            return None
+    # ===============================================================
+
     if trim_silence and not LIBROSA_AVAILABLE:
         print("❌ 错误: 请求了静音切除，但 `librosa` 不可用。任务中止。")
         return None
@@ -155,6 +183,7 @@ def generate_audio_and_get_duration_sync(
 
             # 3. 保存为临时的 WAV 文件
             sf.write(str(trimmed_wav), y, sr)
+
             # 4. 进行响度归一化
             # 确保输出目录存在
             output_path.parent.mkdir(parents=True, exist_ok=True)
