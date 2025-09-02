@@ -1039,7 +1039,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     exist_danmu_text = [danmu[0] for danmu in exist_danmu]
     max_success_comment_count = 2
     max_success_owner_danmu_count = 5
-    max_success_other_danmu_count = 10
+    max_success_other_danmu_count = 5
 
     # if uid in ['443415885','3546954575383021','3546717871934392','1223805908','3546947310848473','3546947566700892', '477861377', '3493263231158598']:
     #     max_success_comment_count = 100
@@ -1065,9 +1065,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 print("一键三连操作流程成功完成！")
             else:
                 print("一键三连操作流程失败。")
-        max_success_comment_count = 10
+        max_success_comment_count = 15
         max_success_owner_danmu_count = 10
-        max_success_other_danmu_count = 10
+        max_success_other_danmu_count = 15
 
     hudong_info['share_video'] = share_video
     hudong_info['triple_like_video'] = triple_like_video
@@ -1095,9 +1095,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 if danmaku_sent:
                     owner_danmu_used_list.append(danmu_text)
                     success_owner_danmu_count += 1
-                    print(f"{success_owner_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
+                    print(f"{success_owner_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} 账号 {owner_commenter.all_params['name']}")
                 else:
-                    print(f"{success_owner_danmu_count} 弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
+                    print(f"{success_owner_danmu_count} 弹幕发送流程失败。  {danmu_text} BVID: {bvid} 账号 {owner_commenter.all_params['name']}")
                     time.sleep(random.uniform(10, 15))
             time.sleep(random.uniform(10, 15))
         hudong_info['owner_danmu_used'] = owner_danmu_used_list
@@ -1137,13 +1137,13 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
             if danmaku_sent:
                 danmu_used_list.append(danmu_text)
                 success_other_danmu_count += 1
-                print(f"{success_other_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms} (sender={getattr(sender, 'uid', '?')})")
+                print(f"{success_other_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} 账号 {sender.all_params['name']}")
                 # 成功后可以选择跳出当前 detail 的循环（如果每个 detail 只需一条），
                 # 或者继续让下一个发送者发送下一条（取决于你的业务）
                 # 如果你希望每个 detail 只发一条，取消下面注释：
                 # break
             else:
-                print(f"弹幕发送失败：{danmu_text} (sender={getattr(sender, 'uid', '?')}), 等待后继续...")
+                print(f"弹幕发送失败：{danmu_text} 账号 {sender.all_params['name']}, 等待后继续...")
                 time.sleep(random.uniform(5, 10))
 
             if success_other_danmu_count >= max_success_other_danmu_count:
@@ -1185,9 +1185,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 if posted_rpid:
                     comment_used_list.append(comment_text)
                     success_comment_count += 1
-                    print(f"{success_comment_count} 评论发送流程成功完成！ {comment_text} BVID: {bvid} | UID: {uid} ")
+                    print(f"{success_comment_count} 评论发送流程成功完成！ {comment_text} BVID: {bvid} 账号 {commenter.all_params['name']}")
                 else:
-                    print(f"{success_comment_count}评论发送流程失败。  {comment_text} BVID: {bvid} | UID: {uid}")
+                    print(f"{success_comment_count}评论发送流程失败。  {comment_text} BVID: {bvid} 账号 {commenter.all_params['name']}")
                 break
             else:
                 if comment_text in comment_used_list:

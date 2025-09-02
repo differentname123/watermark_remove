@@ -1874,10 +1874,10 @@ def create_enhanced_cover(
         chosen_theme = color_themes[color_theme]
 
     longest_line = max(text_lines, key=len)
-    longest_line = max(8, len(longest_line))  # 避免极端短文本导致字体过大
+    longest_line_size = max(8, len(longest_line))  # 避免极端短文本导致字体过大
     target_text_width = img_w * 0.95
     estimated_char_width_ratio = 1.0
-    font_size = int(min((target_text_width / len(longest_line)), img_h / 4) * font_size_ratio)
+    font_size = int(min((target_text_width / longest_line_size), img_h / 4) * font_size_ratio)
 
     # !! 关键修改 2: 增加阴影偏移量，模拟更厚的描边效果 !!
     # 将偏移量从原来的5%提升到8%

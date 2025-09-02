@@ -731,7 +731,7 @@ class BilibiliCommenter:
                 resp.raise_for_status()
                 result = resp.json()
                 if result.get("code") == 0:
-                    print("评论发送成功！")
+                    # print("评论发送成功！")
                     rpid = result["data"]["reply"]["rpid"]
                     time.sleep(5)
                     self.like_comment(oid=oid, rpid=rpid, type_code=type_code)

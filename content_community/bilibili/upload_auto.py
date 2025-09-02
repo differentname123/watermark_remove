@@ -474,7 +474,7 @@ def _preprocess_media_steps(
     #         print(f"⚠️ 尾部插图失败，继续使用原视频：{e}")
 
     # 视频细节调整（当 duration < 600）
-    if duration < 600:
+    if duration < 6000:
         tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
         try:
             t0 = time.time()
@@ -489,31 +489,39 @@ def _preprocess_media_steps(
             stage_times['视频细节调整'] = time.time() - t0
             print(f"⚠️ 视频细节调整失败：{e}")
 
-    # 添加结尾片段
-    temp_video_path = video_path.replace('.mp4', '_temp.mp4')
-    try:
-        if generation_options.get('add_epilogue', False):
-            t0 = time.time()
-            print(f"🔄 添加结尾视频片段到 {video_path}... userName: {userName}")
-            copyright_video_path = f'{userName}_final.mp4'
-            if not os.path.exists(copyright_video_path):
-                copyright_video_path = 'final.mp4'
-                print(f"⚠️ 版权视频文件 {copyright_video_path} 不存在，使用默认视频。")
-            video_path_list = [video_path, copyright_video_path]
-            merge_videos_ffmpeg(video_path_list, output_path=temp_video_path)
-            if os.path.exists(temp_video_path) and os.path.getsize(temp_video_path) > 0:
-                video_path = temp_video_path
-                print(f"✅ 合并视频成功，保存为 {temp_video_path}")
-            stage_times['添加结尾片段'] = time.time() - t0
-    except Exception as e:
-        stage_times['添加结尾片段'] = time.time() - t0
-        print(f"⚠️ 合并视频失败：{e}")
+    # # 添加结尾片段
+    # temp_video_path = video_path.replace('.mp4', '_temp.mp4')
+    # try:
+    #     if generation_options.get('add_epilogue', False):
+    #         t0 = time.time()
+    #         print(f"🔄 添加结尾视频片段到 {video_path}... userName: {userName}")
+    #         copyright_video_path = f'{userName}_final.mp4'
+    #         if not os.path.exists(copyright_video_path):
+    #             copyright_video_path = 'final.mp4'
+    #             print(f"⚠️ 版权视频文件 {copyright_video_path} 不存在，使用默认视频。")
+    #         video_path_list = [video_path, copyright_video_path]
+    #         merge_videos_ffmpeg(video_path_list, output_path=temp_video_path)
+    #         if os.path.exists(temp_video_path) and os.path.getsize(temp_video_path) > 0:
+    #             video_path = temp_video_path
+    #             print(f"✅ 合并视频成功，保存为 {temp_video_path}")
+    #         stage_times['添加结尾片段'] = time.time() - t0
+    # except Exception as e:
+    #     stage_times['添加结尾片段'] = time.time() - t0
+    #     print(f"⚠️ 合并视频失败：{e}")
 
     # 封面路径选择（遵循原脚本判断优先级）
     cover_path = (
         metadata[0].get('abs_cover_path') if os.path.exists(metadata[0].get('abs_cover_path', ''))
         else best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg')
     )
+    is_duplicate = value.get('is_duplicate', False)
+    if is_duplicate:
+        cover_path = (
+            best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg') if os.path.exists(
+                best_scheme.get('封面', {}).get('图片路径', 'default_cover.jpg'))
+            else metadata[0].get('abs_cover_path')
+        )
+        print(f"⚠️ 重复视频，使用方案封面 {cover_path}。")
 
     # 添加开场白
     addPrologue_video_path = video_path.replace('.mp4', '_prologue.mp4')
@@ -766,7 +774,7 @@ def auto_upload():
 
             # ---------- 预处理：在尾部插入引导图片 ----------
             new_video_path = final_output_path.replace('.mp4', '_new.mp4')
-            if duration < 600:
+            if duration < 6000:
                 try:
                     t0 = time.time()
                     image_duration = int(duration / 100)
