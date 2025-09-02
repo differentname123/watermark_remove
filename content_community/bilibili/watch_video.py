@@ -216,7 +216,7 @@ def simulate_watch_video(sessdata: str, bili_jct: str, bvid: str):
     start_ts = int(time.time())
     played = 0
     # 将最大观看时长上限改为 60s（最小改动）
-    watch_duration = min(duration, 10)
+    watch_duration = min(duration, 60)
 
     # 获取心跳间隔（优先使用全局 HEARTBEAT_INTERVAL，否则回退到 5）
     try:

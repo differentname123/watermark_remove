@@ -1874,6 +1874,7 @@ def create_enhanced_cover(
         chosen_theme = color_themes[color_theme]
 
     longest_line = max(text_lines, key=len)
+    longest_line = max(8, len(longest_line))  # 避免极端短文本导致字体过大
     target_text_width = img_w * 0.95
     estimated_char_width_ratio = 1.0
     font_size = int(min((target_text_width / len(longest_line)), img_h / 4) * font_size_ratio)

@@ -4,7 +4,7 @@ import datetime
 import random
 import re
 import traceback
-from collections import defaultdict
+from collections import defaultdict, deque
 
 import requests
 import time
@@ -1028,7 +1028,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
         today = datetime.date.today().isoformat()
     if hudong_info.get('last_processed_date') == today:
         hudong_info['last_processed_date_count'] = hudong_info.get('last_processed_date_count', 0)
-        if hudong_info['last_processed_date_count'] > 4:
+        if hudong_info['last_processed_date_count'] > 3:
             print("今天已经处理过3次，跳过。", hudong_info['last_processed_date_count'])
             return hudong_info
 
@@ -1038,8 +1038,8 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     exist_danmu = result.get('已有弹幕', [])
     exist_danmu_text = [danmu[0] for danmu in exist_danmu]
     max_success_comment_count = 2
-    max_success_owner_danmu_count = 1
-    max_success_other_danmu_count = 2
+    max_success_owner_danmu_count = 5
+    max_success_other_danmu_count = 10
 
     # if uid in ['443415885','3546954575383021','3546717871934392','1223805908','3546947310848473','3546947566700892', '477861377', '3493263231158598']:
     #     max_success_comment_count = 100
@@ -1065,8 +1065,8 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 print("一键三连操作流程成功完成！")
             else:
                 print("一键三连操作流程失败。")
-        max_success_comment_count = 5
-        max_success_owner_danmu_count = 3
+        max_success_comment_count = 10
+        max_success_owner_danmu_count = 10
         max_success_other_danmu_count = 10
 
     hudong_info['share_video'] = share_video
@@ -1099,7 +1099,6 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 else:
                     print(f"{success_owner_danmu_count} 弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
                     time.sleep(random.uniform(10, 15))
-                break
             time.sleep(random.uniform(10, 15))
         hudong_info['owner_danmu_used'] = owner_danmu_used_list
 
@@ -1108,31 +1107,50 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     danmu_used_list = hudong_info.get('danmu_used', [])
     danmu_used_list.extend(exist_danmu_text)
 
+    random.shuffle(other_commenters)  # 在循环前打乱顺序
+    senders = deque(other_commenters)
     for detail_danmu in danmu_list:
-        danmaku_time_ms = detail_danmu['建议时间戳'] * 1000
-        danmu_text_list = detail_danmu['推荐弹幕内容']
-        random.shuffle(other_commenters)  # 在循环前打乱顺序
+        danmaku_time_ms = int(detail_danmu['建议时间戳'] * 1000)
+        danmu_text_list = detail_danmu.get('推荐弹幕内容', [])
+
         if success_other_danmu_count >= max_success_other_danmu_count:
             print("已达到最大成功弹幕数，停止处理。", success_other_danmu_count)
             break
-        for commenter in other_commenters:
-            for danmu_text in danmu_text_list:
-                if danmu_text in danmu_used_list or len(danmu_text) == 0:
-                    continue
-                danmaku_sent = commenter.send_danmaku(
-                    bvid=bvid,
-                    msg=danmu_text,
-                    progress=danmaku_time_ms,
-                    is_up=False
-                )
-                if danmaku_sent:
-                    danmu_used_list.append(danmu_text)
-                    success_other_danmu_count += 1
-                    print(f"{success_other_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
-                else:
-                    print(f"{success_other_danmu_count} 弹幕发送流程失败。  {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms}")
-                    time.sleep(random.uniform(10, 15))
-            break
+
+        for danmu_text in danmu_text_list:
+            if not danmu_text or danmu_text in danmu_used_list:
+                continue
+
+            # 取一个发送者尝试（取出队首）
+            sender = senders.popleft()
+
+            danmaku_sent = sender.send_danmaku(
+                bvid=bvid,
+                msg=danmu_text,
+                progress=danmaku_time_ms,
+                is_up=False
+            )
+
+            # 无论成功还是失败都把该发送者放到队尾，实现轮转
+            senders.append(sender)
+
+            if danmaku_sent:
+                danmu_used_list.append(danmu_text)
+                success_other_danmu_count += 1
+                print(f"{success_other_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} | UID: {uid} {danmaku_time_ms} (sender={getattr(sender, 'uid', '?')})")
+                # 成功后可以选择跳出当前 detail 的循环（如果每个 detail 只需一条），
+                # 或者继续让下一个发送者发送下一条（取决于你的业务）
+                # 如果你希望每个 detail 只发一条，取消下面注释：
+                # break
+            else:
+                print(f"弹幕发送失败：{danmu_text} (sender={getattr(sender, 'uid', '?')}), 等待后继续...")
+                time.sleep(random.uniform(5, 10))
+
+            if success_other_danmu_count >= max_success_other_danmu_count:
+                break
+
+        # 可选短暂随机延时，减少速率突发
+        # time.sleep(random.uniform(0.5, 2.0))
         # time.sleep(random.uniform(5, 15))
     hudong_info['danmu_used'] = danmu_used_list
 
