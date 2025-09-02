@@ -400,7 +400,7 @@ class BilibiliCommenter:
 
             if result.get("code") == 0:
                 dmid = result.get("data", {}).get("dmid_str")
-                print(f"弹幕发送成功！Dmid: {dmid}")
+                print(f"弹幕发送成功！Dmid: {dmid}  {self.all_params['name']}")
                 return True
             else:
                 print(f"弹幕发送失败，错误码：{result.get('code')}, 信息：{result.get('message')} {self.all_params}")
@@ -489,7 +489,7 @@ class BilibiliCommenter:
                 like_status = "成功" if data.get('like') else "失败(可能已点赞)"
                 coin_status = "成功" if data.get('coin') else "失败(硬币不足或已投币)"
                 fav_status = "成功" if data.get('fav') else "失败(可能已收藏)"
-                print(f"一键三连操作完成。状态 -> 点赞: {like_status}, 投币: {coin_status}, 收藏: {fav_status}")
+                print(f"一键三连操作完成。状态 -> 点赞: {like_status}, 投币: {coin_status}, 收藏: {fav_status}  {self.all_params['name']}")
                 # 只要三连中有一项成功，就认为操作成功
                 return data.get('like') or data.get('coin') or data.get('fav')
             else:
@@ -874,7 +874,7 @@ class BilibiliCommenter:
 # --- 主逻辑 ---
 if __name__ == "__main__":
     config_map = init_config()
-    user_name = 'hong'
+    user_name = 'mama'
     target_value = None
     for uid, value in config_map.items():
         if value.get('name') == user_name:
@@ -882,7 +882,7 @@ if __name__ == "__main__":
             break
 
 
-    target_bvid = "BV1c3t1zDEzw"
+    target_bvid = "BV1YPaAzFEhv"
     comment_text = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}]"
     comment_type = 1
 
@@ -915,17 +915,17 @@ if __name__ == "__main__":
     #     print("顶级评论发送失败，无法进行回复操作。")
     # #
     # --- 步骤 3: 发送一条弹幕 ---
-    print("-" * 30)
-    print("步骤 3: 尝试发送一条弹幕...")
-    danmaku_text = f"大家怎么样，心情都好"
-    danmaku_time_ms = 1000
-    danmaku_sent = commenter.send_danmaku(
-        bvid=target_bvid, msg=danmaku_text, progress=danmaku_time_ms, is_up=False
-    )
-    if danmaku_sent:
-        print("弹幕发送流程成功完成！")
-    else:
-        print("弹幕发送流程失败。")
+    # print("-" * 30)
+    # print("步骤 3: 尝试发送一条弹幕...")
+    # danmaku_text = f"大家怎么样，心情都好"
+    # danmaku_time_ms = 1000
+    # danmaku_sent = commenter.send_danmaku(
+    #     bvid=target_bvid, msg=danmaku_text, progress=danmaku_time_ms, is_up=False
+    # )
+    # if danmaku_sent:
+    #     print("弹幕发送流程成功完成！")
+    # else:
+    #     print("弹幕发送流程失败。")
 
     # # # --- 步骤 4: 查询用户投稿视频 (修正了结果处理的BUG) ---
     # # print("-" * 30)
@@ -953,11 +953,11 @@ if __name__ == "__main__":
     # else:
     #     print("分享操作流程失败。")
     #
-    # # --- 新增步骤 6: 一键三连视频 ---
-    # print("-" * 30)
-    # print("步骤 6: 尝试对视频进行一键三连...")
-    # triple_like_success = commenter.triple_like_video(bvid=target_bvid)
-    # if triple_like_success:
-    #     print("一键三连操作流程成功完成！")
-    # else:
-    #     print("一键三连操作流程失败。")
+    # --- 新增步骤 6: 一键三连视频 ---
+    print("-" * 30)
+    print("步骤 6: 尝试对视频进行一键三连...")
+    triple_like_success = commenter.triple_like_video(bvid=target_bvid)
+    if triple_like_success:
+        print("一键三连操作流程成功完成！")
+    else:
+        print("一键三连操作流程失败。")
