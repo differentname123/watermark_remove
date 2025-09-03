@@ -861,28 +861,33 @@ def filter_danmu(danmu_list, duration):
 
         # 如果时间戳无法解析或超出范围，则随机分配
         if seconds is None or seconds < 0 or seconds > total_seconds:
-            seconds = random.randint(0, total_seconds)
+            seconds = random.randint(2, total_seconds-2)
 
         new_item['建议时间戳'] = seconds
         processed_danmu.append(new_item)
 
+    processed_danmu_count = 0
+    for item in processed_danmu:
+        if isinstance(item.get('推荐弹幕内容'), list):
+            processed_danmu_count += len(item['推荐弹幕内容'])
 
     # === 第二步（新增逻辑）：检查弹幕数量并补足到25条 ===
-    num_to_add = 25 - len(processed_danmu)
+    num_to_add = 25 - processed_danmu_count
 
     if num_to_add > 0:
-        print(f"弹幕数量为 {len(processed_danmu)}，不足25条，需要补充 {num_to_add} 条。")
-        for _ in range(num_to_add):
-            # 1. 从通用弹幕池中随机选择一条弹幕内容
-            content = random.choice(common_danmu_list)
+        print(f"弹幕数量为 {processed_danmu_count}，不足25条，需要补充 {num_to_add} 条。")
+        # 从通用弹幕池中随机选择 num_to_add 条
+        random_choices = random.choices(common_danmu_list, k=num_to_add)
+
+        for content in random_choices:
 
             # 2. 在视频时长范围内随机分配一个时间戳（秒）
-            timestamp = random.randint(0, total_seconds)
+            timestamp = random.randint(2, total_seconds-2)
 
             # 3. 创建新的弹幕字典并添加到列表中
             new_danmu = {
                 '建议时间戳': timestamp,
-                '推荐弹幕内容': content
+                '推荐弹幕内容': [content]
             }
             processed_danmu.append(new_danmu)
 
