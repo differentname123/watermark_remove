@@ -816,30 +816,77 @@ def time_str_to_seconds(time_str: str) -> int | None:
 
 def filter_danmu(danmu_list, duration):
     """
-    过滤弹幕列表，确保时间戳在视频时长范围内。
+    过滤和调整弹幕列表。
+    1. 确保所有弹幕的时间戳在视频时长范围内，无效时间戳会随机分配。
+    2. 如果最终弹幕数量不足25条，则从通用弹幕池中随机抽取补足。
 
     Args:
-        danmu_list: 弹幕列表，每个元素包含 '建议时间戳' 和 '推荐弹幕内容'。
-        duration: 视频总时长，格式为 "HH:MM:SS" 或 "MM:SS"。
+        danmu_list: 弹幕列表，每个元素是包含 '建议时间戳' 和 '推荐弹幕内容' 的字典。
+        duration: 视频总时长，格式为 "HH:MM:SS" 或 "MM:SS" 或秒数。
 
     Returns:
-        过滤后的弹幕列表。
+        调整后的弹幕列表，至少有25条弹幕（除非视频时长无效）。
     """
+    common_danmu_list = [
+        "屏幕那头的陌生人，不管你在哪里，祝你天天开心。",
+        "祝刷到这条视频的你，烦恼全消，未来可期。",
+        "愿刷到这里的你，凛冬散尽，星河长明。",
+        "希望这条弹幕能吸收你今天所有的不开心。",
+        "这条弹幕不为什么，就是想祝你万事胜意。",
+
+        "外面在下雨，屋里看视频，感觉很安心。",
+        "这里是弹幕许愿池，许个愿吧，万一实现了呢？",
+        "感觉累了，大家能在这里留下一句加油吗？给我也给你自己。",
+        "我的电量比进度条还多，优势在我！",
+        "前方高能！",
+        "白嫖失败，投币了投币了",
+        "给屏幕对面那个或许有些疲惫的你，一个看不见的拥抱。",
+        "今天也要好好吃饭，好好生活呀！",
+        "很高兴在此刻，与屏幕前的各位“网友”共度这一分一秒。",
+        "把不开心的事，都留在当下吧！",
+        "让这条弹幕带走你今天的疲惫。",
+    ]
+
     total_seconds = time_str_to_seconds(duration)
     if total_seconds is None or total_seconds <= 0:
         return danmu_list
 
+    # === 第一步：处理并规范化传入的弹幕列表 ===
+    processed_danmu = []
     for item in danmu_list:
-        ts = item.get('建议时间戳')
-        seconds = time_str_to_seconds(ts) if ts else None
+        # 为了不修改原始列表，创建一个副本进行操作
+        new_item = item.copy()
+        ts = new_item.get('建议时间戳')
+        seconds = time_str_to_seconds(ts)
 
         # 如果时间戳无法解析或超出范围，则随机分配
         if seconds is None or seconds < 0 or seconds > total_seconds:
             seconds = random.randint(0, total_seconds)
 
-        item['建议时间戳'] = seconds
-    danmu_list.extend(generate_danmaku_plan(total_seconds, comment_danmu))
-    return danmu_list
+        new_item['建议时间戳'] = seconds
+        processed_danmu.append(new_item)
+
+
+    # === 第二步（新增逻辑）：检查弹幕数量并补足到25条 ===
+    num_to_add = 25 - len(processed_danmu)
+
+    if num_to_add > 0:
+        print(f"弹幕数量为 {len(processed_danmu)}，不足25条，需要补充 {num_to_add} 条。")
+        for _ in range(num_to_add):
+            # 1. 从通用弹幕池中随机选择一条弹幕内容
+            content = random.choice(common_danmu_list)
+
+            # 2. 在视频时长范围内随机分配一个时间戳（秒）
+            timestamp = random.randint(0, total_seconds)
+
+            # 3. 创建新的弹幕字典并添加到列表中
+            new_danmu = {
+                '建议时间戳': timestamp,
+                '推荐弹幕内容': content
+            }
+            processed_danmu.append(new_danmu)
+
+    return processed_danmu
 
 
 def extract_guides(data):
@@ -1028,7 +1075,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
         today = datetime.date.today().isoformat()
     if hudong_info.get('last_processed_date') == today:
         hudong_info['last_processed_date_count'] = hudong_info.get('last_processed_date_count', 0)
-        if hudong_info['last_processed_date_count'] > 3:
+        if hudong_info['last_processed_date_count'] >= 1:
             print("今天已经处理过3次，跳过。", hudong_info['last_processed_date_count'])
             return hudong_info
 
@@ -1065,9 +1112,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 print("一键三连操作流程成功完成！")
             else:
                 print("一键三连操作流程失败。")
-        max_success_comment_count = 15
-        max_success_owner_danmu_count = 10
-        max_success_other_danmu_count = 15
+        max_success_comment_count = 20
+        max_success_owner_danmu_count = 20
+        max_success_other_danmu_count = 30
 
     hudong_info['share_video'] = share_video
     hudong_info['triple_like_video'] = triple_like_video
@@ -1095,9 +1142,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 if danmaku_sent:
                     owner_danmu_used_list.append(danmu_text)
                     success_owner_danmu_count += 1
-                    print(f"{success_owner_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} 账号 {owner_commenter.all_params['name']}")
+                    print(f"{success_owner_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
                 else:
-                    print(f"{success_owner_danmu_count} 弹幕发送流程失败。  {danmu_text} BVID: {bvid} 账号 {owner_commenter.all_params['name']}")
+                    print(f"{success_owner_danmu_count} 弹幕发送流程失败。  {danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
                     time.sleep(random.uniform(10, 15))
             time.sleep(random.uniform(10, 15))
         hudong_info['owner_danmu_used'] = owner_danmu_used_list
@@ -1137,13 +1184,13 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
             if danmaku_sent:
                 danmu_used_list.append(danmu_text)
                 success_other_danmu_count += 1
-                print(f"{success_other_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} 账号 {sender.all_params['name']}")
+                print(f"{success_other_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} name {sender.all_params['name']}")
                 # 成功后可以选择跳出当前 detail 的循环（如果每个 detail 只需一条），
                 # 或者继续让下一个发送者发送下一条（取决于你的业务）
                 # 如果你希望每个 detail 只发一条，取消下面注释：
                 # break
             else:
-                print(f"弹幕发送失败：{danmu_text} 账号 {sender.all_params['name']}, 等待后继续...")
+                print(f"弹幕发送失败：{danmu_text} name {sender.all_params['name']}, 等待后继续...")
                 time.sleep(random.uniform(5, 10))
 
             if success_other_danmu_count >= max_success_other_danmu_count:
@@ -1185,9 +1232,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 if posted_rpid:
                     comment_used_list.append(comment_text)
                     success_comment_count += 1
-                    print(f"{success_comment_count} 评论发送流程成功完成！ {comment_text} BVID: {bvid} 账号 {commenter.all_params['name']}")
+                    print(f"{success_comment_count} 评论发送流程成功完成！ {comment_text} BVID: {bvid} name {commenter.all_params['name']}")
                 else:
-                    print(f"{success_comment_count}评论发送流程失败。  {comment_text} BVID: {bvid} 账号 {commenter.all_params['name']}")
+                    print(f"{success_comment_count}评论发送流程失败。  {comment_text} BVID: {bvid} name {commenter.all_params['name']}")
                 break
             else:
                 if comment_text in comment_used_list:
