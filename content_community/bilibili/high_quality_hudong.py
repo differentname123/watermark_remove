@@ -1183,14 +1183,60 @@ def post_comments_once(commenter_list,
     return success_count
 
 
+def send_danmaku_thread_function(owner_commenter, owner_danmu_list, max_success_owner_danmu_count, bvid,
+                                 owner_danmu_used_list):
+    """
+    这个函数包含了发送弹幕的完整逻辑，它将在一个独立的线程中被执行。
+    """
+    success_owner_danmu_count = 0  # 计数器在线程内部初始化和使用
+    if owner_commenter:
+        for detail_owner_danmu in owner_danmu_list:
+            if success_owner_danmu_count >= max_success_owner_danmu_count:
+                print(f"线程 {threading.current_thread().name}: 已达到最大成功UP主弹幕数，停止处理。")
+                break
+
+            danmaku_time_ms = detail_owner_danmu['建议时间戳'] * 1000  # 转换为毫秒
+            danmu_text_list = detail_owner_danmu['推荐弹幕内容']
+
+            for danmu_text in danmu_text_list:
+                if danmu_text in owner_danmu_used_list or len(danmu_text) == 0:
+                    continue
+
+                # 再次检查是否达到最大数量，避免在内层循环中超出
+                if success_owner_danmu_count >= max_success_owner_danmu_count:
+                    break
+
+                danmaku_sent = owner_commenter.send_danmaku(
+                    bvid=bvid,
+                    msg=danmu_text,
+                    progress=danmaku_time_ms,
+                    is_up=True
+                )
+
+                if danmaku_sent:
+                    owner_danmu_used_list.append(danmu_text)
+                    success_owner_danmu_count += 1
+                    print(
+                        f"线程 {threading.current_thread().name}: {success_owner_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
+                else:
+                    print(
+                        f"线程 {threading.current_thread().name}: 弹幕发送流程失败。 {danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
+                    time.sleep(random.uniform(10, 15))
+
+            # 在处理完一个弹幕包后稍作等待
+            time.sleep(random.uniform(10, 15))
+
+
 def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     if not today:
         today = datetime.date.today().isoformat()
+    if hudong_info.get('last_processed_date'):
+        return hudong_info, True
     if hudong_info.get('last_processed_date') == today:
         hudong_info['last_processed_date_count'] = hudong_info.get('last_processed_date_count', 0)
         if hudong_info['last_processed_date_count'] >= 1:
             print("今天已经处理过3次，跳过。", hudong_info['last_processed_date_count'])
-            return hudong_info
+            return hudong_info, True
 
     result = gen_proper_comment(bvid, dont_need_comment=True)
     exist_comment = result.get('已有评论', [])
@@ -1231,36 +1277,26 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
 
     hudong_info['share_video'] = share_video
     hudong_info['triple_like_video'] = triple_like_video
-    success_owner_danmu_count = 0
     owner_danmu_list = hudong_info.get('owner_danmu', [])
     owner_danmu_used_list = hudong_info.get('owner_danmu_used', [])
     owner_danmu_used_list.extend(exist_danmu_text)
+    danmaku_thread = None  # <-- 在这里初始化
     if owner_commenter:
-        for detail_owner_danmu in owner_danmu_list:
-            if success_owner_danmu_count >= max_success_owner_danmu_count:
-                print("已达到最大成功UP主弹幕数，停止处理。", success_owner_danmu_count)
-                break
-            danmaku_time_ms = detail_owner_danmu['建议时间戳'] * 1000  # 转换为毫秒
-            danmu_text_list = detail_owner_danmu['推荐弹幕内容']
-            for danmu_text in danmu_text_list:
-                if danmu_text in owner_danmu_used_list or len(danmu_text) == 0:
-                    continue
-                danmaku_sent = owner_commenter.send_danmaku(
-                    bvid=bvid,
-                    msg=danmu_text,
-                    progress=danmaku_time_ms,
-                    is_up=True
+        if owner_commenter:
+            # 创建线程
+            danmaku_thread = threading.Thread(
+                target=send_danmaku_thread_function,
+                args=(
+                    owner_commenter,
+                    owner_danmu_list,
+                    max_success_owner_danmu_count,
+                    bvid,
+                    owner_danmu_used_list
                 )
+            )
 
-                if danmaku_sent:
-                    owner_danmu_used_list.append(danmu_text)
-                    success_owner_danmu_count += 1
-                    print(f"{success_owner_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
-                else:
-                    print(f"{success_owner_danmu_count} 弹幕发送流程失败。  {danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
-                    time.sleep(random.uniform(10, 15))
-            time.sleep(random.uniform(10, 15))
-        hudong_info['owner_danmu_used'] = owner_danmu_used_list
+            # 启动线程，这会立即返回，不会阻塞后续代码
+            danmaku_thread.start()
 
     success_other_danmu_count = 0
     danmu_list = hudong_info.get('danmu_list', [])
@@ -1326,7 +1362,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
         max_success_comment_count=max_success_comment_count,
         comment_used_list=comment_used_list,
         path_exists=path_exists,
-        max_workers=5,
+        max_workers=10,
         jitter=(0.4, 1.0)
     )
     hudong_info['comment_used'] = comment_used_list
@@ -1336,7 +1372,15 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     else:
         hudong_info['last_processed_date_count'] = 1
     hudong_info['last_processed_date'] = today
-    return hudong_info
+    if danmaku_thread and danmaku_thread.is_alive():
+        print("现在开始等待弹幕发送线程执行完毕...")
+        danmaku_thread.join()  # 阻塞主线程，直到danmaku_thread执行完成
+        print("弹幕发送线程已执行完毕，主程序现在可以安全退出了。")
+    else:
+        print("弹幕发送任务未启动或已执行完毕。")
+    hudong_info['owner_danmu_used'] = owner_danmu_used_list
+
+    return hudong_info, False
 
 
 def fix_metadata_cache_with_uploads(all_found_videos, metadata_cache_with_uploads):
@@ -1357,6 +1401,7 @@ stop_event = threading.Event()
 
 def fun():
     try:
+        processed_count = 0
         print("开始执行 fun 函数...当前时间:", datetime.datetime.now().isoformat())
         stop_event.clear()  # 清除停止事件
         today = datetime.date.today().isoformat()
@@ -1415,14 +1460,16 @@ def fun():
                 print(f"无互动信息跳过{bvid}")
                 continue
 
-            hudong_info = process_single_video(bvid, hudong_info, uid, commenter_map, today)
+            hudong_info, is_skip = process_single_video(bvid, hudong_info, uid, commenter_map, today)
+            if not is_skip:
+                processed_count += 1
             interaction_data[bvid] = {'hudong': hudong_info}
             save_json(interaction_data_file, interaction_data)
             print(f"视频 {bvid} 的互动信息已生成并保存。耗时: {time.time() - start_time:.2f} 秒 进度: {count}/{len(all_found_videos)}")
             if stop_event.is_set():
                 print("检测到停止请求，退出当前任务...")
                 return  # 停止当前执行，退出
-        print(f"所有视频处理完成，正在保存数据..当前时间: {datetime.datetime.now().isoformat()}")
+        print(f"所有视频处理完成，正在保存数据..当前时间: {datetime.datetime.now().isoformat()} 共处理 {processed_count} 个视频。")
     except Exception as e:
         traceback.print_exc()
     finally:
@@ -1439,8 +1486,8 @@ def run_periodically():
 
         elapsed = time.time() - loop_start
         remaining = max(0, 30*60 - elapsed)  # 剩余等待时间
+        print(f"fun 执行耗时 {elapsed:.2f} 秒，等待 {remaining:.2f} 秒后再执行下一轮...")
         if remaining > 0:
-            print(f"fun 执行耗时 {elapsed:.2f} 秒，等待 {remaining:.2f} 秒后再执行下一轮...")
             time.sleep(remaining)
 
 

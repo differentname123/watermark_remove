@@ -22,7 +22,7 @@ import traceback
 from common_utils.common_utils import get_config, format_seconds_to_mmss
 from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover, \
     merge_videos_ffmpeg, apply_all_subtle_tweaks, _get_video_resolution, process_video_with_template, probe_duration
-from common_utils.video_utils_cut import text_image_to_video_with_subtitles
+from common_utils.video_utils_cut import text_image_to_video_with_subtitles, gen_ending_video
 from content_community.app.remake_video import remake_video_robust
 
 config_map = {}
@@ -772,25 +772,41 @@ def auto_upload():
         if os.path.exists(final_output_path) and os.path.getsize(final_output_path) > 0:
             duration = probe_duration(final_output_path)
 
-            # ---------- 预处理：在尾部插入引导图片 ----------
+            # # ---------- 预处理：在尾部插入引导图片 ----------
+            # new_video_path = final_output_path.replace('.mp4', '_new.mp4')
+            # if duration < 6000:
+            #     try:
+            #         t0 = time.time()
+            #         image_duration = int(duration / 100)
+            #         image_duration = max(1, image_duration)
+            #         print(
+            #             f"🔄 尾部插图处理：视频时长 {duration} 秒，插图持续 {image_duration} 秒。 文件路径：{final_output_path} -> {new_video_path}")
+            #         final_jpg_path = f'{userName}_final.jpg'
+            #         if not os.path.exists(final_jpg_path):
+            #             final_jpg_path = 'final.jpg'
+            #             print(f"⚠️ 尾部插图文件 {final_jpg_path} 不存在，使用默认图片。")
+            #         add_image_to_video_end(final_output_path, final_jpg_path, new_video_path, image_duration)
+            #         final_output_path = new_video_path
+            #     except Exception as e:
+            #         print(f"⚠️ 尾部插图失败，继续使用原视频：{e}")
+
+            # ---------- 预处理：在尾部插入引导视频 ----------
             new_video_path = final_output_path.replace('.mp4', '_new.mp4')
+            temp_ending_video_path = final_output_path.replace('.mp4', '_ending.mp4')
             if duration < 6000:
                 try:
-                    t0 = time.time()
-                    image_duration = int(duration / 100)
-                    image_duration = max(1, image_duration)
-                    print(
-                        f"🔄 尾部插图处理：视频时长 {duration} 秒，插图持续 {image_duration} 秒。 文件路径：{final_output_path} -> {new_video_path}")
-                    final_jpg_path = f'{userName}_final.jpg'
-                    if not os.path.exists(final_jpg_path):
-                        final_jpg_path = 'final.jpg'
-                        print(f"⚠️ 尾部插图文件 {final_jpg_path} 不存在，使用默认图片。")
-                    add_image_to_video_end(final_output_path, final_jpg_path, new_video_path, image_duration)
+                    origin_ending_video_path = "origin_ending_video.mp4"
+                    ending_text = best_scheme_final.get('简介', {}).get('结尾语', '感谢观看本视频，欢迎点赞、评论、关注、投币、分享！')
+                    gen_ending_video(ending_text, temp_ending_video_path, origin_ending_video_path)
+                    merge_videos_ffmpeg([final_output_path, temp_ending_video_path], output_path=new_video_path)
+
                     final_output_path = new_video_path
                 except Exception as e:
-                    print(f"⚠️ 尾部插图失败，继续使用原视频：{e}")
+                    print(f"⚠️ 尾部引导视频失败，继续使用原视频：{e}")
 
         all_files_to_cleanup.append(final_output_path)
+        all_files_to_cleanup.append(new_video_path)
+        all_files_to_cleanup.append(temp_ending_video_path)
         # 构建上传参数（title/description/tags/topic 等）
         upload_params = _build_upload_params(value, best_scheme_final, best_cover_path, final_output_path, config, userName)
 

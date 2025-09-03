@@ -50,9 +50,120 @@ def _time_str_to_seconds(time_str: str) -> float:
 
     return seconds
 
+# def redub_video_with_ffmpeg(video_path: str,
+#                             segments_info: list,
+#                             output_path: str = "final_video_ffmpeg.mp4") -> str:
+#     """
+#     使用 FFmpeg 直接为视频重新配音。
+#     如果新音频比对应的视频片段长，则慢放视频以匹配音频时长。
+#
+#     :param video_path: 原始视频文件的路径。
+#     :param segments_info: 一个包含片段信息的列表，每个元素至少包括：
+#                           - 'startTime' (如 "00:00:05.000")
+#                           - 'endTime'   (如 "00:00:10.000")
+#                           - 'outputPath' (对应音频文件路径)
+#                           - 'trimmedDuration' (新音频时长，秒)
+#     :param output_path: 输出的最终视频文件路径。
+#     :return: 输出视频的路径。
+#     """
+#     if not shutil.which("ffmpeg"):
+#         raise FileNotFoundError("FFmpeg not found. Please install FFmpeg and ensure it is in your system's PATH.")
+#
+#     if not os.path.exists(video_path):
+#         raise FileNotFoundError(f"视频文件未找到: {video_path}")
+#
+#     with tempfile.TemporaryDirectory() as temp_dir:
+#         temp_files_list = []
+#         concat_file_path = os.path.join(temp_dir, "file_list.txt")
+#
+#         print("开始处理视频片段...")
+#         for i, segment in enumerate(segments_info):
+#             segment_id = segment.get('id', i + 1)
+#             start_time_str = segment['startTime']
+#             end_time_str = segment['endTime']
+#             audio_path = segment['outputPath']
+#
+#             print(f"\n--- 正在处理片段 {segment_id} ---")
+#             if not os.path.exists(audio_path):
+#                 print(f"警告: 音频文件未找到 {audio_path}，跳过此片段。")
+#                 continue
+#
+#             original_duration = _time_str_to_seconds(end_time_str) - _time_str_to_seconds(start_time_str)
+#             new_audio_duration = segment['trimmedDuration']
+#
+#             temp_output_path = os.path.join(temp_dir, f"temp_segment_{segment_id}.mp4")
+#             temp_files_list.append(temp_output_path)
+#
+#             speed_multiplier = 1.0
+#             if new_audio_duration > original_duration > 0:
+#                 speed_multiplier = new_audio_duration / original_duration
+#
+#             print(f"原片段时长: {original_duration:.3f}s, 新音频时长: {new_audio_duration:.3f}s")
+#             print(f"视频速度调整为: {1/speed_multiplier:.2f}x (setpts 乘数: {speed_multiplier:.2f})")
+#             print("标准化音频参数为: 采样率 44100 Hz, 声道数 2")
+#
+#             cmd = [
+#                 "ffmpeg", "-y", "-loglevel", "error",
+#                 "-ss", start_time_str, "-to", end_time_str,
+#                 "-i", video_path, "-i", audio_path,
+#                 "-filter_complex", f"[0:v]setpts={speed_multiplier:.4f}*PTS[v]",
+#                 "-map", "[v]", "-map", "1:a",
+#                 "-c:v", "libx264", "-preset", "veryfast",
+#                 "-c:a", "aac", "-b:a", "256k", "-ar", "44100", "-ac", "2",
+#                 "-shortest", temp_output_path
+#             ]
+#
+#             try:
+#                 subprocess.run(
+#                     cmd,
+#                     check=True,
+#                     capture_output=True,
+#                     text=True,            # 文本模式
+#                     encoding='utf-8',     # 强制 UTF-8 解码
+#                     errors='ignore',      # 忽略非法字节
+#                 )
+#             except subprocess.CalledProcessError as e:
+#                 print(f"处理片段 {segment_id} 时 FFmpeg 发生错误：")
+#                 print(f"FFmpeg Stderr:\n{e.stderr}")
+#                 raise
+#
+#         if not temp_files_list:
+#             print("没有可处理的片段，无法生成最终视频。")
+#             return ""
+#
+#         print("\n所有片段处理完毕，正在拼接成最终视频...")
+#         with open(concat_file_path, 'w', encoding='utf-8') as f:
+#             for file_path in temp_files_list:
+#                 safe_path = file_path.replace('\\', '/')
+#                 f.write(f"file '{safe_path}'\n")
+#
+#         concat_cmd = [
+#             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+#             "-i", concat_file_path, "-c", "copy", output_path
+#         ]
+#
+#         try:
+#             subprocess.run(
+#                 concat_cmd,
+#                 check=True,
+#                 capture_output=True,
+#                 text=True,
+#                 encoding='utf-8',
+#                 errors='ignore',
+#             )
+#         except subprocess.CalledProcessError as e:
+#             print("拼接视频时 FFmpeg 发生错误：")
+#             print(f"FFmpeg Stderr:\n{e.stderr}")
+#             raise
+#
+#     print(f"成功！最终视频已保存至: {output_path}")
+#     return output_path
+
+
 def redub_video_with_ffmpeg(video_path: str,
                             segments_info: list,
-                            output_path: str = "final_video_ffmpeg.mp4") -> str:
+                            output_path: str = "final_video_ffmpeg.mp4",
+                            keep_original_audio: bool = False) -> str:
     """
     使用 FFmpeg 直接为视频重新配音。
     如果新音频比对应的视频片段长，则慢放视频以匹配音频时长。
@@ -64,6 +175,9 @@ def redub_video_with_ffmpeg(video_path: str,
                           - 'outputPath' (对应音频文件路径)
                           - 'trimmedDuration' (新音频时长，秒)
     :param output_path: 输出的最终视频文件路径。
+    :param keep_original_audio: 是否保留原始音频并与新音频混合。
+                                False (默认) - 替换原始音频。
+                                True - 混合原始音频和新音频。
     :return: 输出视频的路径。
     """
     if not shutil.which("ffmpeg"):
@@ -76,7 +190,7 @@ def redub_video_with_ffmpeg(video_path: str,
         temp_files_list = []
         concat_file_path = os.path.join(temp_dir, "file_list.txt")
 
-        print("开始处理视频片段...")
+        print(f"开始处理视频片段... (保留原始音频: {keep_original_audio})")
         for i, segment in enumerate(segments_info):
             segment_id = segment.get('id', i + 1)
             start_time_str = segment['startTime']
@@ -99,28 +213,46 @@ def redub_video_with_ffmpeg(video_path: str,
                 speed_multiplier = new_audio_duration / original_duration
 
             print(f"原片段时长: {original_duration:.3f}s, 新音频时长: {new_audio_duration:.3f}s")
-            print(f"视频速度调整为: {1/speed_multiplier:.2f}x (setpts 乘数: {speed_multiplier:.2f})")
-            print("标准化音频参数为: 采样率 44100 Hz, 声道数 2")
+            print(f"视频速度调整为: {1 / speed_multiplier:.2f}x (setpts 乘数: {speed_multiplier:.2f})")
 
-            cmd = [
+            # --- 新增逻辑：根据 keep_original_audio 动态构建滤镜和映射 ---
+            if keep_original_audio:
+                print("模式: 混合新旧音频")
+                # 混合滤镜：同时处理视频和音频流
+                # [0:a][1:a]amix... 将两个音频输入混合成一个名为 [a] 的流
+                filter_complex = f"[0:v]setpts={speed_multiplier:.4f}*PTS[v];[0:a][1:a]amix=inputs=2:duration=longest[a]"
+                map_args = ["-map", "[v]", "-map", "[a]"]
+            else:
+                print("模式: 替换原始音频")
+                # 原始逻辑：只处理视频流，音频直接从第二个输入映射
+                filter_complex = f"[0:v]setpts={speed_multiplier:.4f}*PTS[v]"
+                map_args = ["-map", "[v]", "-map", "1:a"]
+            # --- 逻辑结束 ---
+
+            base_cmd = [
                 "ffmpeg", "-y", "-loglevel", "error",
                 "-ss", start_time_str, "-to", end_time_str,
                 "-i", video_path, "-i", audio_path,
-                "-filter_complex", f"[0:v]setpts={speed_multiplier:.4f}*PTS[v]",
-                "-map", "[v]", "-map", "1:a",
+                "-filter_complex", filter_complex,
+            ]
+
+            encoding_cmd = [
                 "-c:v", "libx264", "-preset", "veryfast",
-                "-c:a", "aac", "-b:a", "256k", "-ar", "44100", "-ac", "2",
+                "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
                 "-shortest", temp_output_path
             ]
+
+            # 组合最终命令
+            cmd = base_cmd + map_args + encoding_cmd
 
             try:
                 subprocess.run(
                     cmd,
                     check=True,
                     capture_output=True,
-                    text=True,            # 文本模式
-                    encoding='utf-8',     # 强制 UTF-8 解码
-                    errors='ignore',      # 忽略非法字节
+                    text=True,
+                    encoding='utf-8',
+                    errors='ignore',
                 )
             except subprocess.CalledProcessError as e:
                 print(f"处理片段 {segment_id} 时 FFmpeg 发生错误：")
@@ -158,7 +290,6 @@ def redub_video_with_ffmpeg(video_path: str,
 
     print(f"成功！最终视频已保存至: {output_path}")
     return output_path
-
 
 segments_data =[
     {

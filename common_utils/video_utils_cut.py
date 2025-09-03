@@ -8,7 +8,7 @@ import math  # 需要导入 math 模块以使用 PI
 
 from common_utils.common_utils import ms_to_time
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
-from common_utils.video_utils import add_subtitles_to_video
+from common_utils.video_utils import add_subtitles_to_video, probe_duration
 from common_utils.video_utils1 import redub_video_with_ffmpeg
 from common_utils.video_utils2 import add_bgm_to_video
 
@@ -448,6 +448,58 @@ def text_image_to_video_with_subtitles(
 
     # 未开启清理，返回最终视频路径
     return final_with_bgm_path.resolve() if final_with_bgm_path else final_video_path
+
+
+def gen_ending_video(text, output_path, origin_ending_video_path):
+    """
+    生成结尾视频（测试用），结尾语为txt
+    """
+    voice_name = random.choice([
+        "zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-YunjianNeural", "zh-CN-YunxiNeural",
+        "zh-CN-YunxiaNeural", "zh-CN-YunyangNeural"
+    ])
+    output_path = pathlib.Path(output_path)
+    audio_path = output_path.with_suffix(".mp3")
+    duration = generate_audio_and_get_duration_sync(
+        text=text,
+        output_filename=str(audio_path),
+        voice_name=voice_name,
+        trim_silence=False,
+        # rate="+15%",
+        # pitch='+10Hz',
+    )
+    video_duration = probe_duration(origin_ending_video_path)
+    segments_info = [{
+        'startTime': "00:00:00.000",
+        'endTime': ms_to_time(video_duration * 1000),
+        'outputPath': str(audio_path),
+        'trimmedDuration': duration,
+    }]
+    with_audio_path = output_path.with_name(output_path.stem + "_with_audio.mp4")
+    redub_video_with_ffmpeg(video_path=origin_ending_video_path, segments_info=segments_info, output_path=str(with_audio_path), keep_original_audio=True)
+
+    # 4. 添加字幕
+    subtitle_data = [{
+        'startTime': "00:00:00.000",
+        'endTime': ms_to_time(duration * 1000),
+        'optimizedText': text
+    }]
+    add_subtitles_to_video(
+        video_path=str(with_audio_path),
+        subtitles_info=subtitle_data,
+        output_path=str(output_path),
+        font_size=70,
+        bottom_margin=30
+    )
+
+
+    if os.path.exists(audio_path):
+        os.remove(audio_path)
+    if os.path.exists(with_audio_path):
+        os.remove(with_audio_path)
+    return str(output_path.resolve())
+
+
 
 # ... (示例使用部分保持不变) ...
 if __name__ == '__main__':
