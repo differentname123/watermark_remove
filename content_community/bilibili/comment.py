@@ -459,7 +459,7 @@ class BilibiliCommenter:
         :param bvid: 视频的 BV 号。
         :return: True 如果三连操作中至少有一项成功，否则 False。
         """
-        print(f"准备对视频 {bvid} 进行一键三连...")
+        # print(f"准备对视频 {bvid} 进行一键三连...")
 
         # 修正：根据实际浏览器捕获的请求，补充了必要的参数以避免 -401 错误。
         # 这些参数可能用于行为验证或风控。
@@ -509,7 +509,7 @@ class BilibiliCommenter:
         :param bvid: 视频的 BV 号。
         :return: True 如果分享成功或已分享过，否则 False。
         """
-        print(f"准备分享视频 {bvid}...")
+        # print(f"准备分享视频 {bvid}...")
 
         post_data = {
             "bvid": bvid,
@@ -527,7 +527,7 @@ class BilibiliCommenter:
 
             if result.get("code") == 0:
                 share_count = result.get("data")
-                print(f"视频分享成功！当前分享数：{share_count}")
+                print(f"{bvid} 视频分享成功！当前分享数：{share_count}")
                 return True
             elif result.get("code") == 71000:  # 重复分享
                 print("视频分享成功（今日已分享过）。")

@@ -5,6 +5,7 @@ import random
 import re
 import traceback
 from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 import time
@@ -1075,6 +1076,113 @@ def path_exists(path) -> bool:
     # 最终判断文件或目录是否存在
     return os.path.exists(stripped)
 
+
+def post_comments_once(commenter_list,
+                       comment_list,
+                       bvid,
+                       max_success_comment_count,
+                       comment_used_list,
+                       path_exists,
+                       max_workers=5,
+                       jitter=(0.4, 1.0)):
+    """
+    每个 commenter 只尝试发送一次（无重试）。
+    - 先 shuffle 并截取最多 max_success_comment_count 个 commenter
+    - 为每个 commenter 分配一个尚未使用的评论（预占）
+    - 并发发送（每个任务只尝试一次）；发送成功才把文本写回 comment_used_list
+    返回成功发送数（int）
+    """
+    random.shuffle(commenter_list)
+    selected = commenter_list[:max_success_comment_count]
+
+    used_lock = threading.Lock()
+    # 本地集合用于快速查重与预占
+    used = set(comment_used_list)
+
+    # 分配：一人一条（预占）
+    assignments = []  # list of (commenter, detail_comment)
+    for c in selected:
+        assigned = None
+        for detail in comment_list:
+            text = detail[0] if detail else ''
+            if not text or len(text) <= 1:
+                continue
+            with used_lock:
+                if text in used:
+                    continue
+                used.add(text)   # 预占，防止重复分配
+            assigned = detail
+            break
+        if assigned:
+            assignments.append((c, assigned))
+        else:
+            # 没有更多可用评论了，停止分配
+            break
+
+    if not assignments:
+        print("没有可分配的评论或 commenter，退出。")
+        return 0
+
+    success_count = 0
+    count_lock = threading.Lock()
+
+    def worker(pair):
+        nonlocal success_count
+        commenter, detail = pair
+        text = detail[0]
+        image_path = detail[2] if len(detail) > 2 else None
+
+        # 随机抖动，降低并发突发
+        time.sleep(random.uniform(*jitter))
+
+        try:
+            if image_path and path_exists(image_path):
+                rpid = commenter.post_comment(
+                    bvid, text, 1,
+                    like_video=True,
+                    image_path=image_path,
+                    forward_to_dynamic=False
+                )
+            else:
+                rpid = commenter.post_comment(
+                    bvid, text, 1,
+                    like_video=True,
+                    forward_to_dynamic=False
+                )
+        except Exception as e:
+            # 异常：释放预占，使该文本在下次运行时可用
+            with used_lock:
+                if text in used:
+                    used.remove(text)
+            print(f"异常发送: {text} -> {e}")
+            return
+
+        if rpid:
+            with count_lock:
+                success_count += 1
+            # 发送成功：把文本写回全局已用列表（线程安全）
+            with used_lock:
+                if text not in comment_used_list:
+                    comment_used_list.append(text)
+            name = getattr(getattr(commenter, 'all_params', {}), 'get', lambda k, d=None: commenter.__dict__.get('name', 'unknown'))('name', 'unknown') \
+                   if isinstance(getattr(commenter, 'all_params', None), dict) else getattr(commenter, 'name', 'unknown')
+            print(f"成功({success_count}): {text} by {name} rpid:{rpid}")
+        else:
+            # 接口返回失败：释放预占（允许后续使用）
+            with used_lock:
+                if text in used:
+                    used.remove(text)
+            print(f"失败: {text} by {getattr(commenter, 'name', 'unknown')} (接口返回)")
+
+    # 并发发送（每个 assignment 仅尝试一次）
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(assignments))) as ex:
+        futures = [ex.submit(worker, a) for a in assignments]
+        for _ in as_completed(futures):
+            pass  # 等待全部完成
+
+    return success_count
+
+
 def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     if not today:
         today = datetime.date.today().isoformat()
@@ -1110,11 +1218,11 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                 print("分享操作流程成功完成！")
             else:
                 print("分享操作流程失败。")
-            print("步骤 6: 尝试对视频进行一键三连...")
+            # print("步骤 6: 尝试对视频进行一键三连...")
             triple_like_success = commenter.triple_like_video(bvid=bvid)
             if triple_like_success:
                 triple_like_video = True
-                print("一键三连操作流程成功完成！")
+                # print("一键三连操作流程成功完成！")
             else:
                 print("一键三连操作流程失败。")
         max_success_comment_count = 20
@@ -1210,56 +1318,17 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     comment_list = hudong_info.get('comment_list', [])
     comment_used_list = hudong_info.get('comment_used', [])
     comment_used_list.extend(exist_comment_text)
-    success_comment_count = 0
     commenter_list = list(commenter_map.values())
-    # 打乱顺序
-    random.shuffle(commenter_list)
-    for commenter in commenter_list:
-        if success_comment_count >= max_success_comment_count:
-            print("已达到最大成功评论数，停止处理。", success_comment_count)
-            break
-        for detail_comment in comment_list:
-            comment_text = detail_comment[0]
-            if comment_text in comment_used_list or len(comment_text) <= 1:
-                continue
-            image_path = detail_comment[2] if len(detail_comment) > 2 else None
-            if path_exists(image_path):
-                posted_rpid = commenter.post_comment(
-                    bvid,
-                    comment_text,
-                    1,
-                    like_video=True,
-                    image_path=image_path,
-                    forward_to_dynamic=False
-                )
-
-                # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
-                if posted_rpid:
-                    comment_used_list.append(comment_text)
-                    success_comment_count += 1
-                    print(f"{success_comment_count} 评论发送流程成功完成！ {comment_text} BVID: {bvid} name {commenter.all_params['name']}")
-                else:
-                    print(f"{success_comment_count}评论发送流程失败。  {comment_text} BVID: {bvid} name {commenter.all_params['name']}")
-                break
-            else:
-                if comment_text in comment_used_list:
-                    continue
-                posted_rpid = commenter.post_comment(
-                    bvid,
-                    comment_text,
-                    1,
-                    like_video=True,
-                    forward_to_dynamic=False
-                )
-
-                # --- 步骤 2: 如果顶级评论成功，回复这条评论 ---
-                if posted_rpid:
-                    comment_used_list.append(comment_text)
-                    success_comment_count += 1
-                    print(f"{success_comment_count}评论发送流程成功完成！ {comment_text} BVID: {bvid} | UID: {uid}")
-                else:
-                    print(f"{success_comment_count}评论发送流程失败。  {comment_text} BVID: {bvid} | UID: {uid}")
-                break
+    post_comments_once(
+        commenter_list=commenter_list,
+        comment_list=comment_list,
+        bvid=bvid,
+        max_success_comment_count=max_success_comment_count,
+        comment_used_list=comment_used_list,
+        path_exists=path_exists,
+        max_workers=5,
+        jitter=(0.4, 1.0)
+    )
     hudong_info['comment_used'] = comment_used_list
     if hudong_info.get('last_processed_date') == today:
         last_count = int(hudong_info.get('last_processed_date_count', 0) or 0)
@@ -1298,7 +1367,7 @@ def fun():
         commenter_map = {}
         for key, detail_config in config_map.items():
             name = detail_config.get('name', key)
-            if name in ['nana', 'dahao', 'xiaohao', 'mama']:
+            if name in ['dahao', 'xiaohao', 'mama']:
                 continue
             all_params = detail_config.get('all_params', {})
             commenter_map[key] = BilibiliCommenter(
@@ -1307,6 +1376,7 @@ def fun():
                 all_params=all_params,
             )
             print(f"已创建评论者 {name} (UID: {key})")
+        print(f"共创建 {len(commenter_map)} 个评论者实例。")
 
         interaction_data = load_processed_dict(interaction_data_file)
         metadata_cache_with_uploads = merge_json_files('../../LLM/TikTokDownloader/back_up', "metadata_cache_with_uploads")
@@ -1317,8 +1387,8 @@ def fun():
         all_found_videos = []
         for uid in config_map.keys():
             name = config_map[uid].get('name', uid)
-            if uid in ['3546965562362625']:
-                continue
+            # if uid in ['3546965562362625']:
+            #     continue
             logging.info(f"  > 正在获取UP主(UID: {uid} {name})的最新动态...")
             temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=100)
             bvid_uid_map.update({video.get('bvid'): uid for video in temp_found_videos if 'bvid' in video})
