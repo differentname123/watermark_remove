@@ -872,11 +872,12 @@ def filter_danmu(danmu_list, duration):
         if isinstance(item.get('推荐弹幕内容'), list):
             processed_danmu_count += len(item['推荐弹幕内容'])
 
+    target_num = 25
     # === 第二步（新增逻辑）：检查弹幕数量并补足到25条 ===
-    num_to_add = 25 - processed_danmu_count
+    num_to_add = target_num - processed_danmu_count
 
     if num_to_add > 0:
-        print(f"弹幕数量为 {processed_danmu_count}，不足25条，需要补充 {num_to_add} 条。")
+        print(f"弹幕数量为 {processed_danmu_count}，不足{target_num}条，需要补充 {num_to_add} 条。")
         # 从通用弹幕池中随机选择 num_to_add 条
         random_choices = random.choices(common_danmu_list, k=num_to_add)
 

@@ -887,7 +887,7 @@ def modify_relation(fid, action_type, cookie_str, url: str = URL_MODIFY_RELATION
     精简版 modify_relation（使用 print 而非 logging）。
     参数:
       - fid: 目标 UID（字符串或数字）
-      - action_type: 1=关注, 2=取消关注, 5=拉黑（按你原逻辑）
+      - action_type: 1=关注, 2=取消关注, 5=拉黑（按你原逻辑）6=解除拉黑（按你原逻辑）
       - cookie_str: 完整 Cookie 字符串（如 "SESSDATA=...; bili_jct=...; ..."），若为 None 则使用模块内 FULL_COOKIE_STRING
       - url, timeout, retries: 可选
     返回: (success: bool, result: dict or str)

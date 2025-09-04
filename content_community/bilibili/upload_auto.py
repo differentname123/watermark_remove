@@ -768,6 +768,8 @@ def auto_upload():
                 error_count += 1
                 break
         final_output_path = video_path.replace('.mp4', '_final.mp4')
+        all_files_to_cleanup.append(final_output_path)
+
         merge_videos_ffmpeg(video_path_list, output_path=final_output_path)
         if os.path.exists(final_output_path) and os.path.getsize(final_output_path) > 0:
             duration = probe_duration(final_output_path)
