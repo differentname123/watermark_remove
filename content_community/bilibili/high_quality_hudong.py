@@ -879,7 +879,7 @@ def filter_danmu(danmu_list, duration):
     if num_to_add > 0:
         print(f"弹幕数量为 {processed_danmu_count}，不足{target_num}条，需要补充 {num_to_add} 条。")
         # 从通用弹幕池中随机选择 num_to_add 条
-        random_choices = random.choices(common_danmu_list, k=num_to_add)
+        random_choices = random.sample(common_danmu_list, k=num_to_add)
 
         for content in random_choices:
 
@@ -1262,7 +1262,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
             share_success = commenter.share_video(bvid=bvid)
             if share_success:
                 share_video = True
-                print("分享操作流程成功完成！")
+                # print("分享操作流程成功完成！")
             else:
                 print("分享操作流程失败。")
             # print("步骤 6: 尝试对视频进行一键三连...")
@@ -1435,6 +1435,8 @@ def fun():
             name = config_map[uid].get('name', uid)
             # if uid in ['3546965562362625']:
             #     continue
+            if name in ['qiqixiao', 'yang', 'yiyi', 'hao']:
+                continue
             logging.info(f"  > 正在获取UP主(UID: {uid} {name})的最新动态...")
             temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=100)
             bvid_uid_map.update({video.get('bvid'): uid for video in temp_found_videos if 'bvid' in video})
@@ -1447,6 +1449,10 @@ def fun():
             save_json(bvid_file_path, bvid_file_data)
 
         all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
+        # 只保留最近1小时的视频
+        one_hour_ago = time.time() - 3600
+        all_found_videos = [video for video in all_found_videos if video.get('created', 0) >= one_hour_ago]
+
         all_found_videos = all_found_videos[:100]
         print(f"共找到 {len(all_found_videos)} 个视频。")
         count = 0

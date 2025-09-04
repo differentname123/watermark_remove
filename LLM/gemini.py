@@ -116,6 +116,14 @@ API_KEY_chu8 = get_config("gemini_api_key_chu8")
 API_KEY_chu9 = get_config("gemini_api_key_chu9")
 API_KEY_chu10 = get_config("gemini_api_key_chu10")
 API_KEY_chu11 = get_config("gemini_api_key_chu11")
+API_KEY_chu12 = get_config("gemini_api_key_chu12")
+API_KEY_chu13 = get_config("gemini_api_key_chu13")
+API_KEY_chu14 = get_config("gemini_api_key_chu14")
+API_KEY_chu15 = get_config("gemini_api_key_chu15")
+API_KEY_chu16 = get_config("gemini_api_key_chu16")
+API_KEY_chu17 = get_config("gemini_api_key_chu17")
+
+
 
 
 API_KEY_MAP = {
@@ -136,6 +144,13 @@ API_KEY_MAP = {
     'chu9': API_KEY_chu9,
     'chu10': API_KEY_chu10,
     'chu11': API_KEY_chu11,
+    'chu12': API_KEY_chu12,
+    'chu13': API_KEY_chu13,
+    'chu14': API_KEY_chu14,
+    'chu15': API_KEY_chu15,
+    'chu16': API_KEY_chu16,
+    'chu17': API_KEY_chu17,
+
 }
 
 # 创建一个全局的 Key Manager 实例
@@ -429,21 +444,21 @@ if __name__ == "__main__":
 
     print("[TEST] 正在测试 get_llm_content (这将触发第一次动态排序)")
     start_time = time.time()
-    result = get_llm_content(prompt="给我讲个笑话吧")
-    if result:
-        print("\n[RESULT] 模型输出：\n", result)
-    else:
-        print(f"\n[FAIL] 内容生成失败{result}")
-    print(f"[INFO] 执行时间: {time.time() - start_time:.2f} 秒")
-
-    # 再次调用，观察排序是否根据上次成功结果发生变化
-    print("\n[TEST] 再次测试 get_llm_content (观察密钥顺序是否变化)")
-    start_time = time.time()
     result = get_llm_content(prompt="再给我讲个笑话吧", model_name="gemini-2.5-flash")
     if result:
         print("\n[RESULT] 模型输出：\n", result)
     else:
         print(f"\n[FAIL] 内容生成失败{result}")
     print(f"[INFO] 执行时间: {time.time() - start_time:.2f} 秒")
-
-    print("\n" + "=" * 20 + " 测试结束 " + "=" * 20)
+    #
+    # # 再次调用，观察排序是否根据上次成功结果发生变化
+    # print("\n[TEST] 再次测试 get_llm_content (观察密钥顺序是否变化)")
+    # start_time = time.time()
+    # result = get_llm_content(prompt="再给我讲个笑话吧", model_name="gemini-2.5-flash")
+    # if result:
+    #     print("\n[RESULT] 模型输出：\n", result)
+    # else:
+    #     print(f"\n[FAIL] 内容生成失败{result}")
+    # print(f"[INFO] 执行时间: {time.time() - start_time:.2f} 秒")
+    #
+    # print("\n" + "=" * 20 + " 测试结束 " + "=" * 20)
