@@ -536,7 +536,7 @@ def add_replay_comment_for_video(user_name='qiqi'):
     all_params = config_map[uid].get('all_params', {})
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token, all_params=all_params)
     temp_found_videos = bvid_file_data.get(user_name, [])
-    temp_found_videos = temp_found_videos[:1]
+    temp_found_videos = temp_found_videos[:10]
     metadata_cache_with_uploads = merge_json_files('../../LLM/TikTokDownloader/back_up', "metadata_cache_with_uploads")
 
     all_records = read_json(all_records_file)
@@ -780,6 +780,13 @@ if __name__ == '__main__':
     # result = format_video_data()
     # print(f"格式化结果，共 {len(result)} 行")
 
-    # add_replay_comment_for_video('qiqi')
-
-    run_once(['jie'])
+    username_list = ['jie', 'nana', 'xiaosu']
+    while True:
+        start_time = time.time()
+        run_once(username_list)
+        # 计算本轮执行时间
+        elapsed_time = time.time() - start_time
+        # 至少30分钟执行
+        wait_time = max(1800 - elapsed_time, 0)
+        print(f"本轮执行时间: {elapsed_time:.2f} 秒，等待 {wait_time:.2f} 秒后开始下一轮...")
+        time.sleep(wait_time)
