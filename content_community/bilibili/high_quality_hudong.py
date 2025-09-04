@@ -26,7 +26,6 @@ all_bvid_file_path = '../../LLM/TikTokDownloader/back_up/all_bvid_file.json'
 
 interaction_data_file = '../../LLM/TikTokDownloader/back_up/interaction_data.json'
 
-
 # --- 1. 全局常量 ---
 URL_MODIFY_RELATION = "https://api.bilibili.com/x/relation/modify"
 
@@ -111,6 +110,7 @@ session.headers.update({
 import difflib
 from typing import List, Optional
 
+
 def most_similar_text(text_list: List[str], target_text: str) -> Optional[str]:
     """
     返回 text_list 中与 target_text 最为相似的字符串。
@@ -127,6 +127,7 @@ def most_similar_text(text_list: List[str], target_text: str) -> Optional[str]:
             best_match = text
 
     return best_match
+
 
 def replace_bracketed(text: str, text_list: List[str]) -> str:
     """
@@ -160,6 +161,7 @@ def replace_bracketed(text: str, text_list: List[str]) -> str:
     # 使用正则替换所有 [内容]
     # re.sub 会对每一个匹配项调用一次 _replacer 函数
     return re.sub(r'\[([^\]]+)\]', _replacer, text)
+
 
 # --- 4. API请求核心函数 ---
 def send_get_request(url, params=None):
@@ -200,6 +202,7 @@ comment_danmu = [
     "我宣布，这里是第一现场，评论区是第二现场！",
     "这个视频的弹幕一半，评论区一半，UP主只负责上传。",
 ]
+
 
 def modify_relation(fid, action_type, csrf_token):
     """
@@ -671,6 +674,7 @@ def find_video_by_title(title_to_find: str, data_dict: dict):
             return video_info
     return None
 
+
 def parse_and_group_danmaku(data: dict) -> list:
     """
     解析输入的字典，将弹幕按时间戳进行分组。
@@ -848,6 +852,23 @@ def filter_danmu(danmu_list, duration):
         "让这条弹幕带走你今天的疲惫。",
     ]
 
+    danmaku_zouxin_sanlian_gongmian = [
+        "就冲结尾这句，放心把三连交了",
+        "三连送上，这结尾太值得",
+        "最后一段值得三连收藏",
+        "这句祝福让我毫不犹豫三连",
+        "把这段当成今日小确幸，三连已交付",
+        "这结尾值得多按几下（已按）",
+        "已三连，愿这份祝福常在",
+        "悄悄三连，最后一句反复回放中",
+        "被最后这句治愈了，三连必须的",
+        "最后这句值得三连也值得收藏",
+        "三连已给，感恩这份温柔",
+        "手滑三连了（是真的走心）",
+        "这祝福像暖阳，照进烦心处",
+        "一句走心话，整天都舒服了"
+    ]
+
     total_seconds = time_str_to_seconds(duration)
     if total_seconds is None or total_seconds <= 0:
         return danmu_list
@@ -862,7 +883,7 @@ def filter_danmu(danmu_list, duration):
 
         # 如果时间戳无法解析或超出范围，则随机分配
         if seconds is None or seconds < 0 or seconds > total_seconds:
-            seconds = random.randint(2, total_seconds-2)
+            seconds = random.randint(2, total_seconds - 10)
 
         new_item['建议时间戳'] = seconds
         processed_danmu.append(new_item)
@@ -871,7 +892,6 @@ def filter_danmu(danmu_list, duration):
     for item in processed_danmu:
         if isinstance(item.get('推荐弹幕内容'), list):
             processed_danmu_count += len(item['推荐弹幕内容'])
-
 
     target_num = 25
     # === 第二步（新增逻辑）：检查弹幕数量并补足到25条 ===
@@ -883,9 +903,8 @@ def filter_danmu(danmu_list, duration):
         random_choices = random.sample(common_danmu_list, k=num_to_add)
 
         for content in random_choices:
-
             # 2. 在视频时长范围内随机分配一个时间戳（秒）
-            timestamp = random.randint(2, total_seconds-2)
+            timestamp = random.randint(2, total_seconds - 10)
 
             # 3. 创建新的弹幕字典并添加到列表中
             new_danmu = {
@@ -894,6 +913,16 @@ def filter_danmu(danmu_list, duration):
             }
             processed_danmu.append(new_danmu)
 
+    # 增加固定的三连弹幕
+    random_choices = random.sample(danmaku_zouxin_sanlian_gongmian, k=2)
+    time_diff = 6
+    for content in random_choices:
+        new_danmu = {
+            '建议时间戳': total_seconds - time_diff,
+            '推荐弹幕内容': [content]
+        }
+        time_diff += 4
+        processed_danmu.append(new_danmu)
     return processed_danmu
 
 
@@ -928,6 +957,7 @@ def extract_guides(data):
             supplementary_notes.append(note.strip())
 
     return interaction_prompts, supplementary_notes
+
 
 def format_bilibili_emote(comment_list, all_emote_list):
     """
@@ -994,8 +1024,6 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads, all_emo
             if hud:
                 return hud
 
-
-
     # 2. 安全调用 find_video_by_bvid
 
     duration = target_value.get('metadata', [{}])[0].get('duration', '00:02')
@@ -1055,6 +1083,7 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads, all_emo
 
     return hudong_info
 
+
 def path_exists(path) -> bool:
     """
     判断输入的路径字符串是否存在。
@@ -1112,7 +1141,7 @@ def post_comments_once(commenter_list,
             with used_lock:
                 if text in used:
                     continue
-                used.add(text)   # 预占，防止重复分配
+                used.add(text)  # 预占，防止重复分配
             assigned = detail
             break
         if assigned:
@@ -1166,8 +1195,9 @@ def post_comments_once(commenter_list,
             with used_lock:
                 if text not in comment_used_list:
                     comment_used_list.append(text)
-            name = getattr(getattr(commenter, 'all_params', {}), 'get', lambda k, d=None: commenter.__dict__.get('name', 'unknown'))('name', 'unknown') \
-                   if isinstance(getattr(commenter, 'all_params', None), dict) else getattr(commenter, 'name', 'unknown')
+            name = getattr(getattr(commenter, 'all_params', {}), 'get',
+                           lambda k, d=None: commenter.__dict__.get('name', 'unknown'))('name', 'unknown') \
+                if isinstance(getattr(commenter, 'all_params', None), dict) else getattr(commenter, 'name', 'unknown')
             print(f"成功({success_count}): {text} by {name} rpid:{rpid}")
         else:
             # 接口返回失败：释放预占（允许后续使用）
@@ -1257,7 +1287,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     other_commenters = [c for k, c in commenter_map.items() if k != uid]
     share_video = hudong_info.get("share_video", False)
     triple_like_video = hudong_info.get("triple_like_video", False)
-    if not share_video or not  triple_like_video:
+    if not share_video or not triple_like_video:
         watch_video([bvid])
         for commenter in commenter_map.values():
             share_success = commenter.share_video(bvid=bvid)
@@ -1335,7 +1365,8 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
             if danmaku_sent:
                 danmu_used_list.append(danmu_text)
                 success_other_danmu_count += 1
-                print(f"{success_other_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} name {sender.all_params['name']}")
+                print(
+                    f"{success_other_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} name {sender.all_params['name']}")
                 # 成功后可以选择跳出当前 detail 的循环（如果每个 detail 只需一条），
                 # 或者继续让下一个发送者发送下一条（取决于你的业务）
                 # 如果你希望每个 detail 只发一条，取消下面注释：
@@ -1351,7 +1382,6 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
         # time.sleep(random.uniform(0.5, 2.0))
         # time.sleep(random.uniform(5, 15))
     hudong_info['danmu_used'] = danmu_used_list
-
 
     comment_list = hudong_info.get('comment_list', [])
     comment_used_list = hudong_info.get('comment_used', [])
@@ -1386,7 +1416,6 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
 
 
 def fix_metadata_cache_with_uploads(all_found_videos, metadata_cache_with_uploads):
-
     for video in all_found_videos:
         title = video.get('title', '')
 
@@ -1400,6 +1429,7 @@ def fix_metadata_cache_with_uploads(all_found_videos, metadata_cache_with_upload
 
 
 stop_event = threading.Event()
+
 
 def fun():
     try:
@@ -1426,7 +1456,8 @@ def fun():
         print(f"共创建 {len(commenter_map)} 个评论者实例。")
 
         interaction_data = load_processed_dict(interaction_data_file)
-        metadata_cache_with_uploads = merge_json_files('../../LLM/TikTokDownloader/back_up', "metadata_cache_with_uploads")
+        metadata_cache_with_uploads = merge_json_files('../../LLM/TikTokDownloader/back_up',
+                                                       "metadata_cache_with_uploads")
         bvid_file_data = load_processed_dict(bvid_file_path)
         all_bvid_file_data = load_processed_dict(all_bvid_file_path)
 
@@ -1473,15 +1504,18 @@ def fun():
                 processed_count += 1
             interaction_data[bvid] = {'hudong': hudong_info}
             save_json(interaction_data_file, interaction_data)
-            print(f"视频 {bvid} 的互动信息已生成并保存。耗时: {time.time() - start_time:.2f} 秒 进度: {count}/{len(all_found_videos)}")
+            print(
+                f"视频 {bvid} 的互动信息已生成并保存。耗时: {time.time() - start_time:.2f} 秒 进度: {count}/{len(all_found_videos)}")
             if stop_event.is_set():
                 print("检测到停止请求，退出当前任务...")
                 return  # 停止当前执行，退出
-        print(f"所有视频处理完成，正在保存数据..当前时间: {datetime.datetime.now().isoformat()} 共处理 {processed_count} 个视频。")
+        print(
+            f"所有视频处理完成，正在保存数据..当前时间: {datetime.datetime.now().isoformat()} 共处理 {processed_count} 个视频。")
     except Exception as e:
         traceback.print_exc()
     finally:
         stop_event.set()  # 标记任务结束
+
 
 def run_periodically():
     while True:
@@ -1493,7 +1527,7 @@ def run_periodically():
         fun_thread.join()
 
         elapsed = time.time() - loop_start
-        remaining = max(0, 30*60 - elapsed)  # 剩余等待时间
+        remaining = max(0, 30 * 60 - elapsed)  # 剩余等待时间
         print(f"fun 执行耗时 {elapsed:.2f} 秒，等待 {remaining:.2f} 秒后再执行下一轮...")
         if remaining > 0:
             time.sleep(remaining)
