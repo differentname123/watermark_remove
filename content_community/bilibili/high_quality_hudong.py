@@ -872,10 +872,11 @@ def filter_danmu(danmu_list, duration):
         if isinstance(item.get('推荐弹幕内容'), list):
             processed_danmu_count += len(item['推荐弹幕内容'])
 
+
     target_num = 25
     # === 第二步（新增逻辑）：检查弹幕数量并补足到25条 ===
     num_to_add = target_num - processed_danmu_count
-
+    num_to_add = min(num_to_add, len(common_danmu_list))  # 避免超出通用池范围
     if num_to_add > 0:
         print(f"弹幕数量为 {processed_danmu_count}，不足{target_num}条，需要补充 {num_to_add} 条。")
         # 从通用弹幕池中随机选择 num_to_add 条
@@ -1450,7 +1451,7 @@ def fun():
 
         all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
         # 只保留最近1小时的视频
-        one_hour_ago = time.time() - 3600
+        one_hour_ago = time.time() - 3600 * 3
         all_found_videos = [video for video in all_found_videos if video.get('created', 0) >= one_hour_ago]
 
         all_found_videos = all_found_videos[:100]

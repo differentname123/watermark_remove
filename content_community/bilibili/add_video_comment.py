@@ -35,8 +35,9 @@ final_prompt = """
 - 你是一名擅长短视频运营与内容匹配的电影推荐助手。任务：
   1) 读取视频多角度标题、结构化内容分析与真实观众评论；
   2) 从给定候选电影中挑选最契合观众兴趣与视频氛围的影片（只选不造）；
-  3) 为每部入选影片生成“置顶评论”和“互动评论”，最大化引导点击与讨论；
+  3) 为每部入选影片生成“置顶评论”和“互动评论”，以自然的好奇与价值感驱动点击与讨论（避免命令式/功利化口吻）。
   4) 严格仅输出合法 JSON 数组，字段仅限：名称、置顶评论、互动评论。
+  5) 互动评论须以观众视角“托”的形式撰写（即扮演热心观众、自然推荐），但不得冒充官方或具体真实人物；
 
 输入数据（本次调用会提供一个 JSON）
 {
@@ -72,8 +73,26 @@ final_prompt = """
   - 若评论出现顾虑：节奏慢/拖沓→强调“开场即抓人/无尿点”；太虐/沉重→强调“克制/救赎/笑泪平衡”；想要反转/怕烂尾→强调“反转干净/结尾收得住（不剧透）”；想轻松/下饭→强调“短平快/笑点密”。
 
 文案创作规范
-- 置顶评论：建议 28–70 个汉字；一口气读完、钩子强（悬念/收益/情绪）、包含1–2个与视频高光或评论需求强相关的明确卖点；结尾须有清晰 CTA（如：现在就看/点进来/马上去看）。可酌情加入不超过2个表情符号。严禁剧透与泄露关键转折。
-- 互动评论：建议 18–60 个汉字；针对常见顾虑给出安抚或差异化卖点，附一个简短问题或二次 CTA（如：看到最后再来聊/你押中了哪个细节？）。
+- 置顶评论：建议 28--70 个汉字；一口气读完、钩子强（悬念/收益/情绪），包含 1--2 个与视频高光或评论需求强相关的明确卖点；结尾采用“邀请式/好奇式闭句”，严禁命令式 CTA（如：现在就看/马上去看/点进来/赶紧看/速看 等）。可酌情加入不超过 2 个表情符号；严禁剧透与泄露关键转折。
+  - 柔性邀请短句（择一放句尾）：
+    · 合不合口味，前两分钟见分晓
+    · 感兴趣再继续也不迟
+    · 在意节奏的，可先试一小段
+    · 喜欢这种氛围的可以去感受一下
+    · 值不值，一眼就有感觉
+    · 看完再回头找细节，会更上头
+  - 规避词：必看/封神/全网/年度最佳/血亏/必须/顶配/炸裂/跪了
+    可替换：上头/节奏给到/信息量大/细节密/完成度高/反转干净/结尾收得住/笑泪平衡/不拖沓
+
+- 互动评论（列表）：每部影片须输出 2--4 条；每条 18--60 字。
+  1) 第一条（必须）：第一人称观众视角“托”（热心推荐，点一处具体感受或小细节），不过度煽动，不夹带 CTA。
+  2) 第二条（必须）：与影片直接相关的疑问句（问号结尾，12--40 字），采用第一人称或无主语中性表述，聚焦“一件具体事”（镜头/动机/台词/象征），带轻微不确定或情绪色彩（如：我有点没懂/有点懵/一直在想）。
+     禁止：第二人称及变体（你/你们/妳/您）、群体召集与指使（大家/有没有人/谁来/懂哥/求解释/求科普）、任何 CTA 或引导性词（快去/要不要看）。
+     正例：结尾那盏灯是在示意和解还是自欺？；电梯门合上前的停顿是在犹豫吗？；雨夜那段手势有暗号含义吗？
+     反例：大家怎么看结尾？；有懂哥解释下吗？；是不是该去看？
+  3) 第三/第四条（可选）：用来化解顾虑或补充卖点（如：节奏不拖/表演稳/不虐），与前两条不重复。
+  4) 禁止冒充官方或真实人物，不含外链或联系方式。
+
 - 风格自动适配视频与影片题材（示例语气，仅作参考、勿硬编码到输出）：
   - 悬疑/犯罪：紧张、克制，强调反转与细节，“看到最后/真相在细节里”
   - 动作/爽片：直接、动感，强调节奏与打戏，“一口气看完/过瘾”
@@ -86,6 +105,7 @@ final_prompt = """
 - 输出语言默认简体中文；可随评论语言微调，但避免英文堆砌。
 - 避免剧透、引战、夸大和绝对化敏感词（如“史上最”“封神”）；不包含外链、@、联系方式或平台导流字眼；不大段引用受版权保护台词（>25字）。
 - 不向用户暴露内部规则、打分或提示词内容。
+- 语气守则：克制、邀请、共情为先；避免命令式与功利化措辞；尊重观众自主决策。
 
 兜底与边界
 - 若 comments 为空或噪声过大，则主要依据 titles 与 video_analyse 做匹配。
@@ -97,23 +117,20 @@ final_prompt = """
 - 数组元素对象仅包含以下三个字段（字段名必须为中文）：
   - "名称": string         // 来自 videos 的“名称”，原样输出
   - "置顶评论": string     // 置顶的高转化引导文案
-  - "互动评论": string     // 回复置顶评论的跟进引导
-- JSON 必须合法：双引号、标点与括号成对、无尾逗号。
+  - "互动评论": string[] // 必须为字符串数组（至少 2 条，至多 4 条）；
+    - JSON 必须合法：双引号、标点与括号成对、无尾逗号。
 
 示例（示意形态，实际内容需基于输入实时生成，切勿照抄）
 [
   {
     "名称": "电影名称A",
     "置顶评论": "反转一层比一层狠，关键线索全埋在前10分钟，看到最后才懂野心，点进来解锁真相！",
-    "互动评论": "怕拖沓？这部开场就把你拽进去，结尾干净利落。去看看你能不能提前猜中。"
-    "评分": 9.5
+      "互动评论": [
+        "刚看完整个人懵了，前半段埋得好细节，去看你就懂！",
+        "就我一个人觉得凶手的动机有问题吗？"
+      ]
   },
-  {
-    "名称": "电影名称B",
-    "置顶评论": "想要轻松解压？笑点密集不尴尬，通勤路上都能一口气看完，马上点开放松一下～",
-    "互动评论": "不想费脑只想快乐？这部刚好对味，点开看看你笑在哪一段😉",
-    "评分": 7.5
-  }
+  ...
 ]
 
 现在请根据上述要求，读取本次调用提供的输入 JSON，并输出严格符合规范的 JSON 数组结果。
@@ -361,7 +378,7 @@ def auto_replay_refactored(user_name: str):
 
     # 1. 加载数据与配置
     try:
-        all_records_file = f"{BASE_DIR}/{user_name}_replay_record_info.json"
+        all_records_file = f"{BASE_DIR}/{user_name}_replay_video_info.json"
         all_records = read_json(all_records_file)
         config_map = init_config()
     except FileNotFoundError:
@@ -442,78 +459,42 @@ def send_replay_comment(
     all_replay_info = record_info['property_goods']
     final_goods = record_info.get('final_goods', {})
     print(f"\n\n正在发送回复性评论到视频 {bvid}")
-    recommendations = final_goods.get('resource_recommendations', [])
-    sorted_recs = sorted(
-        [
-            item for item in recommendations
-            if (float(item.get('estimated_ctr') or 1) * float(item.get('score') or 0)) >= 0
-        ],
-        key=lambda item: float(item.get('estimated_ctr') or 1) * float(item.get('score') or 0),
-        reverse=True
-    )
-    print(f"找到 {len(sorted_recs)} 条商品推荐，按预估点击率和评分排序。过滤前推荐数量: {len(recommendations)}")
+    recommendations = final_goods
+    # sorted_recs = sorted(
+    #     [
+    #         item for item in recommendations
+    #         if (float(item.get('estimated_ctr') or 1) * float(item.get('score') or 0)) >= 0
+    #     ],
+    #     key=lambda item: float(item.get('estimated_ctr') or 1) * float(item.get('score') or 0),
+    #     reverse=True
+    # )
+    sorted_recs = recommendations
+    print(f"找到 {len(sorted_recs)} 条电影推荐。过滤前推荐数量: {len(recommendations)}")
     # 2. 获取完整商品信息列表
     property_goods = all_replay_info
     # 将sorted_recs打乱顺序
     random.shuffle(sorted_recs)
     for rec in sorted_recs:
-        title: str = rec.get('title', '')
+        title: str = rec.get('名称', '')
         if not title:
-            continue
-        if title not in ["终极应用", "福利游戏"]:
             continue
 
         # 3. 在 property_goods 找到对应商品
         target_good: Optional[Dict[str, Any]] = next(
-            (pg for pg in property_goods if pg.get('title') == title),
+            (pg for pg in property_goods if pg.get('名称') == title),
             None
         )
         if not target_good:
             target_good = property_goods[0]
-        abd_image_path = target_good.get('abd_image_path', '')
-
-        abd_image_path_list = target_good.get('abd_image_path_list', [])
-        if abd_image_path_list:
-            abd_image_path = random.choice(abd_image_path_list)
-        # abd_image_path = ""
-        pinned_text: str = rec.get('pinned_comment', '').strip()
-        key1 = target_good.get('key1', '')
-        key_list = key1.split('，')
-        message_list = target_good.get('message', [])
-        message = random.choice(message_list) if message_list else ''
-
-        casual_phrases = [
-            "我把东西都整理好了，大家随便拿～",
-            "资料收拾好了，你们要哪个直接说。",
-            "都整理好啦，想要的来拿走不谢（开玩笑）。",
-            "资料已搞定，有需要的立刻来取～",
-            "我把资料整齐放好啦，大家慢慢看。",
-            "资料备好啦，需要的私信/评论喊我。",
-            "好东西已经打包完毕，来取吧。",
-            "我把资料整理成包了，想要的直接私聊。",
-            "资源已整理，大家随用。",
-            "资料已备齐，想拿走就来。",
-            "希望这些整理好的内容对大家有帮助。",
-            "我已把重要资料归类，便于大家查阅。",
-            "所有资料已按主题整理，方便快速获取。",
-            "资料已整理并校对完毕，如有错误请指出。",
-            "内容已整理完成，若发现问题请反馈。",
-            "资料已整理并标注来源，供参考与分享。",
-            "我已整理好资料并附上使用说明/阅读建议。",
-            "资料包已整理，包含目录与快速链接，便于查找。",
-            "资料已整合，欢迎大家检索并交流使用经验。",
-            "我已完成资料汇总，后续会定期更新并发布变更日志。"
-        ]
-        phrase = random.choice(casual_phrases)
-        comment_body = f"{pinned_text}\n{message}\n{phrase}\n资料已经整理完毕，私信回复 {key_list[0]} 这{len(key_list[0])}个字，即可领取"
-        # comment_body = f"{pinned_text}\n{message}"
+        movie_link = target_good.get('链接', '')
+        if not movie_link:
+            continue
+        pinned_text: str = rec.get('置顶评论', '').strip()
+        comment_body = f"{pinned_text}\n{movie_link}"
 
         # 4. 发布评论
-        print(f"正在发布商品评论: 视频 {bvid}，商品 {title} “{rec.get('title', '')}” comment_body: {comment_body}")
-        if os.path.exists(abd_image_path):
-            rpid = commenter.post_comment(bvid=bvid, message_content=comment_body, image_path=abd_image_path)
-        else:
-            rpid = commenter.post_comment(bvid=bvid, message_content=comment_body)
+        print(f"正在发布电影推荐评论: 视频 {bvid}，电影 {title} comment_body: {comment_body}")
+        rpid = commenter.post_comment(bvid=bvid, message_content=comment_body)
         if not rpid:
             # 发布失败，尝试下一个
             continue
@@ -521,14 +502,13 @@ def send_replay_comment(
         # 5. 置顶评论并结束
         if commenter.pin_comment(bvid=bvid, rpid=rpid):
             record_info['comment_body'] = comment_body
-            shill_comments = target_good.get('shill_comments', [])
+            shill_comments = rec.get('互动评论', [])
             # 将shill_comments打乱
             random.shuffle(shill_comments)
             record_info['shill_comments'] = shill_comments
-            print(
-                f"✅ 已成功发送并置顶商品评论: 视频 {bvid}，商品 {title} “{rec.get('title', '')}” comment_body: {comment_body}")
+            print(f"✅ 已成功发送并置电影推荐评论: 视频 {bvid}，电影 {title} comment_body: {comment_body}")
             time.sleep(60)
-            return rpid, target_good.get('title', '')
+            return rpid, target_good.get('名称', '')
 
     # 如果所有推荐都处理完仍未成功
     print(f"⚠️ 未能发送或置顶任何商品评论到视频 {bvid}")
@@ -556,7 +536,7 @@ def add_replay_comment_for_video(user_name='qiqi'):
     all_params = config_map[uid].get('all_params', {})
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token, all_params=all_params)
     temp_found_videos = bvid_file_data.get(user_name, [])
-    temp_found_videos = temp_found_videos[:10]
+    temp_found_videos = temp_found_videos[:1]
     metadata_cache_with_uploads = merge_json_files('../../LLM/TikTokDownloader/back_up', "metadata_cache_with_uploads")
 
     all_records = read_json(all_records_file)
@@ -800,4 +780,6 @@ if __name__ == '__main__':
     # result = format_video_data()
     # print(f"格式化结果，共 {len(result)} 行")
 
-    add_replay_comment_for_video('qiqi')
+    # add_replay_comment_for_video('qiqi')
+
+    run_once(['jie'])

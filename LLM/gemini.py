@@ -122,6 +122,11 @@ API_KEY_chu14 = get_config("gemini_api_key_chu14")
 API_KEY_chu15 = get_config("gemini_api_key_chu15")
 API_KEY_chu16 = get_config("gemini_api_key_chu16")
 API_KEY_chu17 = get_config("gemini_api_key_chu17")
+API_KEY_chu18 = get_config("gemini_api_key_chu18")
+API_KEY_chu19 = get_config("gemini_api_key_chu19")
+API_KEY_chu20 = get_config("gemini_api_key_chu20")
+API_KEY_chu21 = get_config("gemini_api_key_chu21")
+API_KEY_chu22 = get_config("gemini_api_key_chu22")
 
 
 
@@ -150,6 +155,11 @@ API_KEY_MAP = {
     'chu15': API_KEY_chu15,
     'chu16': API_KEY_chu16,
     'chu17': API_KEY_chu17,
+    'chu18': API_KEY_chu18,
+    'chu19': API_KEY_chu19,
+    'chu20': API_KEY_chu20,
+    'chu21': API_KEY_chu21,
+    'chu22': API_KEY_chu22,
 
 }
 

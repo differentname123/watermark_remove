@@ -38,7 +38,7 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 # mama_total_cookie = get_config("mama_bilibili_total_cookie")
 # config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT, mama_total_cookie)
 
-
+video_recommend_user_list = ['jie', 'nana', 'xiaosu']
 # 定义需要处理的账号名及其对应的config_map键名（区分大小写）
 accounts = {
     'tao': 'tao',
@@ -598,8 +598,8 @@ def _build_upload_params(
     """基于 best_scheme 与 metadata 生成 upload_params（保留原逻辑）"""
     metadata = metadata_entry.get('metadata', [])
     origin_tag = metadata[0].get('tag', [])
-    if userName == 'ruru' and '娱乐盘点' not in origin_tag:
-        origin_tag.insert(0, '娱乐盘点')  # 放最前面
+    if userName in video_recommend_user_list:
+        origin_tag.insert(0, 'B站好片有奖种草')  # 放最前面
     origin_tag.extend(metadata[0].get('text_extra', []))
 
     title = best_scheme.get('标题', '欢迎来看我的视频！')
