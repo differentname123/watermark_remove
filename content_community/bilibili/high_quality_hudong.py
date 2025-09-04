@@ -1362,7 +1362,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
         max_success_comment_count=max_success_comment_count,
         comment_used_list=comment_used_list,
         path_exists=path_exists,
-        max_workers=10,
+        max_workers=5,
         jitter=(0.4, 1.0)
     )
     hudong_info['comment_used'] = comment_used_list
