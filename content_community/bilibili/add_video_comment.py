@@ -504,7 +504,7 @@ def send_replay_comment(
             record_info['comment_body'] = comment_body
             shill_comments = rec.get('互动评论', [])
             # 将shill_comments打乱
-            random.shuffle(shill_comments)
+            # random.shuffle(shill_comments)
             record_info['shill_comments'] = shill_comments
             print(f"✅ 已成功发送并置电影推荐评论: 视频 {bvid}，电影 {title} comment_body: {comment_body}")
             time.sleep(60)
