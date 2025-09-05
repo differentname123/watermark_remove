@@ -525,7 +525,7 @@ def add_replay_comment_for_video(user_name='qiqi'):
     config_map = init_config()
     all_records_file = f"{BASE_DIR}/{user_name}_replay_video_info.json"
     # 找到对应的 UID
-    uid = '1223805908'
+    uid = '443415885'
     for key, value in config_map.items():
         if value['name'] == user_name:
             uid = key
@@ -780,7 +780,7 @@ if __name__ == '__main__':
     # result = format_video_data()
     # print(f"格式化结果，共 {len(result)} 行")
 
-    username_list = ['jie', 'nana', 'xiaosu']
+    username_list = ['jie', 'nana']
     while True:
         start_time = time.time()
         run_once(username_list)

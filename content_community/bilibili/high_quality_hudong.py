@@ -1068,7 +1068,7 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads, all_emo
                                "感谢我们的这次相遇，我们下期再见，在那之前，要一切顺利哦！",
                                "那么，就到这里啦。晚安，祝你好梦，忘掉所有烦恼。"]
     interaction_danmu_list = [{'建议时间戳': 1, '推荐弹幕内容': interaction_prompts}]
-    supplementary_notes_list = [{'建议时间戳': total_seconds - 2, '推荐弹幕内容': supplementary_notes}]
+    supplementary_notes_list = [{'建议时间戳': total_seconds - 8, '推荐弹幕内容': supplementary_notes}]
     owner_danmu_list = []  # 用于存储UP主的弹幕
     owner_danmu_list.extend(interaction_danmu_list)  # 将互动引导弹幕添加到UP主弹幕列表中
     owner_danmu_list.extend(supplementary_notes_list)  # 将补充信息弹幕添加到UP主弹幕列表中
@@ -1444,7 +1444,7 @@ def fun():
         commenter_map = {}
         for key, detail_config in config_map.items():
             name = detail_config.get('name', key)
-            if name in ['dahao', 'xiaohao', 'mama']:
+            if name in ['xiaohao', 'mama']:
                 continue
             all_params = detail_config.get('all_params', {})
             commenter_map[key] = BilibiliCommenter(

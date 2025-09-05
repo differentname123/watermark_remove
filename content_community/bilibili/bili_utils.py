@@ -442,7 +442,7 @@ def check_duplicate_video(meta_data):
                     break
 
             if target_value:
-                print(f"[提示] 检查到重复视频: {target_value.get('title')} (BVID: {target_value.get('bvid')})")
+                print(f"[提示] 检查到重复视频: {target_value.get('title')} (BVID: {target_value.get('bvid')}) {target_value.get('author', '')}")
                 user_map_info[douyin_username] = {
                     "bilibili_username": target_value.get('author', ''),
                     "bilibili_bvid": target_value.get('bvid', ''),

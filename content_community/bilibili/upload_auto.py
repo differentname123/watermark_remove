@@ -38,7 +38,7 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 # mama_total_cookie = get_config("mama_bilibili_total_cookie")
 # config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT, mama_total_cookie)
 
-video_recommend_user_list = ['jie', 'nana', 'xiaosu']
+video_recommend_user_list = ['jie', 'nana']
 # 定义需要处理的账号名及其对应的config_map键名（区分大小写）
 accounts = {
     'tao': 'tao',
@@ -53,7 +53,7 @@ accounts = {
     'xue': 'xue',
     'cai': 'cai',
     # 'jun': 'jun',
-    'xiaosu': 'xiaosu',
+    # 'xiaosu': 'xiaosu',
     'chabian': 'chabian',
     'lin': 'lin',
     'jj': 'jj',
