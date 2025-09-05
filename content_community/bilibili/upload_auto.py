@@ -62,6 +62,7 @@ accounts = {
     'dan': 'dan',
     'ning': 'ning',
     'dahao': 'dahao',
+    'yang': 'yang',
 
 }
 
