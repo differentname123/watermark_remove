@@ -1201,7 +1201,7 @@ def post_comments_once(commenter_list,
             name = getattr(getattr(commenter, 'all_params', {}), 'get',
                            lambda k, d=None: commenter.__dict__.get('name', 'unknown'))('name', 'unknown') \
                 if isinstance(getattr(commenter, 'all_params', None), dict) else getattr(commenter, 'name', 'unknown')
-            print(f"成功({success_count}): {text} by {name} rpid:{rpid}")
+            print(f"[评论成功个数 {success_count}]: {text} by {name} rpid:{rpid}")
         else:
             # 接口返回失败：释放预占（允许后续使用）
             with used_lock:
@@ -1252,11 +1252,11 @@ def send_danmaku_thread_function(owner_commenter, owner_danmu_list, max_success_
                     owner_danmu_used_list.append(danmu_text)
                     success_owner_danmu_count += 1
                     print(
-                        f"{success_owner_danmu_count} 主人弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
+                        f" [主人弹幕发送流程成功个数 {success_owner_danmu_count}] {danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
                     time.sleep(random.uniform(5, 10))
                 else:
                     print(
-                        f"{success_owner_danmu_count} 主人弹幕发送流程成功完成！{danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
+                        f"{success_owner_danmu_count} 主人弹幕发送流程失败！{danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
                     time.sleep(random.uniform(10, 15))
 
             # 在处理完一个弹幕包后稍作等待
