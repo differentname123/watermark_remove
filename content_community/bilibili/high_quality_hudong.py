@@ -6,11 +6,14 @@ import re
 import traceback
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from types import SimpleNamespace
 
 import requests
 import time
 import logging
 import os
+# os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
+# os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
 import json
 import threading
 from queue import Queue, Empty
@@ -1249,14 +1252,93 @@ def send_danmaku_thread_function(owner_commenter, owner_danmu_list, max_success_
                     owner_danmu_used_list.append(danmu_text)
                     success_owner_danmu_count += 1
                     print(
-                        f"线程 {threading.current_thread().name}: {success_owner_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
+                        f"{success_owner_danmu_count} 主人弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
+                    time.sleep(random.uniform(5, 10))
                 else:
                     print(
-                        f"线程 {threading.current_thread().name}: 弹幕发送流程失败。 {danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
+                        f"{success_owner_danmu_count} 主人弹幕发送流程成功完成！{danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
                     time.sleep(random.uniform(10, 15))
 
             # 在处理完一个弹幕包后稍作等待
             time.sleep(random.uniform(10, 15))
+
+
+def _send_danmu_worker(danmu_list, other_commenters, bvid, max_success_other_danmu_count, stop_event, result):
+    try:
+        random.shuffle(other_commenters)
+        senders = deque(other_commenters)
+        success_count = 0
+        sent_texts = []
+
+        for detail in danmu_list:
+            if stop_event.is_set():
+                print("send worker: 收到停止信号，退出。")
+                break
+
+            if success_count >= max_success_other_danmu_count:
+                break
+
+            danmaku_time_ms = int(detail.get('建议时间戳', 0) * 1000)
+            danmu_text_list = detail.get('推荐弹幕内容', []) or []
+
+            for text in danmu_text_list:
+                if stop_event.is_set() or success_count >= max_success_other_danmu_count:
+                    break
+                if not text:
+                    continue
+
+                sender = senders.popleft()
+                try:
+                    danmaku_sent = sender.send_danmaku(
+                        bvid=bvid,
+                        msg=text,
+                        progress=danmaku_time_ms,
+                        is_up=False
+                    )
+                except Exception as e:
+                    print("发送异常:", e)
+                    danmaku_sent = False
+
+                # 轮转发送者
+                senders.append(sender)
+
+                if danmaku_sent:
+                    success_count += 1
+                    sent_texts.append(text)
+                    # 仅打印，不修改外部列表
+                    print(f"[成功弹幕个数 {success_count}] {text} 发送者: {sender.all_params.get('name')}")
+                else:
+                    print(f"[失败] {text} 发送者: {sender.all_params.get('name')}，稍后继续或跳过。")
+                    time.sleep(random.uniform(5, 10))
+
+                # 控制速率
+                time.sleep(random.uniform(1, 3))
+
+        result.success_count = success_count
+        result.sent_texts = sent_texts
+        print("send worker 完成。成功发送:", success_count)
+    except Exception as e:
+        print("worker 未捕获异常:", e)
+        result.exception = e
+
+def start_send_danmu_background(danmu_list, other_commenters, bvid, max_success_other_danmu_count, daemon=True):
+    """
+    启动后台线程发送弹幕（极简版）。
+    返回 (thread, stop_event, result)：
+      - thread: threading.Thread 对象
+      - stop_event: threading.Event，可以通过 stop_event.set() 停止线程
+      - result: SimpleNamespace，线程结束后包含 .success_count, .sent_texts, 以及可选的 .exception
+    说明：该实现不会修改外部的 danmu_used_list 或 hudong_info，需你在主线程中自行处理。
+    """
+    stop_event = threading.Event()
+    result = SimpleNamespace(success_count=0, sent_texts=[])
+    t = threading.Thread(
+        target=_send_danmu_worker,
+        args=(danmu_list, other_commenters, bvid, max_success_other_danmu_count, stop_event, result),
+        daemon=daemon
+    )
+    t.start()
+    return t, stop_event, result
 
 
 def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
@@ -1335,53 +1417,58 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     danmu_used_list = hudong_info.get('danmu_used', [])
     danmu_used_list.extend(exist_danmu_text)
 
-    random.shuffle(other_commenters)  # 在循环前打乱顺序
-    senders = deque(other_commenters)
-    for detail_danmu in danmu_list:
-        danmaku_time_ms = int(detail_danmu['建议时间戳'] * 1000)
-        danmu_text_list = detail_danmu.get('推荐弹幕内容', [])
+    t, stop_event, result = start_send_danmu_background(danmu_list, other_commenters, bvid, max_success_other_danmu_count)
 
-        if success_other_danmu_count >= max_success_other_danmu_count:
-            print("已达到最大成功弹幕数，停止处理。", success_other_danmu_count)
-            break
+    # random.shuffle(other_commenters)  # 在循环前打乱顺序
+    # senders = deque(other_commenters)
+    # for detail_danmu in danmu_list:
+    #     danmaku_time_ms = int(detail_danmu['建议时间戳'] * 1000)
+    #     danmu_text_list = detail_danmu.get('推荐弹幕内容', [])
+    #
+    #     if success_other_danmu_count >= max_success_other_danmu_count:
+    #         print("已达到最大成功弹幕数，停止处理。", success_other_danmu_count)
+    #         break
+    #
+    #     for danmu_text in danmu_text_list:
+    #         if not danmu_text or danmu_text in danmu_used_list:
+    #             continue
+    #
+    #         # 取一个发送者尝试（取出队首）
+    #         sender = senders.popleft()
+    #
+    #         danmaku_sent = sender.send_danmaku(
+    #             bvid=bvid,
+    #             msg=danmu_text,
+    #             progress=danmaku_time_ms,
+    #             is_up=False
+    #         )
+    #
+    #         # 无论成功还是失败都把该发送者放到队尾，实现轮转
+    #         senders.append(sender)
+    #
+    #         if danmaku_sent:
+    #             danmu_used_list.append(danmu_text)
+    #             success_other_danmu_count += 1
+    #             print(
+    #                 f"{success_other_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} name {sender.all_params['name']}")
+    #             # 成功后可以选择跳出当前 detail 的循环（如果每个 detail 只需一条），
+    #             # 或者继续让下一个发送者发送下一条（取决于你的业务）
+    #             # 如果你希望每个 detail 只发一条，取消下面注释：
+    #             # break
+    #         else:
+    #             print(f"弹幕发送失败：{danmu_text} name {sender.all_params['name']}, 等待后继续...")
+    #             time.sleep(random.uniform(5, 10))
+    #         time.sleep(random.uniform(1, 3))
+    #
+    #         if success_other_danmu_count >= max_success_other_danmu_count:
+    #             break
+    #
+    #     # 可选短暂随机延时，减少速率突发
+    #     # time.sleep(random.uniform(0.5, 2.0))
+    #     # time.sleep(random.uniform(5, 15))
+    # hudong_info['danmu_used'] = danmu_used_list
 
-        for danmu_text in danmu_text_list:
-            if not danmu_text or danmu_text in danmu_used_list:
-                continue
 
-            # 取一个发送者尝试（取出队首）
-            sender = senders.popleft()
-
-            danmaku_sent = sender.send_danmaku(
-                bvid=bvid,
-                msg=danmu_text,
-                progress=danmaku_time_ms,
-                is_up=False
-            )
-
-            # 无论成功还是失败都把该发送者放到队尾，实现轮转
-            senders.append(sender)
-
-            if danmaku_sent:
-                danmu_used_list.append(danmu_text)
-                success_other_danmu_count += 1
-                print(
-                    f"{success_other_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} name {sender.all_params['name']}")
-                # 成功后可以选择跳出当前 detail 的循环（如果每个 detail 只需一条），
-                # 或者继续让下一个发送者发送下一条（取决于你的业务）
-                # 如果你希望每个 detail 只发一条，取消下面注释：
-                # break
-            else:
-                print(f"弹幕发送失败：{danmu_text} name {sender.all_params['name']}, 等待后继续...")
-                time.sleep(random.uniform(5, 10))
-
-            if success_other_danmu_count >= max_success_other_danmu_count:
-                break
-
-        # 可选短暂随机延时，减少速率突发
-        # time.sleep(random.uniform(0.5, 2.0))
-        # time.sleep(random.uniform(5, 15))
-    hudong_info['danmu_used'] = danmu_used_list
 
     comment_list = hudong_info.get('comment_list', [])
     comment_used_list = hudong_info.get('comment_used', [])
@@ -1411,6 +1498,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     else:
         print("弹幕发送任务未启动或已执行完毕。")
     hudong_info['owner_danmu_used'] = owner_danmu_used_list
+
+    t.join()  # 如果线程是 daemon=True，程序退出时线程也会被终止；join 会等待完成
+    hudong_info['danmu_used'] = result.sent_texts
 
     return hudong_info, False
 
@@ -1505,7 +1595,7 @@ def fun():
             interaction_data[bvid] = {'hudong': hudong_info}
             save_json(interaction_data_file, interaction_data)
             print(
-                f"视频 {bvid} 的互动信息已生成并保存。耗时: {time.time() - start_time:.2f} 秒 进度: {count}/{len(all_found_videos)}")
+                f"视频 {bvid} 的互动信息已生成并保存。耗时: {time.time() - start_time:.2f} 秒 进度: {count}/{len(all_found_videos)} {datetime.datetime.now().isoformat()}")
             if stop_event.is_set():
                 print("检测到停止请求，退出当前任务...")
                 return  # 停止当前执行，退出
