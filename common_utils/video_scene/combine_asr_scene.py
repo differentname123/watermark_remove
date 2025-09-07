@@ -10,6 +10,8 @@
 """
 import collections
 import os
+from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Tuple
 
 from common_utils.ASR.asr_fusion import gen_precise_asr
 from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time
@@ -362,19 +364,19 @@ def find_asr_at_boundaries_sorted_by_overlap(scenes: dict, asr_results: list, wi
 
 
 def asr_and_scene(video_path):
-    scene_info_dict = find_and_split_scenes(
-        video_path,
-        high_threshold=40,  # 初始高阈值
-        max_scenes=20,  # 期望的最大场景数
-        min_scene_len=25,  # 最小场景长度（帧）
-        step=5  # 阈值调整步长
-    )
-    scene_info = video_path.replace('.mp4', '.json')
-    save_json(scene_info, scene_info_dict)
-    print("\n场景信息字典已生成并打印。")
-    for key,value in scene_info_dict.items():
-        timestamp = value[1]
-        save_frames_around_timestamp(video_path,timestamp,3,str(os.path.join('scenes',key)))
+    # scene_info_dict = find_and_split_scenes(
+    #     video_path,
+    #     high_threshold=40,  # 初始高阈值
+    #     max_scenes=20,  # 期望的最大场景数
+    #     min_scene_len=25,  # 最小场景长度（帧）
+    #     step=5  # 阈值调整步长
+    # )
+    # scene_info = video_path.replace('.mp4', '.json')
+    # save_json(scene_info, scene_info_dict)
+    # print("\n场景信息字典已生成并打印。")
+    # for key,value in scene_info_dict.items():
+    #     timestamp = value[1]
+    #     save_frames_around_timestamp(video_path,timestamp,3,str(os.path.join('scenes',key)))
 
     new_audio_file = video_path.replace('.mp4', '.wav')
     extract_audio_from_video(video_path, new_audio_file)
@@ -503,24 +505,6 @@ def reorganize_scene_asr(scene_map):
     return out
 
 
-def fun():
-    video_path = 'test1.mp4'
-    scene_info = video_path.replace('.mp4', '.json')
-    scenes = read_json(scene_info)
-    ASR_FILES, ASR_FILES = gen_precise_asr(video_path, '')
-    result_dict = {}
-    for ASR_FILE in ASR_FILES:
-        asr_list = read_json(ASR_FILE)
-        temp = get_scene_word(scenes, asr_list)
-        for key, value in temp.items():
-            value['ASR_FILE'] = ASR_FILE
-            if key not in result_dict:
-                result_dict[key] = []
-            result_dict[key].append(value)
-    print(result_dict)
-
-    sentence_info = reorganize_scene_asr(result_dict)
-    print(sentence_info)
 
 def split_video():
     video_path = 'test1.mp4'
@@ -593,13 +577,166 @@ def gen_new_video():
         add_bgm_to_video(f'scenes/final_video.mp4', bgm_path, str(final_with_bgm_path))
 
 
+def reorganize_scene_asr_fun():
+    video_path = 'test1.mp4'
+    scene_info = video_path.replace('.mp4', '.json')
+    scenes = read_json(scene_info)
+    ASR_FILES, ASR_FILES = gen_precise_asr(video_path, '')
+    result_dict = {}
+    for ASR_FILE in ASR_FILES:
+        asr_list = read_json(ASR_FILE)
+        temp = get_scene_word(scenes, asr_list)
+        for key, value in temp.items():
+            value['ASR_FILE'] = ASR_FILE
+            if key not in result_dict:
+                result_dict[key] = []
+            result_dict[key].append(value)
+    print(result_dict)
+
+    sentence_info = reorganize_scene_asr(result_dict)
+    print(sentence_info)
+
+def fill_speaker_texts(
+    words: List[Dict[str, Any]],
+    speaker_segments: List[Dict[str, Any]],
+    keep_word_list: bool = False,
+    joiner: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """
+    将 ASR 的 words 填充进说话人 segment 列表。
+
+    Args:
+        words: 每个元素类似 {"word": "盘", "start": 130, "end": 290, ...}
+        speaker_segments: 每个元素类似 {"start": 31, "end": 14138, "speaker": "SPEAKER_00", ...}
+        keep_word_list: 是否在返回的每个 segment 中保留 "words" 列表（默认 False）
+        joiner: 用于拼接 words 的分隔符；
+                if None -> 自动选择：如果大多数 word 都是 ASCII（包含字母/数字），用 ' '（空格），否则用 ''（不加空格）
+                可以显式传入 '' 或 ' '。
+
+    Returns:
+        返回一个新的 speaker_segments 列表（每个为原 dict 的浅拷贝），
+        每个 dict 会新增:
+            - 'text': 按时间排序拼接得到的字符串
+            - 'words': 若 keep_word_list True，则为包含的 word 列表（按时间排序）
+    """
+    # defensive copies
+    segs = [dict(s) for s in speaker_segments]
+    words_sorted = sorted(words, key=lambda w: w.get('start', 0))
+
+    # choose joiner if None
+    if joiner is None:
+        # heuristic: if any word contains ascii letters/digits, prefer space; else no space (for Chinese)
+        ascii_like = sum(1 for w in words_sorted if any((c.isascii() and (c.isalpha() or c.isdigit())) for c in str(w.get('word',''))))
+        joiner = ' ' if ascii_like >= len(words_sorted) / 3 else ''
+
+    # prepare container for assigned words
+    for s in segs:
+        s['_assigned_words'] = []
+
+    # helper: overlap length
+    def overlap_len(a_start, a_end, b_start, b_end):
+        return max(0, min(a_end, b_end) - max(a_start, b_start))
+
+    # assign each word to the segment with max overlap
+    for w in words_sorted:
+        w_s = w.get('start', 0)
+        w_e = w.get('end', 0)
+        best_idx = None
+        best_ol = 0
+        # iterate all segments and find best overlap
+        for i, s in enumerate(segs):
+            s_s = s.get('start', 0)
+            s_e = s.get('end', 0)
+            ol = overlap_len(w_s, w_e, s_s, s_e)
+            if ol > best_ol:
+                best_ol = ol
+                best_idx = i
+        # assign if any positive overlap
+        if best_idx is not None and best_ol > 0:
+            segs[best_idx]['_assigned_words'].append(dict(w))  # append a shallow copy
+
+    # build text and optionally keep words
+    for s in segs:
+        s['_assigned_words'].sort(key=lambda x: x.get('start', 0))
+        s['text'] = joiner.join([str(w.get('word','')) for w in s['_assigned_words']])
+        if keep_word_list:
+            s['words'] = s['_assigned_words']
+        # cleanup internal key
+        s.pop('_assigned_words', None)
+
+    return segs
+
+
+def merge_by_key(temp_list: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """
+    简单按 (start,end,speaker) 分组合并 temp_list。
+    返回每个分组字典，包含原始 start,end,speaker 和若干 text_{basename} 字段。
+    """
+    if not temp_list:
+        return []
+
+    # 推断每个子列表对应的 basename
+    basenames = []
+    for i, segs in enumerate(temp_list):
+        name = None
+        if isinstance(segs, list) and len(segs) > 0:
+            name = segs[0].get('ASR_FILE') or segs[0].get('asr_file')
+        if name:
+            name = os.path.basename(name)
+        else:
+            name = f"asr_{i}"
+        basenames.append(name)
+
+    base_map: Dict[Tuple[int,int,str], Dict[str, Any]] = {}
+
+    # 聚合：把每个 segment 的 text 塞到对应 key 下
+    for asr_idx, segs in enumerate(temp_list):
+        name = basenames[asr_idx]
+        tf = f"text_{name}"
+        for seg in (segs or []):
+            # 仅按 start,end,speaker 分组；缺少这些字段的 segment 会被跳过
+            if not all(k in seg for k in ("start", "end", "speaker")):
+                # 若你希望保留无 loc 的 seg，可改为把它们放到特殊 key
+                continue
+            key = (seg["start"], seg["end"], seg["speaker"])
+            entry = base_map.setdefault(key, {"start": seg["start"], "end": seg["end"], "speaker": seg["speaker"]})
+            # 直接写入（若同一 (start,end,speaker) 在同一 ASR 中出现多次，后者会覆盖）
+            entry[tf] = seg.get("text", "") or ""
+
+    # 确保每个 entry 都有所有 text_{basename} 字段（缺失则填 ""）
+    for entry in base_map.values():
+        for name in basenames:
+            entry.setdefault(f"text_{name}", "")
+
+    # 按 start 排序并返回列表
+    merged = sorted(base_map.values(), key=lambda e: (e.get("start", 0), e.get("end", 0)))
+    return merged
+
+def reorganize_speech_asr_fun():
+    video_path = 'test2.mp4'
+    speech_info_path = "output/segments_speech.json"
+    speech_info = read_json(speech_info_path)
+    ASR_FILES, ASR_FILES = gen_precise_asr(video_path, '')
+    temp_list = []
+    for ASR_FILE in ASR_FILES:
+        asr_list = read_json(ASR_FILE)
+        temp = fill_speaker_texts(asr_list, speech_info)
+        for value in temp:
+            value['ASR_FILE'] = os.path.basename(ASR_FILE)
+        temp_list.append(temp)
+    sentence_info = merge_by_key(temp_list)
+    print(sentence_info)
+
+
 if __name__ == '__main__':
-    gen_new_video()
+    reorganize_speech_asr_fun()
+
+    # gen_new_video()
     # split_video()
     #
     # fun()
     #
     # video_path = 'test1.mp4'
-    # # get_detail_seg(video_path)
-    # asr_and_scene('test1.mp4')
-    #
+    # get_detail_seg(video_path)
+    # asr_and_scene('test2.mp4')
+

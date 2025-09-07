@@ -17,8 +17,8 @@ from content_community.bilibili.comment import BilibiliCommenter
 URL_MODIFY_RELATION = "https://api.bilibili.com/x/relation/modify"
 
 # --- 2. 全局配置 ---
-total_cookie = get_config("xue_bilibili_total_cookie")
-csrf_token = get_config("xue_bilibili_csrf_token")
+total_cookie = get_config("yang_bilibili_total_cookie")
+csrf_token = get_config("yang_bilibili_csrf_token")
 
 CONFIG = {
     "STRATEGIES": {
@@ -522,7 +522,7 @@ def comment_worker():
     yang_csrf_token = get_config("yang_bilibili_csrf_token")
     yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
 
-    commenter_list = [xue_commenter, yang_commenter]
+    commenter_list = [ruruxiao_commenter, yang_commenter]
 
 
 
