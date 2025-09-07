@@ -1834,7 +1834,7 @@ def create_enhanced_cover(
     dimensions = _get_image_dimensions(input_image_path)
     if not dimensions: return None
     img_w, img_h = dimensions
-    true_high = int(img_w * 9 / 16)
+    true_high = int(img_w * 3 / 4)
 
     if not text_lines:
         print("警告: 未提供任何文字，将直接复制图片。")
