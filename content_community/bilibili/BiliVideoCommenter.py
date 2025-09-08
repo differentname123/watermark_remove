@@ -8,6 +8,8 @@ import os
 import json
 import threading
 from queue import Queue, Empty
+
+from content_community.bilibili.bili_utils import update_bili_user_sign, modify_relation
 from  content_community.bilibili.get_comment import get_bilibili_comments
 from common_utils.common_utils import get_config
 # 评论相关代码保留，但暂时不使用
@@ -17,8 +19,33 @@ from content_community.bilibili.comment import BilibiliCommenter
 URL_MODIFY_RELATION = "https://api.bilibili.com/x/relation/modify"
 
 # --- 2. 全局配置 ---
-total_cookie = get_config("yang_bilibili_total_cookie")
-csrf_token = get_config("yang_bilibili_csrf_token")
+total_cookie = get_config("lin_bilibili_total_cookie")
+csrf_token = get_config("lin_bilibili_csrf_token")
+
+ruruxiao_total_cookie = get_config("ruruxiao_bilibili_total_cookie")
+ruruxiao_csrf_token = get_config("ruruxiao_bilibili_csrf_token")
+ruruxiao_commenter = BilibiliCommenter(ruruxiao_total_cookie, ruruxiao_csrf_token)
+
+yiyi_total_cookie = get_config("yiyi_bilibili_total_cookie")
+yiyi_csrf_token = get_config("yiyi_bilibili_csrf_token")
+yiyi_commenter = BilibiliCommenter(yiyi_total_cookie, yiyi_csrf_token)
+
+qiqixiao_total_cookie = get_config("qiqixiao_bilibili_total_cookie")
+qiqixiao_csrf_token = get_config("qiqixiao_bilibili_csrf_token")
+qiqixiao_commenter = BilibiliCommenter(qiqixiao_total_cookie, qiqixiao_csrf_token)
+
+lin_total_cookie = get_config("lin_bilibili_total_cookie")
+lin_csrf_token = get_config("lin_bilibili_csrf_token")
+lin_commenter = BilibiliCommenter(lin_total_cookie, lin_csrf_token)
+
+yang_total_cookie = get_config("yang_bilibili_total_cookie")
+yang_csrf_token = get_config("yang_bilibili_csrf_token")
+yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
+
+commenter_list = [ruruxiao_commenter, yang_commenter, lin_commenter, yiyi_commenter, qiqixiao_commenter]
+cookie_list = [ruruxiao_total_cookie, yang_total_cookie, lin_total_cookie, yiyi_total_cookie, qiqixiao_total_cookie]
+csrf_list = [ruruxiao_csrf_token, yang_csrf_token, lin_csrf_token, yiyi_csrf_token, qiqixiao_csrf_token]
+
 
 CONFIG = {
     "STRATEGIES": {
@@ -133,44 +160,7 @@ def send_get_request(url, params=None):
     return None
 
 
-def modify_relation(fid, action_type, csrf_token):
-    """
-    修改用户关系 (关注或取消关注)。
-    fid: 目标用户的UID
-    action_type: 1 为关注, 2 为取消关注
-    csrf_token: 从Cookie中获取的bili_jct值
-    """
-    action_text = "关注" if action_type == 1 else "取消关注"
-    payload = {
-        "fid": fid,
-        "act": action_type,
-        "re_src": 11,  # 关系来源，通常用 11
-        "csrf": csrf_token
-    }
-    try:
-        response = session.post(URL_MODIFY_RELATION, data=payload, timeout=CONFIG['REQUEST_TIMEOUT'])
-        response.raise_for_status()
-        result = response.json()
-        if result.get('code') == 0:
-            logging.info(f"  {'✅' if action_type == 1 else '🗑️'} 成功{action_text} UID: {fid}")
-            return True
-        # 常见错误码处理
-        elif result.get('code') == 22014:  # 对方将你拉黑
-            logging.warning(f"  ⚠️ {action_text} UID: {fid} 失败: {result['message']} (可能已被对方拉黑)")
-            return True  # 返回True，避免重试
-        elif result.get('code') == 22007:  # 已经关注了
-            logging.info(f"  ℹ️ {action_text} UID: {fid}: 已经是关注状态。")
-            return True  # 返回True，避免重试
-        else:
-            logging.error(
-                f"  ❌ {action_text} UID: {fid} 失败: {result.get('message', '未知错误')} (Code: {result.get('code')})")
-            return False
-    except requests.exceptions.RequestException as e:
-        logging.error(f"  ❌ 请求{action_text} UID: {fid} 失败: {e}")
-        return False
-    except ValueError:  # 对应 json.JSONDecodeError
-        logging.error(f"  ❌ {action_text} UID: {fid} 响应内容不是有效的 JSON。")
-        return False
+
 
 
 # --- 5. 视频获取策略实现 ---
@@ -503,26 +493,10 @@ def video_fetcher_worker():
 # (评论功能保留，暂不启用)
 def comment_worker():
     """评论线程：从队列获取视频并发表评论。"""
-    ruruxiao_total_cookie = get_config("ruruxiao_bilibili_total_cookie")
-    ruruxiao_csrf_token = get_config("ruruxiao_bilibili_csrf_token")
-    ruruxiao_commenter = BilibiliCommenter(ruruxiao_total_cookie, ruruxiao_csrf_token)
-
-
-    xue_total_cookie = get_config("xue_bilibili_total_cookie")
-    xue_csrf_token = get_config("xue_bilibili_csrf_token")
-    xue_commenter = BilibiliCommenter(xue_total_cookie, xue_csrf_token)
-
-
-    lin_total_cookie = get_config("lin_bilibili_total_cookie")
-    lin_csrf_token = get_config("lin_bilibili_csrf_token")
-    lin_commenter = BilibiliCommenter(lin_total_cookie, lin_csrf_token)
-
-
-    yang_total_cookie = get_config("yang_bilibili_total_cookie")
-    yang_csrf_token = get_config("yang_bilibili_csrf_token")
-    yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
-
-    commenter_list = [ruruxiao_commenter, yang_commenter]
+    for cookie in cookie_list:
+        result = update_bili_user_sign(cookie,
+                                       "只会回关通过我视频关注我的粉丝，请一定通过我的视频页面来关注我，不然会认为是异常粉丝的")
+        print(f"更新用户签名结果: {result}")
 
 
 
@@ -643,7 +617,8 @@ def follower_worker(csrf_token):
 
                     # 随机暂停一段时间再执行关注，模拟人类行为
                     time.sleep(random.uniform(20, 30))
-                    success = modify_relation(fid, 1, csrf_token)
+                    for cookie in cookie_list:
+                        success = modify_relation(fid, 1, cookie)
 
             save_processed_set(processed_fids, CONFIG['PROCESSED_FIDS_FILE'])
             save_processed_set(target_processed_bvideos, CONFIG['TARGET_PROCESSED_FIDS_FILE'])

@@ -4,14 +4,14 @@ from funasr import AutoModel
 from common_utils.common_utils import save_json
 
 
-def run_funasr(audio_path):
+def run_funasr(audio_path, output_file):
     """
     使用 FunASR 执行语音识别（中文为主），输出带时间戳的结果
     """
+    output_dir = os.path.dirname(output_file)
+    # 确保输出目录存在
+    os.makedirs(output_dir, exist_ok=True)
 
-    base_dir = 'output'
-    output_file_name = os.path.splitext(audio_path)[0] + "_asr_funasr.json"
-    output_file = os.path.join(base_dir, output_file_name)
     if os.path.exists(output_file):
         return output_file
     # 选择推荐的高精度模型

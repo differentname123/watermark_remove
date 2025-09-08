@@ -1,5 +1,6 @@
 import collections
 import math
+import os
 import re
 import statistics
 import time
@@ -423,34 +424,31 @@ def gen_precise_asr(audio_file, output_file):
     """
     生成融合后准确的asr文件
     """
-    funasr_file = run_funasr(audio_file)
-    whisper_v2_file = transcribe_words_to_json(audio_file, MODEL_SIZE="large-v2")
-    # time.sleep(10)
-    whisper_v3_file = transcribe_words_to_json(audio_file)
-    ASR_FILES = [
-        funasr_file,
-        whisper_v2_file,
-        whisper_v3_file,
-    ]
-    return ASR_FILES, ASR_FILES
-    fuse_asr_file = 'output/fused_transcript_final.json'
-    all_asr_lists = [read_json(f)[-10000:] for f in ASR_FILES if read_json(f) is not None]
+    result_file_info = {}
+    base_name = os.path.basename(audio_file).split('.')[0]
+    output_dir = os.path.dirname(output_file)
 
-    final_result = fuse_asr_results_final(all_asr_lists)
+    funasr_file = os.path.join(output_dir, f"{base_name}_funasr_asr.json")
+    funasr_file = run_funasr(audio_file, funasr_file)
 
 
-    # 将结果时间戳转换为秒，并格式化
-    for item in final_result:
-        item['start'] = round(item['start'] / 1000.0, 3)
-        item['end'] = round(item['end'] / 1000.0, 3)
-        item['probability'] = round(item['probability'], 4)
+    whisper_v2_file = os.path.join(output_dir, f"{base_name}_whisper_v2_asr.json")
+    whisper_v2_file = transcribe_words_to_json(audio_file, output_file=whisper_v2_file, MODEL_SIZE="large-v2")
+    time.sleep(10)
 
-    save_json(fuse_asr_file, final_result)
-    print(f"融合成功！最终结果已保存到 {fuse_asr_file}")
 
-    speaker_file = perform_speaker_diarization(audio_file)
-    foolproof_merge(speaker_file, fuse_asr_file, output_file)
-    return output_file, ASR_FILES
+    whisper_v3_file = os.path.join(output_dir, f"{base_name}_whisper_v3_asr.json")
+    whisper_v3_file = transcribe_words_to_json(audio_file, output_file=whisper_v3_file)
+
+    speaker_file_path = os.path.join(output_dir, f"{base_name}_speaker.json")
+    # return ASR_FILES, ASR_FILES
+    speaker_file_path = perform_speaker_diarization(audio_file, output_path=speaker_file_path)
+
+
+    result_file_info['asr_file'] = [funasr_file, whisper_v2_file, whisper_v3_file]
+    result_file_info['speaker_file'] = speaker_file_path
+
+    return result_file_info
 
 
 

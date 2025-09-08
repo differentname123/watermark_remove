@@ -17,7 +17,8 @@ import aiofiles
 import aiohttp
 import requests
 from filelock import FileLock, Timeout
-
+from pathlib import Path
+from typing import Union
 
 def find_key_values(data, target_key) -> list:
     """
@@ -1503,7 +1504,7 @@ def init_config():
 
     # 账号配置：key 是 config_map 中的 UID，value 是账号的前缀（name）
     accounts = {
-        '443415885': 'dahao',
+        # '443415885': 'dahao',
         # '3546954575383021': 'mama',
         '3546717871934392': 'nana',
         # '1223805908': 'ruru',
@@ -1519,7 +1520,7 @@ def init_config():
         '1614926977': 'xue',
         '3546961709894089': 'cai',
         # '3493263231158598':'jun',
-        # '3546972143225467':'lin',
+        '3546972143225467':'lin',
         # '3546945675069746': 'jj',
         # '3546951513541346':'xiaosu',
         '3546913316014394':'xiaohao',
@@ -1529,8 +1530,8 @@ def init_config():
         '3546965562362625': 'ning',
         '3546970725550911': 'yiyi',
         '3546938532169893': 'qiqixiao',
-        # '3546970887031023': 'yang',
-        # '3546957842746100': 'ruruxiao',
+        '3546970887031023': 'yang',
+        '3546957842746100': 'ruruxiao',
 
         # '3546909677455941': 'base'  # 如果需要恢复 base 账号，取消注释即可
     }
@@ -1630,3 +1631,28 @@ def merge_json_files(path_dir, target_name):
         merged_dict.update(file_data)
 
     return merged_dict
+
+
+def read_file_to_str(filepath: Union[str, Path],
+                     encoding: str = "utf-8",
+                     errors: str = "strict") -> str:
+    """
+    读取文件并返回整个内容的字符串。
+
+    参数:
+        filepath: 文件路径（str 或 pathlib.Path）。
+        encoding: 文本编码（默认 'utf-8'）。
+        errors: 解码错误处理策略（'strict'|'replace'|'ignore' 等，默认 'strict'）。
+                'strict' 会在遇到无法解码的字节时抛出 UnicodeDecodeError，
+                'replace' 会用替代字符替换无法解码的字节，'ignore' 则忽略它们。
+
+    返回:
+        文件内容（str）。
+
+    抛出:
+        FileNotFoundError 如果文件不存在。
+        UnicodeDecodeError 如果 decoding 失败且 errors='strict'。
+    """
+    p = Path(filepath)
+    with p.open("r", encoding=encoding, errors=errors) as f:
+        return f.read()

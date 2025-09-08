@@ -493,7 +493,7 @@ class BilibiliCommenter:
                 # 只要三连中有一项成功，就认为操作成功
                 return data.get('like') or data.get('coin') or data.get('fav')
             else:
-                print(f"一键三连失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}")
+                print(f"一键三连失败，错误码：{result.get('code')}, 错误信息：{result.get('message')}  {self.all_params.get('name', '未知用户')}")
                 return False
         except requests.exceptions.RequestException as e:
             print(f"请求一键三连时发生错误：{e}")

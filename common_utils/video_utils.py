@@ -1834,7 +1834,7 @@ def create_enhanced_cover(
     dimensions = _get_image_dimensions(input_image_path)
     if not dimensions: return None
     img_w, img_h = dimensions
-    true_high = int(img_w * 3 / 4)
+    true_high = int(img_w * 9 / 16)
 
     if not text_lines:
         print("警告: 未提供任何文字，将直接复制图片。")
@@ -1874,7 +1874,7 @@ def create_enhanced_cover(
         chosen_theme = color_themes[color_theme]
 
     longest_line = max(text_lines, key=len)
-    longest_line_size = max(8, len(longest_line))  # 避免极端短文本导致字体过大
+    longest_line_size = max(10, len(longest_line))  # 避免极端短文本导致字体过大
     target_text_width = img_w * 0.95
     estimated_char_width_ratio = 1.0
     font_size = int(min((target_text_width / longest_line_size), img_h / 4) * font_size_ratio)

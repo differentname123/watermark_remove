@@ -9,14 +9,18 @@
     
 """
 import collections
+import copy
 import os
+import time
+import traceback
 from typing import List, Dict, Any, Optional
 from typing import List, Dict, Any, Tuple
 
+from LLM.gemini import get_llm_content
 from common_utils.ASR.asr_fusion import gen_precise_asr
-from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time
+from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time, read_file_to_str, string_to_object
 from common_utils.image_utils import save_frames_around_timestamp
-from common_utils.split_scenes import find_and_split_scenes
+from common_utils.split_scenes import find_and_split_scenes, split_scenes_json
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
 from common_utils.video_utils import extract_audio_from_video, clip_video_ms, merge_videos_ffmpeg, probe_duration, \
     add_subtitles_to_video
@@ -363,35 +367,6 @@ def find_asr_at_boundaries_sorted_by_overlap(scenes: dict, asr_results: list, wi
     return sorted_result_list
 
 
-def asr_and_scene(video_path):
-    # scene_info_dict = find_and_split_scenes(
-    #     video_path,
-    #     high_threshold=40,  # 初始高阈值
-    #     max_scenes=20,  # 期望的最大场景数
-    #     min_scene_len=25,  # 最小场景长度（帧）
-    #     step=5  # 阈值调整步长
-    # )
-    # scene_info = video_path.replace('.mp4', '.json')
-    # save_json(scene_info, scene_info_dict)
-    # print("\n场景信息字典已生成并打印。")
-    # for key,value in scene_info_dict.items():
-    #     timestamp = value[1]
-    #     save_frames_around_timestamp(video_path,timestamp,3,str(os.path.join('scenes',key)))
-
-    new_audio_file = video_path.replace('.mp4', '.wav')
-    extract_audio_from_video(video_path, new_audio_file)
-
-
-    OUTPUT_FILE = f'output/{new_audio_file.split('.')[0]}_final_asr.json'
-
-    output_file, ASR_FILES = gen_precise_asr(new_audio_file, OUTPUT_FILE)
-
-    scenes = read_json(scene_info)
-    speakers = read_json(OUTPUT_FILE)
-    safe = create_speech_segments(scenes, speakers, margin_ms=50)
-    print(safe)
-
-
 def get_detail_seg(video_path):
     """
     获取最详细的分割点
@@ -712,6 +687,35 @@ def merge_by_key(temp_list: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     merged = sorted(base_map.values(), key=lambda e: (e.get("start", 0), e.get("end", 0)))
     return merged
 
+def fix_speech_asr(speech_asr_info):
+    """
+    纠正每个说话人的文本
+    """
+    retry_delay = 10
+    max_retries = 3
+    prompt_file_path = '../../content_community/app/视频分解素材_纠正说话人文本.txt'
+    prompt = read_file_to_str(prompt_file_path)
+    full_prompt = f'{prompt}\n{speech_asr_info}'
+    raw = ""
+    for attempt in range(1, max_retries + 1):
+        try:
+            raw = get_llm_content(prompt=full_prompt, model_name="gemini-2.5-flash")
+            fix_speech_asr_info = string_to_object(raw)
+            # 检测fix_speech_asr_info和speech_asr_info长度是否一致
+            if len(fix_speech_asr_info) != len(speech_asr_info):
+                raise ValueError(f"返回的数据长度与输入数据长度不一致: {len(fix_speech_asr_info)} != {len(speech_asr_info)}")
+            return fix_speech_asr_info
+        except Exception as e:
+            print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
+            if attempt < max_retries:
+                print(f"[INFO] 正在重试... (等待 {retry_delay} 秒)")
+                time.sleep(retry_delay)  # 等待一段时间后再重试
+            else:
+                print("[ERROR] 达到最大重试次数，失败.")
+                return None  # 达到最大重试次数后返回 None
+            traceback.print_exc()
+
+
 def reorganize_speech_asr_fun():
     video_path = 'test2.mp4'
     speech_info_path = "output/segments_speech.json"
@@ -725,18 +729,84 @@ def reorganize_speech_asr_fun():
             value['ASR_FILE'] = os.path.basename(ASR_FILE)
         temp_list.append(temp)
     sentence_info = merge_by_key(temp_list)
-    print(sentence_info)
+    origin_sentence_info = sentence_info.copy()
+    # 遍历sentence_info，删除start，end,speaker这三个字段，替换为一个自增的id
+    for i, entry in enumerate(sentence_info):
+        entry['id'] = i + 1
+        entry.pop('start', None)
+        entry.pop('end', None)
+        entry.pop('speaker', None)
+    fix_speech_asr_info = fix_speech_asr(origin_sentence_info)
+    save_json('output/final_speech_asr.json', fix_speech_asr_info)
+    print(fix_speech_asr_info)
+
+
+def fun():
+    video_path = 'test2.mp4'
+    base_name = os.path.basename(video_path).split('.')[0]
+    output_file = f'output/{base_name}/{base_name}_fixed_speech_asr.json'
+    result_file_info = gen_precise_asr(video_path, output_file)
+
+    asr_file_list = result_file_info['asr_file']
+    speaker_file = result_file_info['speaker_file']
+
+    speech_info = read_json(speaker_file)
+    temp_list = []
+    for asr_file in asr_file_list:
+        asr_info = read_json(asr_file)
+        temp = fill_speaker_texts(asr_info, speech_info)
+        for value in temp:
+            value['asr_file'] = os.path.basename(asr_file)
+
+        temp_list.append(temp)
+    sentence_info = merge_by_key(temp_list)
+    origin_sentence_info = copy.deepcopy(sentence_info)
+    # 遍历sentence_info，删除start，end,speaker这三个字段，替换为一个自增的id
+    for i, entry in enumerate(sentence_info):
+        entry['id'] = i + 1
+        entry.pop('start', None)
+        entry.pop('end', None)
+        entry.pop('speaker', None)
+
+
+    fixed_speech_asr_info = fix_speech_asr(origin_sentence_info)
+    save_json(output_file, fixed_speech_asr_info)
+    print()
+
+
+def get_scene():
+    my_video_path = 'test2.mp4'
+
+    for high_threshold in [40, 50, 60]:
+        # 运行带有精炼功能的场景分割
+        scene_info_dict = split_scenes_json(
+            my_video_path,
+            high_threshold=high_threshold,  # 初始高阈值
+            min_scene_len=25,  # 最小场景长度（帧）
+        )
+        print("\n场景信息字典已生成并打印。")
+        for key, value in scene_info_dict.items():
+            timestamp = value[1]
+            save_frames_around_timestamp(my_video_path, timestamp, 3, str(os.path.join(f'scenes_{high_threshold}', key)))
+        scene_info_file = f'scenes_{high_threshold}/scene_info.json'
+        save_json(scene_info_file, scene_info_dict)
+
 
 
 if __name__ == '__main__':
-    reorganize_speech_asr_fun()
-
-    # gen_new_video()
-    # split_video()
-    #
     # fun()
-    #
-    # video_path = 'test1.mp4'
-    # get_detail_seg(video_path)
-    # asr_and_scene('test2.mp4')
 
+    get_scene()
+    #
+    #
+    # reorganize_speech_asr_fun()
+    #
+    # # gen_new_video()
+    # # split_video()
+    # #
+    # # fun()
+    # #
+    # # video_path = 'test1.mp4'
+    # # get_detail_seg(video_path)
+    # # asr_and_scene('test2.mp4')
+    #

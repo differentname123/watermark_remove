@@ -1,3 +1,5 @@
+import json
+
 import scenedetect
 import os
 import pprint
@@ -167,6 +169,77 @@ def find_and_split_scenes(
     print("=== 精细场景 ==="); pprint.pprint(fine_scene_info)
     print("=== 最终精炼场景分割结果 ==="); pprint.pprint(refined_scene_info)
     return refined_scene_info
+
+def split_scenes_json(video_path: str,
+                      high_threshold: int = 50,
+                      min_scene_len: int = 25):
+    """
+    简化版场景分割函数（返回 JSON 字符串）。
+    参数:
+        video_path: 视频路径
+        high_threshold: 高阈值（用于粗略检测）
+        min_scene_len: 最小场景长度（帧）
+    返回:
+        JSON 字符串，形如: {"场景1": ["00:00:00.000","00:00:10.000"], "场景2": [...]}
+        如果发生错误或检测到 0/1 个场景，仍然保证返回至少 "场景1"。
+    依赖:
+        pip install scenedetect（可选，若未安装将返回一个默认单场景）
+    """
+    result = {}
+    try:
+        # 延迟导入，避免在没有依赖时抛出 ImportError 导致函数崩溃
+        from scenedetect import VideoManager, SceneManager
+        from scenedetect.stats_manager import StatsManager
+        from scenedetect.detectors import ContentDetector
+
+        video_manager = VideoManager([video_path])
+        try:
+            base_timecode = video_manager.get_base_timecode()
+            video_manager.set_downscale_factor()
+            video_manager.start()
+
+            # 第一轮：高阈值粗略检测
+            stats_mgr = StatsManager()
+            scene_mgr = SceneManager(stats_manager=stats_mgr)
+            scene_mgr.add_detector(ContentDetector(threshold=high_threshold,
+                                                   min_scene_len=min_scene_len))
+            scene_mgr.detect_scenes(frame_source=video_manager)
+            scene_list = scene_mgr.get_scene_list(base_timecode)
+
+            # 如果没检测到，尝试降低阈值再试一次（一次）
+            if not scene_list:
+                video_manager.reset()
+                stats_mgr = StatsManager()
+                scene_mgr = SceneManager(stats_manager=stats_mgr)
+                low_thr = max(0, high_threshold - 10)
+                scene_mgr.add_detector(ContentDetector(threshold=low_thr,
+                                                       min_scene_len=min_scene_len))
+                scene_mgr.detect_scenes(frame_source=video_manager)
+                scene_list = scene_mgr.get_scene_list(base_timecode)
+
+            # 如果仍然没有结果，或只有一个场景，也保证返回场景1
+            if not scene_list:
+                # 无法获得时码信息，返回默认单场景（可被前端/调用方识别为“检测失败”或空片段）
+                result["场景1"] = ["00:00:00.000", "00:00:00.000"]
+            else:
+                # 组装结果（确保即使只有一个场景也返回）
+                for i, (s, e) in enumerate(scene_list):
+                    result[f"场景{i+1}"] = [s.get_timecode(), e.get_timecode()]
+
+                # 如果只检测到 1 个场景且调用者希望强制至少一个场景，
+                # 上面已经满足（返回场景1）
+        finally:
+            try:
+                video_manager.release()
+            except Exception:
+                pass
+
+    except Exception:
+        # 任何导入错误或运行时错误，都返回单场景保证调用端不会崩溃
+        result = {"场景1": ["00:00:00.000", "00:00:00.000"]}
+
+    # 返回 JSON 字符串（非 ASCII 编码，便于中文键名）
+    return result
 
 
 # --- 主程序入口 ---

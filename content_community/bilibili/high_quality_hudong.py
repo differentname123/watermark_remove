@@ -33,8 +33,8 @@ interaction_data_file = '../../LLM/TikTokDownloader/back_up/interaction_data.jso
 URL_MODIFY_RELATION = "https://api.bilibili.com/x/relation/modify"
 
 # --- 2. 全局配置 ---
-total_cookie = get_config("dahao_bilibili_total_cookie")
-csrf_token = get_config("dahao_bilibili_csrf_token")
+total_cookie = get_config("jie_bilibili_total_cookie")
+csrf_token = get_config("jie_bilibili_csrf_token")
 
 CONFIG = {
     "STRATEGIES": {
@@ -1534,7 +1534,7 @@ def fun():
         commenter_map = {}
         for key, detail_config in config_map.items():
             name = detail_config.get('name', key)
-            if name in ['xiaohao', 'mama']:
+            if name in ['mama']:
                 continue
             all_params = detail_config.get('all_params', {})
             commenter_map[key] = BilibiliCommenter(
@@ -1557,7 +1557,7 @@ def fun():
             name = config_map[uid].get('name', uid)
             # if uid in ['3546965562362625']:
             #     continue
-            if name in ['qiqixiao', 'yang', 'yiyi', 'hao']:
+            if name in ['ruruxiao', 'yiyi', 'qiqixiao', 'lin', 'yang']:
                 continue
             logging.info(f"  > 正在获取UP主(UID: {uid} {name})的最新动态...")
             temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=100)

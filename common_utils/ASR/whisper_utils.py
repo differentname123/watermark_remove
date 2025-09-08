@@ -4,7 +4,7 @@ import time
 from typing import Tuple, List, Dict
 from faster_whisper import WhisperModel
 
-def transcribe_words_to_json(audio_file: str, MODEL_SIZE="large-v3"):
+def transcribe_words_to_json(audio_file: str, output_file, MODEL_SIZE="large-v3"):
     """
     只接受 audio_file 参数，使用固定的模型配置执行转录。
     输出: (word_items, json_path)
@@ -18,11 +18,10 @@ def transcribe_words_to_json(audio_file: str, MODEL_SIZE="large-v3"):
     DEVICE = "cuda"
     COMPUTE_TYPE = "float16"
     BEAM_SIZE = 5
-    OUTPUT_DIR = "output"
-    # -------------------------------------------------------
-    base_name = os.path.splitext(os.path.basename(audio_file))[0]
-    json_filename = f"{base_name}_asr_whisper_{MODEL_SIZE}.json"
-    json_path = os.path.join(OUTPUT_DIR, json_filename)
+    json_path = output_file
+    output_dir = os.path.dirname(json_path)
+    os.makedirs(output_dir, exist_ok=True)
+
     if os.path.exists(json_path):
         return json_path
     start_all = time.perf_counter()
@@ -32,7 +31,6 @@ def transcribe_words_to_json(audio_file: str, MODEL_SIZE="large-v3"):
         raise FileNotFoundError(f"音频文件不存在: {audio_file}")
     print("    ✓ 文件存在")
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     # 加载模型
     t0 = time.perf_counter()
