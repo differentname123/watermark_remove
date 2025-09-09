@@ -6,7 +6,7 @@
 :last_date:
     2025/8/21 18:35
 :description:
-    
+
 """
 import collections
 import copy
@@ -14,6 +14,8 @@ import os
 import time
 import traceback
 from typing import List, Dict, Any, Optional
+from collections import Counter
+
 from typing import List, Dict, Any, Tuple
 
 from LLM.gemini import get_llm_content
@@ -108,8 +110,8 @@ def find_silent_scene_timestamps(scenes: dict,
 
 
 def create_speech_segments(scenes: dict,
-                                               speakers: list,
-                                               margin_ms: int = 50) -> list:
+                           speakers: list,
+                           margin_ms: int = 50) -> list:
     """
     基于场景边界找到静音切点，并以此为边界生成时间段。
     完全采纳用户指定的精确归属逻辑：
@@ -263,7 +265,7 @@ def find_asr_indices_at_boundaries_old(scenes: dict, asr_results: list, window_m
     for ts_str in unique_timestamps:
         boundary_asr_indices[ts_str] = []
         target_ms = time_to_ms(ts_str)
-        target_ms = target_ms - 1000/ 60
+        target_ms = target_ms - 1000 / 60
         window_start_ms = target_ms - window_ms
         window_end_ms = target_ms + window_ms
 
@@ -387,6 +389,7 @@ def get_detail_seg(video_path):
     print(result)
     return result
 
+
 def get_scene_word(scene_info, asr_list, need_detail=False):
     # 按场景开始时间排序并准备容器
     scenes = sorted(
@@ -405,14 +408,20 @@ def get_scene_word(scene_info, asr_list, need_detail=False):
         for i, (name, s_start, s_end) in enumerate(scenes):
             # 完全在场景内
             if ws >= s_start and we <= s_end:
-                res_map[name].append(w); placed = True; break
+                res_map[name].append(w);
+                placed = True;
+                break
             # 跨过当前场景结束 -> 放到下一个场景（无下一个则放当前）
             if ws < s_end and we > s_end:
-                next_name = scenes[i+1][0] if i+1 < len(scenes) else name
-                res_map[next_name].append(w); placed = True; break
+                next_name = scenes[i + 1][0] if i + 1 < len(scenes) else name
+                res_map[next_name].append(w);
+                placed = True;
+                break
             # 从前一场景延伸进来，end 落在当前场景内
             if ws < s_start and we > s_start and we <= s_end:
-                res_map[name].append(w); placed = True; break
+                res_map[name].append(w);
+                placed = True;
+                break
 
         # 回退策略：放到首或尾场景
         if not placed:
@@ -431,11 +440,12 @@ def get_scene_word(scene_info, asr_list, need_detail=False):
             "times": (s_start if callable(globals().get('ms_to_time')) else s_start,
                       s_end if callable(globals().get('ms_to_time')) else s_end),
             "text": text,
-            "last_end_ms": last_end_ms        }
+            "last_end_ms": last_end_ms}
         if need_detail:
             out[name]["words"] = words
 
     return out
+
 
 def reorganize_scene_asr(scene_map):
     """
@@ -478,7 +488,6 @@ def reorganize_scene_asr(scene_map):
         }
 
     return out
-
 
 
 def split_video():
@@ -571,11 +580,12 @@ def reorganize_scene_asr_fun():
     sentence_info = reorganize_scene_asr(result_dict)
     print(sentence_info)
 
+
 def fill_speaker_texts(
-    words: List[Dict[str, Any]],
-    speaker_segments: List[Dict[str, Any]],
-    keep_word_list: bool = False,
-    joiner: Optional[str] = None
+        words: List[Dict[str, Any]],
+        speaker_segments: List[Dict[str, Any]],
+        keep_word_list: bool = False,
+        joiner: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     将 ASR 的 words 填充进说话人 segment 列表。
@@ -601,7 +611,8 @@ def fill_speaker_texts(
     # choose joiner if None
     if joiner is None:
         # heuristic: if any word contains ascii letters/digits, prefer space; else no space (for Chinese)
-        ascii_like = sum(1 for w in words_sorted if any((c.isascii() and (c.isalpha() or c.isdigit())) for c in str(w.get('word',''))))
+        ascii_like = sum(1 for w in words_sorted if
+                         any((c.isascii() and (c.isalpha() or c.isdigit())) for c in str(w.get('word', ''))))
         joiner = ' ' if ascii_like >= len(words_sorted) / 3 else ''
 
     # prepare container for assigned words
@@ -633,7 +644,7 @@ def fill_speaker_texts(
     # build text and optionally keep words
     for s in segs:
         s['_assigned_words'].sort(key=lambda x: x.get('start', 0))
-        s['text'] = joiner.join([str(w.get('word','')) for w in s['_assigned_words']])
+        s['text'] = joiner.join([str(w.get('word', '')) for w in s['_assigned_words']])
         if keep_word_list:
             s['words'] = s['_assigned_words']
         # cleanup internal key
@@ -662,7 +673,7 @@ def merge_by_key(temp_list: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
             name = f"asr_{i}"
         basenames.append(name)
 
-    base_map: Dict[Tuple[int,int,str], Dict[str, Any]] = {}
+    base_map: Dict[Tuple[int, int, str], Dict[str, Any]] = {}
 
     # 聚合：把每个 segment 的 text 塞到对应 key 下
     for asr_idx, segs in enumerate(temp_list):
@@ -687,6 +698,7 @@ def merge_by_key(temp_list: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     merged = sorted(base_map.values(), key=lambda e: (e.get("start", 0), e.get("end", 0)))
     return merged
 
+
 def fix_speech_asr(speech_asr_info):
     """
     纠正每个说话人的文本
@@ -703,7 +715,8 @@ def fix_speech_asr(speech_asr_info):
             fix_speech_asr_info = string_to_object(raw)
             # 检测fix_speech_asr_info和speech_asr_info长度是否一致
             if len(fix_speech_asr_info) != len(speech_asr_info):
-                raise ValueError(f"返回的数据长度与输入数据长度不一致: {len(fix_speech_asr_info)} != {len(speech_asr_info)}")
+                raise ValueError(
+                    f"返回的数据长度与输入数据长度不一致: {len(fix_speech_asr_info)} != {len(speech_asr_info)}")
             return fix_speech_asr_info
         except Exception as e:
             print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
@@ -768,16 +781,91 @@ def fun():
         entry.pop('end', None)
         entry.pop('speaker', None)
 
-
     fixed_speech_asr_info = fix_speech_asr(origin_sentence_info)
     save_json(output_file, fixed_speech_asr_info)
     print()
 
 
+def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True, return_pairs=True):
+    """
+    合并不同阈值下的场景时间点，保留出现次数 >= min_count 的时间戳并按时间升序返回。
+
+    参数:
+      scene_dict: 嵌套字典，外层 key 为阈值（例如 40,50,60），内层为场景名 -> [start, end]
+      min_count: 只保留出现次数 >= min_count 的时间戳（默认 2）
+      count_by_threshold: True 时在每个阈值内先去重再计数（推荐），
+                          False 时把所有出现次数都计入（同阈值重复会被计多次）
+      return_pairs: True 则同时把相邻时间点两两配对成区间返回
+
+    返回:
+      如果 return_pairs=False，返回按升序的时间戳字符串列表。
+      如果 return_pairs=True，返回 (time_points_list, [(start,end), ...])。
+    """
+    counts = Counter()
+
+    for thr, scenes in scene_dict.items():
+        # 收集该阈值下所有时间戳
+        ts_list = []
+        for scene_name, bounds in scenes.items():
+            if not bounds:
+                continue
+            # 期望 bounds = [start, end]
+            ts_list.extend(bounds)
+        if count_by_threshold:
+            for ts in set(ts_list):
+                counts[ts] += 1
+        else:
+            for ts in ts_list:
+                counts[ts] += 1
+
+    # 过滤出出现次数 >= min_count 的时间点
+    kept = [ts for ts, c in counts.items() if c >= min_count]
+
+    # 按真实时间排序
+    kept_sorted = sorted(kept, key=time_to_ms)
+
+    # 构建 pairs_dict，键名为 '场景1','场景2',...
+    pairs = {}
+    n = len(kept_sorted)
+    if n == 0:
+        return kept_sorted, pairs
+    if n == 1:
+        start = kept_sorted[0]
+        end = kept_sorted[0]
+        td = time_to_ms(end) - time_to_ms(start)
+        pairs['场景1'] = {
+            'start': start,
+            'end': end,
+            'duration': td
+        }
+        return kept_sorted, pairs
+
+    for i in range(n - 1):
+        key = f"场景{i+1}"
+        start = kept_sorted[i]
+        end = kept_sorted[i+1]
+        td = time_to_ms(end) - time_to_ms(start)
+        pairs[key] = {
+            'start': start,
+            'end': end,
+            'duration': td
+        }
+
+    return kept_sorted, pairs
+
+
 def get_scene():
     my_video_path = 'test2.mp4'
+    basename = os.path.basename(my_video_path).split('.')[0]
 
-    for high_threshold in [40, 50, 60]:
+    all_scene_info_dict = {}
+    for high_threshold in [30, 40, 50, 70]:
+        scene_info_file = f'scenes_{basename}_{high_threshold}/scene_info.json'
+        if os.path.exists(scene_info_file):
+            print(f"场景信息文件已存在，跳过处理: {scene_info_file}")
+            all_scene_info_dict[high_threshold] = read_json(scene_info_file)
+            continue
+
         # 运行带有精炼功能的场景分割
         scene_info_dict = split_scenes_json(
             my_video_path,
@@ -787,10 +875,19 @@ def get_scene():
         print("\n场景信息字典已生成并打印。")
         for key, value in scene_info_dict.items():
             timestamp = value[1]
-            save_frames_around_timestamp(my_video_path, timestamp, 3, str(os.path.join(f'scenes_{high_threshold}', key)))
-        scene_info_file = f'scenes_{high_threshold}/scene_info.json'
-        save_json(scene_info_file, scene_info_dict)
+            save_frames_around_timestamp(my_video_path, timestamp, 3, str(os.path.join(f'scenes_{basename}_{high_threshold}', key)))
 
+        save_json(scene_info_file, scene_info_dict)
+        all_scene_info_dict[high_threshold] = scene_info_dict
+    kept_sorted, pairs = merge_scene_timestamps(all_scene_info_dict, min_count=2)
+
+    print(f"\n合并后的场景数量为: {len(pairs)}")
+    for key, value in pairs.items():
+        timestamp = value[1]
+        save_frames_around_timestamp(my_video_path, timestamp, 3,
+                                     str(os.path.join(f'scenes_fused_{basename}', key)))
+
+    print(f"所有场景信息: {all_scene_info_dict}")
 
 
 if __name__ == '__main__':

@@ -1059,6 +1059,7 @@ def get_all_income():
 
 
 if __name__ == '__main__':
+    # block_all_author(['196823511', '3546913316014394'])
     get_all_income()
 
 
