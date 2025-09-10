@@ -1061,10 +1061,10 @@ def get_all_income():
 
 
 if __name__ == '__main__':
-    # block_all_author(['196823511', '3546913316014394'])
-    block_all_author()
+    # block_all_author(['196823511', '3546913316014394'], action_type=6)
+    # block_all_author()
 
-    # get_all_income()
+    get_all_income()
 
 
     # COOKIE = get_config("jie_bilibili_total_cookie")

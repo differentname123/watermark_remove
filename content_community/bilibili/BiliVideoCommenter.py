@@ -42,9 +42,13 @@ yang_total_cookie = get_config("yang_bilibili_total_cookie")
 yang_csrf_token = get_config("yang_bilibili_csrf_token")
 yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
 
-commenter_list = [ruruxiao_commenter, yang_commenter, lin_commenter, yiyi_commenter, qiqixiao_commenter]
-cookie_list = [ruruxiao_total_cookie, yang_total_cookie, lin_total_cookie, yiyi_total_cookie, qiqixiao_total_cookie]
-csrf_list = [ruruxiao_csrf_token, yang_csrf_token, lin_csrf_token, yiyi_csrf_token, qiqixiao_csrf_token]
+
+tao_total_cookie = get_config("tao_bilibili_total_cookie")
+tao_csrf_token = get_config("tao_bilibili_csrf_token")
+tao_commenter = BilibiliCommenter(tao_total_cookie, tao_csrf_token)
+
+commenter_list = [ruruxiao_commenter, yang_commenter, lin_commenter, yiyi_commenter, qiqixiao_commenter, tao_commenter]
+cookie_list = [ruruxiao_total_cookie, yang_total_cookie, lin_total_cookie, yiyi_total_cookie, qiqixiao_total_cookie, tao_total_cookie]
 
 
 CONFIG = {
