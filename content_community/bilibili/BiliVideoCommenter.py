@@ -22,33 +22,45 @@ URL_MODIFY_RELATION = "https://api.bilibili.com/x/relation/modify"
 total_cookie = get_config("lin_bilibili_total_cookie")
 csrf_token = get_config("lin_bilibili_csrf_token")
 
+commenter_list = []
+cookie_list = []
+
 ruruxiao_total_cookie = get_config("ruruxiao_bilibili_total_cookie")
 ruruxiao_csrf_token = get_config("ruruxiao_bilibili_csrf_token")
 ruruxiao_commenter = BilibiliCommenter(ruruxiao_total_cookie, ruruxiao_csrf_token)
+commenter_list.append(ruruxiao_commenter)
+cookie_list.append(ruruxiao_total_cookie)
 
-yiyi_total_cookie = get_config("yiyi_bilibili_total_cookie")
-yiyi_csrf_token = get_config("yiyi_bilibili_csrf_token")
-yiyi_commenter = BilibiliCommenter(yiyi_total_cookie, yiyi_csrf_token)
+# yiyi_total_cookie = get_config("yiyi_bilibili_total_cookie")
+# yiyi_csrf_token = get_config("yiyi_bilibili_csrf_token")
+# yiyi_commenter = BilibiliCommenter(yiyi_total_cookie, yiyi_csrf_token)
+# commenter_list.append(yiyi_commenter)
+# cookie_list.append(yiyi_total_cookie)
 
 qiqixiao_total_cookie = get_config("qiqixiao_bilibili_total_cookie")
 qiqixiao_csrf_token = get_config("qiqixiao_bilibili_csrf_token")
 qiqixiao_commenter = BilibiliCommenter(qiqixiao_total_cookie, qiqixiao_csrf_token)
+commenter_list.append(qiqixiao_commenter)
+cookie_list.append(qiqixiao_total_cookie)
 
-lin_total_cookie = get_config("lin_bilibili_total_cookie")
-lin_csrf_token = get_config("lin_bilibili_csrf_token")
-lin_commenter = BilibiliCommenter(lin_total_cookie, lin_csrf_token)
-
-yang_total_cookie = get_config("yang_bilibili_total_cookie")
-yang_csrf_token = get_config("yang_bilibili_csrf_token")
-yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
+# lin_total_cookie = get_config("lin_bilibili_total_cookie")
+# lin_csrf_token = get_config("lin_bilibili_csrf_token")
+# lin_commenter = BilibiliCommenter(lin_total_cookie, lin_csrf_token)
+# commenter_list.append(lin_commenter)
+# cookie_list.append(lin_total_cookie)
+#
+# yang_total_cookie = get_config("yang_bilibili_total_cookie")
+# yang_csrf_token = get_config("yang_bilibili_csrf_token")
+# yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
+# commenter_list.append(yang_commenter)
+# cookie_list.append(yang_total_cookie)
 
 
 tao_total_cookie = get_config("tao_bilibili_total_cookie")
 tao_csrf_token = get_config("tao_bilibili_csrf_token")
 tao_commenter = BilibiliCommenter(tao_total_cookie, tao_csrf_token)
-
-commenter_list = [ruruxiao_commenter, yang_commenter, lin_commenter, yiyi_commenter, qiqixiao_commenter, tao_commenter]
-cookie_list = [ruruxiao_total_cookie, yang_total_cookie, lin_total_cookie, yiyi_total_cookie, qiqixiao_total_cookie, tao_total_cookie]
+commenter_list.append(tao_commenter)
+cookie_list.append(tao_total_cookie)
 
 
 CONFIG = {
@@ -554,7 +566,7 @@ def comment_worker():
                 print("弹幕发送流程失败。")
 
         # 每轮所有评论者执行完后随机休眠一段时间
-        time.sleep(random.uniform(100, 110))
+        time.sleep(random.uniform(200, 210))
 
 def get_comment_user(bvid):
     result_id_list = []

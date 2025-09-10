@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B站扫码登录</title>
+    <style>
+        :root {
+            --bg-color: #f5f5f7;
+            --font-color: #1d1d1f;
+            --secondary-font-color: #6e6e73;
+            --card-bg-color: #ffffff;
+            --primary-color: #007aff;
+            --border-color: #d2d2d7;
+            --disabled-color: #a7a7ad; /* 禁用按钮时的背景色 */
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--font-color);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            text-align: center;
+        }
+        .container {
+            background-color: var(--card-bg-color);
+            border-radius: 18px;
+            padding: 40px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-width: 400px;
+            width: 90%;
+            box-sizing: border-box;
+        }
+        h1 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-top: 0;
+            margin-bottom: 24px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            font-size: 16px;
+            box-sizing: border-box;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
+        }
+        .button-group {
+            display: flex;
+            gap: 12px;
+            flex-direction: column;
+        }
+        button {
+            width: 100%;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.1s;
+        }
+        button:hover:not(:disabled) { /* 仅在非禁用状态下生效 */
+            background-color: #006ae0;
+        }
+        button:active:not(:disabled) { /* 仅在非禁用状态下生效 */
+            transform: scale(0.98);
+        }
+        button:disabled {
+            background-color: var(--disabled-color);
+            cursor: not-allowed;
+            transform: none; /* 禁用时无形变 */
+        }
+        #qr-container {
+            margin-top: 24px;
+            padding: 20px;
+            border: 1px solid #e5e5e5;
+            border-radius: 12px;
+            min-height: 150px; /* 确保有足够空间显示加载动画或二维码 */
+            display: flex; /* 使用 flex 布局居中内容 */
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        #qr-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            margin-top: 10px;
+            border: 1px solid var(--border-color);
+            display: none; /* 默认隐藏，在加载成功后显示 */
+        }
+        #status {
+            margin-top: 16px;
+            font-size: 14px;
+            color: var(--secondary-font-color);
+            min-height: 20px; /* 避免文本变化时布局跳动 */
+            word-wrap: break-word;
+        }
+        /* 加载动画 Spinner CSS */
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-top: 4px solid var(--primary-color);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto 10px auto; /* 调整外边距 */
+            display: none; /* 默认隐藏 */
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #loading-text {
+            font-size: 14px;
+            color: var(--secondary-font-color);
+            display: none; /* 默认隐藏 */
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>B站扫码登录</h1>
+
+    <div class="form-group">
+        <input type="text" id="accountName" placeholder="请输入绑定的B站账号名称" required>
+    </div>
+
+    <div class="button-group">
+        <button id="refreshQrBtn">刷新登录二维码</button>
+        <button id="verifyStatusBtn">验证登录状态</button>
+    </div>
+
+    <div id="qr-container">
+        <div id="loading-spinner" class="spinner"></div>
+        <p id="loading-text">正在生成二维码，请稍候...</p>
+        <img id="qr-image" src="" alt="登录二维码">
+    </div>
+
+    <p id="status">请先输入账号名称，然后刷新二维码进行登录。</p>
+</div>
+
+<script>
+    const accountNameInput = document.getElementById('accountName');
+    const refreshQrBtn = document.getElementById('refreshQrBtn');
+    const verifyStatusBtn = document.getElementById('verifyStatusBtn');
+    const qrContainer = document.getElementById('qr-container');
+    const qrImage = document.getElementById('qr-image');
+    const loadingSpinner = document.getElementById('loading-spinner');
+    const loadingText = document.getElementById('loading-text');
+    const statusText = document.getElementById('status');
+
+    let pollingInterval = null;
+    let refreshCooldownTimer = null; // 用于清除冷却计时的引用
+    const COOLDOWN_TIME_SECONDS = 10; // 刷新按钮的冷却时间（秒）
+
+    // 停止轮询的函数
+    function stopPolling() {
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+            console.log("轮询已停止。");
+        }
+    }
+
+    // 检查账号输入是否为空
+    function validateAccountName() {
+        const accountName = accountNameInput.value.trim();
+        if (!accountName) {
+            alert('请输入绑定的B站账号名称！');
+            return null;
+        }
+        return accountName;
+    }
+
+    // 禁用刷新按钮并启动冷却计时
+    function disableRefreshButton() {
+        refreshQrBtn.disabled = true;
+        let timeLeft = COOLDOWN_TIME_SECONDS;
+        refreshQrBtn.innerText = `刷新登录二维码 (${timeLeft}s)`;
+
+        if (refreshCooldownTimer) { // 如果已经有计时器在运行，先清除
+            clearInterval(refreshCooldownTimer);
+        }
+
+        refreshCooldownTimer = setInterval(() => {
+            timeLeft--;
+            if (timeLeft <= 0) {
+                clearInterval(refreshCooldownTimer);
+                refreshQrBtn.disabled = false;
+                refreshQrBtn.innerText = "刷新登录二维码";
+                console.log("刷新按钮已重新启用。");
+            } else {
+                refreshQrBtn.innerText = `刷新登录二维码 (${timeLeft}s)`;
+            }
+        }, 1000);
+    }
+
+    // 显示加载动画
+    function showLoadingAnimation() {
+        qrContainer.style.display = 'flex'; // 使用 flex 布局居中内容
+        qrImage.style.display = 'none';
+        loadingSpinner.style.display = 'block';
+        loadingText.style.display = 'block';
+    }
+
+    // 隐藏加载动画并显示二维码
+    function showQrImage() {
+        loadingSpinner.style.display = 'none';
+        loadingText.style.display = 'none';
+        qrImage.style.display = 'block';
+    }
+
+    // 隐藏二维码和加载动画区域
+    function hideQrArea() {
+        qrContainer.style.display = 'none';
+        qrImage.style.display = 'none';
+        loadingSpinner.style.display = 'none';
+        loadingText.style.display = 'none';
+    }
+
+    // “刷新登录二维码” 按钮事件
+    refreshQrBtn.addEventListener("click", async () => {
+        stopPolling(); // 开始新的流程前，先停止旧的轮询
+
+        const accountName = validateAccountName();
+        if (!accountName) return;
+
+        disableRefreshButton(); // 禁用按钮并启动冷却
+
+        statusText.innerText = "正在创建登录会话...";
+        showLoadingAnimation(); // 显示加载动画
+
+        try {
+            const resp = await fetch("/start_login", { method: "POST" });
+            const data = await resp.json();
+
+            if (!resp.ok || !data.ok) {
+                statusText.innerText = "错误: " + (data.error || "未知错误");
+                hideQrArea();
+                return;
+            }
+
+            const sessionId = data.session_id;
+            // 从后端获取会话有效期，默认为 120 秒
+            const sessionTTL = data.session_ttl_seconds || (60 * 2);
+
+            qrImage.src = `/screenshot/${sessionId}`; // 首次加载二维码图片
+            qrImage.onload = () => { // 只有图片加载成功后才显示
+                showQrImage();
+                statusText.innerText = `请使用B站手机客户端扫码登录。二维码有效期 ${sessionTTL} 秒。`;
+            };
+            qrImage.onerror = () => { // 图片加载失败处理
+                statusText.innerText = "二维码加载失败，请重试。";
+                hideQrArea();
+            };
+
+            // 每3秒轮询一次登录状态
+            const checkUrl = `/check_login?session_id=${sessionId}&account_name=${encodeURIComponent(accountName)}`;
+            pollingInterval = setInterval(async () => {
+                try {
+                    console.log(`正在轮询会话 ${sessionId} 的登录状态...`);
+                    const r = await fetch(checkUrl);
+                    if (r.status === 200) {
+                        const s = await r.json();
+                        if (s.logged_in) {
+                            stopPolling(); // 登录成功，停止轮询
+                            statusText.innerText = `账号 [${accountName}] 登录成功！\nCookie已保存。`;
+                            hideQrArea(); // 登录成功后隐藏二维码区域
+                        } else {
+                            // 仅更新状态文本，不强制刷新二维码图片
+                            statusText.innerText = "等待扫码中...";
+                        }
+                    } else if (r.status === 404) {
+                        stopPolling(); // 会话过期，停止轮询
+                        statusText.innerText = `会话已过期，请点击“刷新登录二维码”按钮重新获取。`;
+                        hideQrArea(); // 会话过期隐藏二维码区域
+                    } else {
+                        // 其他错误状态
+                        console.error(`检查登录状态出错: ${r.status} ${r.statusText}`);
+                        statusText.innerText = `检查登录状态出错: ${r.status} ${r.statusText}`;
+                    }
+                } catch (err) {
+                    console.error("网络错误，轮询中断:", err);
+                    statusText.innerText = "网络错误，轮询中断。";
+                    stopPolling();
+                }
+            }, 3000); // 每 3 秒轮询一次
+
+        } catch (error) {
+            statusText.innerText = "请求失败，请检查后端服务是否运行。";
+            hideQrArea();
+            console.error(error);
+        }
+    });
+
+    // “验证登录状态” 按钮事件
+    verifyStatusBtn.addEventListener("click", async () => {
+        stopPolling(); // 验证状态时停止任何正在进行的轮询
+
+        const accountName = validateAccountName();
+        if (!accountName) return;
+
+        statusText.innerText = `正在验证账号 [${accountName}] 的登录状态...`;
+        hideQrArea(); // 验证状态时不显示二维码区域
+
+        try {
+            const verifyUrl = `/verify_status?account_name=${encodeURIComponent(accountName)}`;
+            const resp = await fetch(verifyUrl);
+            const data = await resp.json();
+
+            if (data.logged_in) {
+                statusText.innerText = `账号 [${accountName}] 状态：登录成功。\n(${data.message})`;
+            } else {
+                statusText.innerText = `账号 [${accountName}] 状态：未登录或验证失败。\n(${data.message})`;
+            }
+        } catch (error) {
+            statusText.innerText = "验证请求失败，请检查后端服务。";
+            console.error(error);
+        }
+    });
+
+    // 页面加载时的初始状态：隐藏二维码区域
+    hideQrArea();
+</script>
+
+</body>
+</html>
