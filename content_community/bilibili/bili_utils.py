@@ -409,8 +409,10 @@ def check_duplicate_video(meta_data):
 
             if douyin_username in user_map_info:
                 bilibili_username = user_map_info[douyin_username].get("bilibili_username", "")
+                mid = user_map_info[douyin_username].get("mid", "")
                 if bilibili_username:
                     print(f"[提示] 用户 {douyin_username} 在 B 站已有视频{douyin_full_title}，b站昵称: {bilibili_username}")
+                    block_all_author([mid])
                     return True
 
             douyin_info = {
@@ -955,7 +957,7 @@ def modify_relation(fid, action_type, cookie_str, url: str = URL_MODIFY_RELATION
 
     return False, str(last_err or "unknown_error")
 
-def block_all_author(mid_list=None):
+def block_all_author(mid_list=None, action_type=5):
     """
     拉黑所有原作者用户
     """
@@ -985,7 +987,7 @@ def block_all_author(mid_list=None):
                 print(f"[跳过] 用户 {uid} 不能拉黑自己")
                 continue
             print(f"[提示] 使用用户 {uid} 的账号尝试拉黑 {mid}")
-            success, result = modify_relation(fid=mid, action_type=5, cookie_str=total_cookie)
+            success, result = modify_relation(fid=mid, action_type=action_type, cookie_str=total_cookie)
             if success:
                 print(f"[成功] 用户 {name} 成功拉黑 {mid}")
         time.sleep(2)  # 每个用户间隔 2 秒
@@ -1060,10 +1062,12 @@ def get_all_income():
 
 if __name__ == '__main__':
     # block_all_author(['196823511', '3546913316014394'])
-    get_all_income()
+    block_all_author()
+
+    # get_all_income()
 
 
-    COOKIE = get_config("jie_bilibili_total_cookie")
+    # COOKIE = get_config("jie_bilibili_total_cookie")
 
 
     # # 进行拉黑 关注 取消关注
