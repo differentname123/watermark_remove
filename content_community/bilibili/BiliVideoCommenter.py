@@ -620,7 +620,7 @@ def follower_worker(csrf_token):
                     processed_fids.add(fid)
 
                     # 随机暂停一段时间再执行关注，模拟人类行为
-                    time.sleep(random.uniform(20, 30))
+                    time.sleep(random.uniform(40, 60))
                     for cookie in cookie_list:
                         success = modify_relation(fid, 1, cookie)
 
@@ -637,6 +637,21 @@ def follower_worker(csrf_token):
 
 
 if __name__ == '__main__':
+    if True:
+        # 清楚DISCOVERED_VIDEOS_FILE.json中的数据
+        if os.path.exists(CONFIG['DISCOVERED_VIDEOS_FILE']):
+            os.remove(CONFIG['DISCOVERED_VIDEOS_FILE'])
+            logging.info(f"已删除旧的 {CONFIG['DISCOVERED_VIDEOS_FILE']} 文件，重新开始。")
+        if os.path.exists(CONFIG['PROCESSED_VIDEOS_FILE']):
+            os.remove(CONFIG['PROCESSED_VIDEOS_FILE'])
+            logging.info(f"已删除旧的 {CONFIG['PROCESSED_VIDEOS_FILE']} 文件，重新开始。")
+        if os.path.exists(CONFIG['PROCESSED_FIDS_FILE']):
+            os.remove(CONFIG['PROCESSED_FIDS_FILE'])
+            logging.info(f"已删除旧的 {CONFIG['PROCESSED_FIDS_FILE']} 文件，重新开始。")
+        if os.path.exists(CONFIG['TARGET_PROCESSED_FIDS_FILE']):
+            os.remove(CONFIG['TARGET_PROCESSED_FIDS_FILE'])
+            logging.info(f"已删除旧的 {CONFIG['TARGET_PROCESSED_FIDS_FILE']} 文件，重新开始。")
+
     if not CONFIG['COOKIE'] or not CONFIG['CSRF_TOKEN']:
         logging.error(
             "错误：请在 common_utils.common_utils.get_config 中配置 bilibili_total_cookie 和 bilibili_csrf_token。")

@@ -859,7 +859,7 @@ def get_scene():
     basename = os.path.basename(my_video_path).split('.')[0]
 
     all_scene_info_dict = {}
-    for high_threshold in [30, 40, 50, 70]:
+    for high_threshold in [30, 40, 50, 60, 70]:
         scene_info_file = f'scenes_{basename}_{high_threshold}/scene_info.json'
         if os.path.exists(scene_info_file):
             print(f"场景信息文件已存在，跳过处理: {scene_info_file}")
@@ -879,7 +879,7 @@ def get_scene():
 
         save_json(scene_info_file, scene_info_dict)
         all_scene_info_dict[high_threshold] = scene_info_dict
-    kept_sorted, pairs = merge_scene_timestamps(all_scene_info_dict, min_count=2)
+    kept_sorted, pairs = merge_scene_timestamps(all_scene_info_dict, min_count=3)
 
     print(f"\n合并后的场景数量为: {len(pairs)}")
     for key, value in pairs.items():
