@@ -19,8 +19,8 @@ from content_community.bilibili.comment import BilibiliCommenter
 URL_MODIFY_RELATION = "https://api.bilibili.com/x/relation/modify"
 
 # --- 2. 全局配置 ---
-total_cookie = get_config("lin_bilibili_total_cookie")
-csrf_token = get_config("lin_bilibili_csrf_token")
+total_cookie = get_config("ruruxiao_bilibili_total_cookie")
+csrf_token = get_config("ruruxiao_bilibili_csrf_token")
 
 commenter_list = []
 cookie_list = []
@@ -61,6 +61,13 @@ tao_csrf_token = get_config("tao_bilibili_csrf_token")
 tao_commenter = BilibiliCommenter(tao_total_cookie, tao_csrf_token)
 commenter_list.append(tao_commenter)
 cookie_list.append(tao_total_cookie)
+
+
+dahao_total_cookie = get_config("dahao_bilibili_total_cookie")
+dahao_csrf_token = get_config("dahao_bilibili_csrf_token")
+dahao_commenter = BilibiliCommenter(dahao_total_cookie, dahao_csrf_token)
+commenter_list.append(dahao_commenter)
+cookie_list.append(dahao_total_cookie)
 
 
 CONFIG = {
@@ -618,7 +625,7 @@ def follower_worker(csrf_token):
         should_follow = any(keyword.lower() in text_to_check for keyword in CONFIG['FOLLOW_KEYWORDS'])
         result_id_list = [author_id]
         if should_follow:
-            # result_id_list.extend(get_comment_user(bvid=video.get('bvid')))
+            result_id_list.extend(get_comment_user(bvid=video.get('bvid')))
             author_name = video.get('author') or (video.get('owner') and video['owner'].get('name'))
             result_id_list = list(set(result_id_list))
             logging.info(f"发现目标用户: {author_name} (UID: {author_id}) | 来源: BVID {video.get('bvid')} | 标题: {title} 连带评论有 {len(result_id_list)} 个用户需要关注。")
@@ -649,7 +656,7 @@ def follower_worker(csrf_token):
 
 
 if __name__ == '__main__':
-    if True:
+    if False:
         # 清楚DISCOVERED_VIDEOS_FILE.json中的数据
         if os.path.exists(CONFIG['DISCOVERED_VIDEOS_FILE']):
             os.remove(CONFIG['DISCOVERED_VIDEOS_FILE'])

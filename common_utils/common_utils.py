@@ -1504,7 +1504,7 @@ def init_config():
 
     # 账号配置：key 是 config_map 中的 UID，value 是账号的前缀（name）
     accounts = {
-        # '443415885': 'dahao',
+        # '3546974754179442': 'dahao',
         # '3546954575383021': 'mama',
         '3546717871934392': 'nana',
         # '1223805908': 'ruru',
