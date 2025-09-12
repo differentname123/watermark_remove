@@ -780,7 +780,7 @@ if __name__ == '__main__':
     # result = format_video_data()
     # print(f"格式化结果，共 {len(result)} 行")
 
-    username_list = ['jie', 'nana']
+    username_list = [ 'nana']
     while True:
         start_time = time.time()
         run_once(username_list)

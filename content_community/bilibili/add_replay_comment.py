@@ -669,7 +669,7 @@ if __name__ == '__main__':
     # gen_all_type_image()
 
     username_list = ['mama', 'nana', 'ruru', 'jie', 'jun', 'xiaosu', 'yan', 'xiaohao', 'chabian']
-    cookie_list = [get_config('jie_bilibili_total_cookie')]
+    cookie_list = [get_config('nana_bilibili_total_cookie')]
     username_list = ['jj', 'lin']
     # username_list = ['mama']
     config = init_config()

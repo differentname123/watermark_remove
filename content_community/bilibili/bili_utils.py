@@ -327,7 +327,7 @@ def fetch_from_search(key_word, target_count=20, timeout=10, page_size=20):
         "Origin": "https://www.bilibili.com",
         "Referer": referer,
         "Connection": "keep-alive",
-        "Cookie": get_config("jie_bilibili_total_cookie"),  # 不带 Cookie
+        "Cookie": get_config("nana_bilibili_total_cookie"),  # 不带 Cookie
     }
 
     video_list, current_page, fetched = [], 1, 0
@@ -1067,7 +1067,7 @@ if __name__ == '__main__':
     get_all_income()
 
 
-    # COOKIE = get_config("jie_bilibili_total_cookie")
+    # COOKIE = get_config("nana_bilibili_total_cookie")
 
 
     # # 进行拉黑 关注 取消关注

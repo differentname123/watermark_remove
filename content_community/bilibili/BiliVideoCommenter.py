@@ -19,8 +19,8 @@ from content_community.bilibili.comment import BilibiliCommenter
 URL_MODIFY_RELATION = "https://api.bilibili.com/x/relation/modify"
 
 # --- 2. 全局配置 ---
-total_cookie = get_config("qiqixiao_bilibili_total_cookie")
-csrf_token = get_config("qiqixiao_bilibili_csrf_token")
+total_cookie = get_config("dahao_bilibili_total_cookie")
+csrf_token = get_config("dahao_bilibili_csrf_token")
 
 commenter_list = []
 cookie_list = []
@@ -31,11 +31,6 @@ yiyi_commenter = BilibiliCommenter(yiyi_total_cookie, yiyi_csrf_token)
 commenter_list.append(yiyi_commenter)
 # cookie_list.append(yiyi_total_cookie)
 
-qiqixiao_total_cookie = get_config("qiqixiao_bilibili_total_cookie")
-qiqixiao_csrf_token = get_config("qiqixiao_bilibili_csrf_token")
-qiqixiao_commenter = BilibiliCommenter(qiqixiao_total_cookie, qiqixiao_csrf_token)
-commenter_list.append(qiqixiao_commenter)
-cookie_list.append(qiqixiao_total_cookie)
 
 lin_total_cookie = get_config("lin_bilibili_total_cookie")
 lin_csrf_token = get_config("lin_bilibili_csrf_token")
@@ -61,7 +56,7 @@ dahao_total_cookie = get_config("dahao_bilibili_total_cookie")
 dahao_csrf_token = get_config("dahao_bilibili_csrf_token")
 dahao_commenter = BilibiliCommenter(dahao_total_cookie, dahao_csrf_token)
 commenter_list.append(dahao_commenter)
-# cookie_list.append(dahao_total_cookie)
+cookie_list.append(dahao_total_cookie)
 
 
 xiaodan_total_cookie = get_config("xiaodan_bilibili_total_cookie")

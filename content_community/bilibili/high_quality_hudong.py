@@ -33,8 +33,8 @@ interaction_data_file = '../../LLM/TikTokDownloader/back_up/interaction_data.jso
 URL_MODIFY_RELATION = "https://api.bilibili.com/x/relation/modify"
 
 # --- 2. 全局配置 ---
-total_cookie = get_config("jie_bilibili_total_cookie")
-csrf_token = get_config("jie_bilibili_csrf_token")
+total_cookie = get_config("nana_bilibili_total_cookie")
+csrf_token = get_config("nana_bilibili_csrf_token")
 
 CONFIG = {
     "STRATEGIES": {
