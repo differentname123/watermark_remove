@@ -56,7 +56,7 @@ dahao_total_cookie = get_config("dahao_bilibili_total_cookie")
 dahao_csrf_token = get_config("dahao_bilibili_csrf_token")
 dahao_commenter = BilibiliCommenter(dahao_total_cookie, dahao_csrf_token)
 commenter_list.append(dahao_commenter)
-cookie_list.append(dahao_total_cookie)
+# cookie_list.append(dahao_total_cookie)
 
 
 xiaodan_total_cookie = get_config("xiaodan_bilibili_total_cookie")
