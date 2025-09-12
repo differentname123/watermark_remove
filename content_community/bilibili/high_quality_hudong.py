@@ -1557,7 +1557,7 @@ def fun():
             name = config_map[uid].get('name', uid)
             # if uid in ['3546965562362625']:
             #     continue
-            if name in ['ruruxiao', 'qiqixiao', 'yiyi', 'lin', 'yang', 'tao']:
+            if name in ['ruruxiao', 'qiqixiao', 'yiyi', 'lin', 'yang', 'tao', 'dahao', 'xiaodan', 'xiaoxue']:
                 continue
             logging.info(f"  > 正在获取UP主(UID: {uid} {name})的最新动态...")
             temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=100)
