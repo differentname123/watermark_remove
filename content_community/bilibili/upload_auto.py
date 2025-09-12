@@ -67,6 +67,7 @@ accounts = {
     'qiqixiao': 'qiqixiao',
     'yiyi': 'yiyi',
     'xiaodan': 'xiaodan',
+    'xiaoxue': 'xiaoxue',
 
 }
 

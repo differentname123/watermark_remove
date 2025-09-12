@@ -454,7 +454,7 @@ if __name__ == "__main__":
 
     print("[TEST] 正在测试 get_llm_content (这将触发第一次动态排序)")
     start_time = time.time()
-    result = get_llm_content(prompt="再给我讲个笑话吧", model_name="gemini-2.5-flash")
+    result = get_llm_content(prompt="再给我讲个笑话吧", model_name="gemini-2.5-pro")
     if result:
         print("\n[RESULT] 模型输出：\n", result)
     else:
