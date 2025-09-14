@@ -786,25 +786,32 @@ def fun():
     print()
 
 
-def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True, return_pairs=True):
+def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True):
     """
-    合并不同阈值下的场景时间点，保留出现次数 >= min_count 的时间戳并按时间升序返回。
+    合并不同阈值下的场景时间点。
+
+    行为说明：
+      - kept_sorted: 返回**未过滤**的时间戳及其出现次数，类型为列表 [(timestamp_str, count), ...]，
+                    并按真实时间升序排序。
+      - pairs: 仍然基于满足 min_count 的时间戳构建相邻配对区间，格式为
+               {'场景1': {'start': s, 'end': e, 'duration': ms}, ...}
 
     参数:
       scene_dict: 嵌套字典，外层 key 为阈值（例如 40,50,60），内层为场景名 -> [start, end]
-      min_count: 只保留出现次数 >= min_count 的时间戳（默认 2）
+      min_count: 只把出现次数 >= min_count 的时间戳用于构建 pairs（默认 3）
       count_by_threshold: True 时在每个阈值内先去重再计数（推荐），
                           False 时把所有出现次数都计入（同阈值重复会被计多次）
-      return_pairs: True 则同时把相邻时间点两两配对成区间返回
 
     返回:
-      如果 return_pairs=False，返回按升序的时间戳字符串列表。
-      如果 return_pairs=True，返回 (time_points_list, [(start,end), ...])。
+      (kept_sorted, pairs)
+        - kept_sorted: [(timestamp_str, count), ...] （未过滤，按时间升序）
+        - pairs: dict，键为 '场景1','场景2',...，值为 {'start','end','duration'}
     """
+    from collections import Counter
+
     counts = Counter()
 
     for thr, scenes in scene_dict.items():
-        # 收集该阈值下所有时间戳
         ts_list = []
         for scene_name, bounds in scenes.items():
             if not bounds:
@@ -818,20 +825,20 @@ def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True, ret
             for ts in ts_list:
                 counts[ts] += 1
 
-    # 过滤出出现次数 >= min_count 的时间点
-    kept = [ts for ts, c in counts.items() if c >= min_count]
+    # kept_sorted: 未过滤，包含每个时间戳的出现次数，按时间升序
+    kept_sorted = sorted(counts.items(), key=lambda kv: time_to_ms(kv[0]))  # [(ts, count), ...]
 
-    # 按真实时间排序
-    kept_sorted = sorted(kept, key=time_to_ms)
+    # 下面为构建 pairs：仍然只使用出现次数 >= min_count 的时间戳（按时间排序）
+    filtered_ts = [ts for ts, c in counts.items() if c >= min_count]
+    filtered_sorted = sorted(filtered_ts, key=time_to_ms)
 
-    # 构建 pairs_dict，键名为 '场景1','场景2',...
     pairs = {}
-    n = len(kept_sorted)
+    n = len(filtered_sorted)
     if n == 0:
         return kept_sorted, pairs
     if n == 1:
-        start = kept_sorted[0]
-        end = kept_sorted[0]
+        start = filtered_sorted[0]
+        end = filtered_sorted[0]
         td = time_to_ms(end) - time_to_ms(start)
         pairs['场景1'] = {
             'start': start,
@@ -842,8 +849,8 @@ def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True, ret
 
     for i in range(n - 1):
         key = f"场景{i+1}"
-        start = kept_sorted[i]
-        end = kept_sorted[i+1]
+        start = filtered_sorted[i]
+        end = filtered_sorted[i+1]
         td = time_to_ms(end) - time_to_ms(start)
         pairs[key] = {
             'start': start,
@@ -852,6 +859,7 @@ def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True, ret
         }
 
     return kept_sorted, pairs
+
 
 
 def get_scene():

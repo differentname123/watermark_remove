@@ -29,34 +29,34 @@ yiyi_total_cookie = get_config("yiyi_bilibili_total_cookie")
 yiyi_csrf_token = get_config("yiyi_bilibili_csrf_token")
 yiyi_commenter = BilibiliCommenter(yiyi_total_cookie, yiyi_csrf_token)
 commenter_list.append(yiyi_commenter)
-# cookie_list.append(yiyi_total_cookie)
+cookie_list.append(yiyi_total_cookie)
 
 
 lin_total_cookie = get_config("lin_bilibili_total_cookie")
 lin_csrf_token = get_config("lin_bilibili_csrf_token")
 lin_commenter = BilibiliCommenter(lin_total_cookie, lin_csrf_token)
 commenter_list.append(lin_commenter)
-# cookie_list.append(lin_total_cookie)
+cookie_list.append(lin_total_cookie)
 
-# yang_total_cookie = get_config("yang_bilibili_total_cookie")
-# yang_csrf_token = get_config("yang_bilibili_csrf_token")
-# yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
-# commenter_list.append(yang_commenter)
-# cookie_list.append(yang_total_cookie)
+yang_total_cookie = get_config("yang_bilibili_total_cookie")
+yang_csrf_token = get_config("yang_bilibili_csrf_token")
+yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
+commenter_list.append(yang_commenter)
+cookie_list.append(yang_total_cookie)
 
 
 tao_total_cookie = get_config("tao_bilibili_total_cookie")
 tao_csrf_token = get_config("tao_bilibili_csrf_token")
 tao_commenter = BilibiliCommenter(tao_total_cookie, tao_csrf_token)
 commenter_list.append(tao_commenter)
-# cookie_list.append(tao_total_cookie)
+cookie_list.append(tao_total_cookie)
 
 
 dahao_total_cookie = get_config("dahao_bilibili_total_cookie")
 dahao_csrf_token = get_config("dahao_bilibili_csrf_token")
 dahao_commenter = BilibiliCommenter(dahao_total_cookie, dahao_csrf_token)
 commenter_list.append(dahao_commenter)
-# cookie_list.append(dahao_total_cookie)
+cookie_list.append(dahao_total_cookie)
 
 
 xiaodan_total_cookie = get_config("xiaodan_bilibili_total_cookie")
@@ -464,30 +464,28 @@ danmu_list = [
 ]
 
 interactive_comment_list = [
-    # 风格：礼貌但坚决
-    "已点赞、已评论、已发弹幕并关注了。期待你有空回访，并请务必通过我的【视频播放页】来关注我，直接互关平台不推荐哦，谢谢！",
-    "我看完了，点赞+弹幕+评论+关注都做了。若方便请回头看看我的作品，并请一定从【视频页面】上关注我，这样对我们都好～",
-    "支持你，已赞、已评、已弹幕并已关注。希望你也能看一下我的视频，然后直接在那个【视频页面】完成关注，非常感谢！",
-    "已从头看完并点赞评论发弹幕，还顺手关注了。诚挚邀请你回访，我的唯一请求是：请务必通过我的【视频页面】进行关注。",
-    "已完成三连并关注，感谢你的内容。若有空请来我这儿看看，并切记要从【我的视频播放页】点关注，不要直接回关！",
-    "给你点了赞、发了弹幕、留了评论并关注了。期待你的回访，重点强调：请必须通过我的【视频页面】来关注我，千万不要直接互关！",
-    "全程观看并支持：点赞、弹幕、评论、关注都已完成。请回访我的视频，并且必须从【视频播放页】点击关注才有效哦！",
-    "已赞评弹并关注，真心喜欢这期内容。希望你也能抽空看一下我的作品，并严格按照这个方式关注：打开我的【视频页面】再点关注。",
-    "已点赞并发弹幕、写评论、关注你。若方便欢迎互相支持，但前提是：请务必通过浏览我的【视频页面】来完成关注。",
-    "支持UP主：赞、评、弹幕、关注都到位。期待你的回访，并在此明确说明：请您务必从我的【作品播放页】进行关注，感谢理解！",
-
-    # 风格：俏皮但要求清晰
-    "我刚完成‘看完→点赞→弹幕→关注’四连环，你也来完成你的那一半好吗？通关秘籍：必须从我的【视频页面】里找到关注按钮才算成功！",
-    "弹幕已留、点赞已点、评论已写、关注也搞定。来互粉互撩一下呗～游戏规则：必须空降到我的【视频播放页】点击关注哦！",
-    "我把你的弹幕当作早餐吃了：已赞、已评、已弹幕、已关注。求回访！唯一的回访路径：观看我的视频并从【该视频页面】关注我！",
-    "全程潜伏并完成三连+关注，等你来我视频也上演一出‘回访大戏’！演员须知第一条：必须在我的【视频页面】这个舞台上点击关注！",
-    "已给你点了赞、发了弹幕并关注，换个方式说：你来我这儿露个面呗？出场方式有规定：必须从我的【视频播放页】点关注！",
-    "看完立刻三连+关注，友情提醒：回访会获得独家弹幕回复～再三强调：这个福利的解锁条件是从我的【视频页面】关注我！",
-    "我已经把你的头像印在我关注列表里：赞、评、弹、关注全到位，等你来回访！接头暗号：在我的【视频页面】上点个关注！",
-    "我的弹幕已占座，点赞已上保险，评论已就绪，关注也到位 —— 现在轮到你登场！登场地点有且只有一个：我的【视频播放页】里的关注按钮！",
-    "已完成四步式支持（看完/赞/评/弹/关注），欢迎带队来我视频集合！集合指令：在我的【视频页面】点击关注按钮完成报到！",
-    "给你送上三连和关注，回访并关注我吧，我们互为VIP粉丝！成为VIP的硬性要求：必须通过我的【视频页面】来点击关注！"
+    "已点赞、已评论、已发弹幕。我们都是小up主，求互助——请务必从我的【视频页面】关注我，我看到后会回访。",
+    "已完成：点赞、评论、弹幕。互粉规则：请从我的【视频播放页】点关注，直接互关不计入这里的统计。",
+    "已赞、已评、已发弹幕。请在我的【视频页面】关注我——这样我能第一时间在评论里回复你并回访。",
+    "已点赞、已评论并发了弹幕。小up主路上靠互助，烦请从我的【视频页面】点关注，方便通知推送。",
+    "已点赞、已评论、已发弹幕。回访办法：请务必从我的【视频页面】关注，关注后我会优先互动回访。",
+    "三连+弹幕已办妥（已点赞/已评论/已发弹幕）。要互助请走我的【视频页面】关注入口，平台显示更可靠。",
+    "已赞、已评、已发弹幕。互相扶持请按流程：打开我的【视频页面】再点关注，这样双方更稳妥。",
+    "已点赞、已评论、已发弹幕。请从我的【视频页面】关注我，关注成功后我会去你的页面进行回访互动。",
+    "已完成赞评弹幕动作（已点赞、已评论、已发弹幕）。回访条件：必须通过我的【视频页面】关注才算哦。",
+    "已点赞、已评论、已发弹幕。为了互助请从我的【视频页面】关注我，避免直接互关导致漏掉通知。",
+    "已点赞、已评论、已发弹幕。互粉方式统一为：在我的【视频播放页】点击关注，收到后我会优先回复你的评论。",
+    "已点赞、已评论并发了弹幕。若要互相扶持，请先从我的【视频页面】关注，平台那边统计才会生效。",
+    "我已完成：点赞、评论、发弹幕。回访约定：请务必从我的【视频页面】关注，关注后我会回去点个关注表示确认。",
+    "已赞、已评、已发弹幕。小up主互励：请在我的【视频页面】点击关注，关注后我会在评论区特别标注回复你。",
+    "已点赞、已评论、已发弹幕。互助提醒：通过我的【视频页面】关注我，能保证你收到我回访的通知。",
+    "三连+弹幕已到位（已点赞、已评论、已发弹幕）。互粉规则简单：打开我的【视频页面】点关注，然后告诉我，我会回访。",
+    "已点赞、已评论并发弹幕。请从我的【视频页面】关注我——这样平台更容易把你的支持计入我的频道权重。",
+    "已完成点赞/评论/发弹幕操作。回访须知：务必在我的【视频页面】关注我，否则我可能无法准确识别并回粉你。",
+    "已点赞、已评论、已发弹幕。互帮互助请走我的【视频页面】关注按钮，关注后我会优先在你的最新作品下留言。",
+    "已完成三连与弹幕（已点赞、已评论、已发弹幕）。请务必从我的【视频页面】关注我，按此路径我才会回访确认。"
 ]
+
 
 def video_fetcher_worker():
     """视频拉取线程：定期拉取新视频并放入队列。"""
