@@ -29,6 +29,216 @@ from common_utils.video_utils import extract_audio_from_video, clip_video_ms, me
 from common_utils.video_utils1 import redub_video_with_ffmpeg
 from common_utils.video_utils2 import add_bgm_to_video
 
+import string
+import re
+from copy import deepcopy
+
+# ==============================================================================
+# 1. 辅助常量与函数 (Helpers & Constants)
+# ==============================================================================
+
+# --- 单一数据源：定义用于分割句子的正则表达式 ---
+# 这是我们唯一的“真相来源”。所有关于标点的逻辑都将从此派生。
+# 括号 () 用于捕获分隔符，方括号 [] 内是所有作为分隔符的字符。
+SPLIT_SENTENCE_REGEX = r'([,，.。!?！、？])'
+
+# --- 派生逻辑：根据正则表达式自动生成标点符号集 ---
+# 我们从正则表达式中提取出所有标点，用于 is_not_punctuation 函数。
+# 这样，只要修改上面的正则表达式，下面的集合就会自动更新。
+PUNCTUATION_SET = set(re.findall(r'\[(.*?)\]', SPLIT_SENTENCE_REGEX)[0])
+
+
+def is_not_punctuation(char: str) -> bool:
+    """
+    判断一个字符是否为标点符号。
+    此函数的逻辑完全由 SPLIT_SENTENCE_REGEX 派生，确保了定义的一致性。
+    """
+    # 我们认为，任何不参与分割的字符，如果它也不是空格，就是有效字符。
+    return char and char.strip() and char not in PUNCTUATION_SET
+
+
+def split_text_into_sentences(text: str) -> list[str]:
+    """
+    将段落文本分割成子句列表。
+    此函数是“真相来源”，其行为定义了哪些字符是标点。
+    """
+    if not text:
+        return []
+
+    sentences = re.split(SPLIT_SENTENCE_REGEX, text)
+    if not sentences:
+        return [text]
+
+    # 将分隔符合并到它们前面的句子中
+    result = []
+    for i in range(0, len(sentences), 2):
+        # 确保不添加由连续分隔符产生的空字符串
+        if sentences[i]:
+            current_sentence = sentences[i]
+            if i + 1 < len(sentences) and sentences[i + 1]:
+                current_sentence += sentences[i + 1]
+            result.append(current_sentence)
+
+    # 如果最后没有分割，返回原始文本列表
+    if not result:
+        return [text]
+
+    return result
+
+
+# --- 模拟函数，请替换为您自己的实现 ---
+def get_pinyin_for_char(char: str) -> str:
+    # 示例实现
+    if char == "你": return "ni"
+    if char == "好": return "hao"
+    if char == "世": return "shi"
+    if char == "界": return "jie"
+    return char  # 默认返回原字符
+
+
+# ------------------------------------------
+
+def _find_char_in_asr(
+        char_pinyin: str,
+        search_center_index: int,
+        asr_data: list[dict],
+        window_size: int = 5
+) -> tuple[dict | None, int]:
+    if not asr_data:
+        return None, -1
+
+    center_idx = int(round(search_center_index))
+
+    if 0 <= center_idx < len(asr_data):
+        asr_word_info = asr_data[center_idx]
+        asr_word = asr_word_info.get("word", "")
+        if asr_word and char_pinyin == get_pinyin_for_char(asr_word[0]):
+            return asr_word_info, center_idx
+
+    for offset in range(1, window_size + 1):
+        right_idx = center_idx + offset
+        if right_idx < len(asr_data):
+            asr_word_info = asr_data[right_idx]
+            asr_word = asr_word_info.get("word", "")
+            if asr_word and char_pinyin == get_pinyin_for_char(asr_word[0]):
+                return asr_word_info, right_idx
+
+        left_idx = center_idx - offset
+        if left_idx >= 0:
+            asr_word_info = asr_data[left_idx]
+            asr_word = asr_word_info.get("word", "")
+            if asr_word and char_pinyin == get_pinyin_for_char(asr_word[0]):
+                return asr_word_info, left_idx
+
+    return None, -1
+
+
+# ==============================================================================
+# 2. 主逻辑函数 (Main Logic)
+# ==============================================================================
+
+def generate_sub_sentence_timestamps(
+        asr_data: list[dict],
+        corrected_text_data: list[dict],
+        search_window: int = 5,
+        time_margin: int = 500
+) -> list[dict]:
+    processed_data = deepcopy(corrected_text_data)
+
+    for segment in processed_data:
+        final_text = segment.get("final_text", "")
+        if not final_text:
+            segment['sub_text'] = []
+            continue
+
+        relevant_asr = [
+            word for word in asr_data
+            if word.get('end', 0) > segment.get('start', 0) - time_margin and
+               word.get('start', 0) < segment.get('end', 0) + time_margin
+        ]
+
+        if not relevant_asr:
+            segment['sub_text'] = []
+            continue
+
+        sub_sentence_list = split_text_into_sentences(final_text)
+        pass1_results = []
+
+        segment_char_cursor = 0
+        offset = 0.0
+
+        for sentence_text in sub_sentence_list:
+            # 现在 is_not_punctuation 完全依赖于分割逻辑
+            effective_chars = [c for c in sentence_text if is_not_punctuation(c)]
+
+            if not effective_chars:
+                pass1_results.append({"text": sentence_text, "start": None, "end": None})
+                continue
+
+            sentence_start_time, sentence_end_time = None, None
+
+            first_char_pinyin = get_pinyin_for_char(effective_chars[0])
+            text_expected_pos = segment_char_cursor
+            search_center_index = text_expected_pos + offset
+
+            first_char_info, first_char_match_idx = _find_char_in_asr(
+                first_char_pinyin, search_center_index, relevant_asr, window_size=search_window
+            )
+
+            if first_char_info:
+                sentence_start_time = first_char_info['start']
+                offset = first_char_match_idx - text_expected_pos
+
+            if len(effective_chars) == 1:
+                if first_char_info:
+                    sentence_end_time = first_char_info['end']
+            else:
+                last_char_pinyin = get_pinyin_for_char(effective_chars[-1])
+                text_expected_pos_last = segment_char_cursor + len(effective_chars) - 1
+                search_center_index_last = text_expected_pos_last + offset
+
+                last_char_info, last_char_match_idx = _find_char_in_asr(
+                    last_char_pinyin, search_center_index_last, relevant_asr, window_size=search_window
+                )
+                if last_char_info:
+                    sentence_end_time = last_char_info['end']
+                    offset = last_char_match_idx - text_expected_pos_last
+
+            pass1_results.append({
+                "text": sentence_text,
+                "start": sentence_start_time,
+                "end": sentence_end_time
+            })
+
+            segment_char_cursor += len(effective_chars)
+
+        final_sub_text = []
+        for i, sub in enumerate(pass1_results):
+            if sub['start'] is None:
+                prev_end = segment.get('start', 0)
+                for j in range(i - 1, -1, -1):
+                    if pass1_results[j]['end'] is not None:
+                        prev_end = pass1_results[j]['end'];
+                        break
+                sub['start'] = prev_end
+
+            if sub['end'] is None:
+                next_start = segment.get('end', 0)
+                for j in range(i + 1, len(pass1_results)):
+                    if pass1_results[j]['start'] is not None:
+                        next_start = pass1_results[j]['start'];
+                        break
+                sub['end'] = next_start
+
+            if sub['start'] > sub['end']:
+                sub['end'] = sub['start']
+
+            final_sub_text.append(sub)
+
+        segment['sub_text'] = final_sub_text
+
+    return processed_data
+
 
 def find_silent_scene_timestamps(scenes: dict,
                                  speakers: list,
@@ -767,6 +977,7 @@ def fun():
     temp_list = []
     for asr_file in asr_file_list:
         asr_info = read_json(asr_file)
+        break
         temp = fill_speaker_texts(asr_info, speech_info)
         for value in temp:
             value['asr_file'] = os.path.basename(asr_file)
@@ -781,8 +992,12 @@ def fun():
         entry.pop('end', None)
         entry.pop('speaker', None)
 
-    fixed_speech_asr_info = fix_speech_asr(origin_sentence_info)
-    save_json(output_file, fixed_speech_asr_info)
+    # fixed_speech_asr_info = fix_speech_asr(origin_sentence_info)
+    # save_json(output_file, fixed_speech_asr_info)
+    fixed_speech_asr_info = read_json(output_file)
+    # fixed_speech_asr_info = fixed_speech_asr_info[:1]
+    result = generate_sub_sentence_timestamps(asr_info, fixed_speech_asr_info)
+
     print()
 
 
@@ -899,7 +1114,7 @@ def get_scene():
 
 
 if __name__ == '__main__':
-    # fun()
+    fun()
 
     get_scene()
     #
