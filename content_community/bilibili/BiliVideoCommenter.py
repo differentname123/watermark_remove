@@ -69,7 +69,7 @@ xiaoxue_total_cookie = get_config("xiaoxue_bilibili_total_cookie")
 xiaoxue_csrf_token = get_config("xiaoxue_bilibili_csrf_token")
 xiaoxue_commenter = BilibiliCommenter(xiaoxue_total_cookie, xiaoxue_csrf_token)
 commenter_list.append(xiaoxue_commenter)
-# cookie_list.append(xiaoxue_total_cookie)
+cookie_list.append(xiaoxue_total_cookie)
 
 jie_total_cookie = get_config("jie_bilibili_total_cookie")
 jie_csrf_token = get_config("jie_bilibili_csrf_token")

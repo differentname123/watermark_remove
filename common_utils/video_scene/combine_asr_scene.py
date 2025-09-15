@@ -997,6 +997,8 @@ def fun():
     fixed_speech_asr_info = read_json(output_file)
     # fixed_speech_asr_info = fixed_speech_asr_info[:1]
     result = generate_sub_sentence_timestamps(asr_info, fixed_speech_asr_info)
+    save_json(output_file, result)
+
 
     print()
 
@@ -1114,7 +1116,7 @@ def get_scene():
 
 
 if __name__ == '__main__':
-    fun()
+    # fun()
 
     get_scene()
     #
