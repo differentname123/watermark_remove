@@ -1034,7 +1034,7 @@ def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True):
             if not bounds:
                 continue
             # 期望 bounds = [start, end]
-            ts_list.extend(bounds)
+            ts_list.extend(time_to_ms(t) for t in bounds if isinstance(t, str) and t.strip())
         if count_by_threshold:
             for ts in set(ts_list):
                 counts[ts] += 1
@@ -1107,6 +1107,9 @@ def get_scene():
     kept_sorted, pairs = merge_scene_timestamps(all_scene_info_dict, min_count=3)
 
     print(f"\n合并后的场景数量为: {len(pairs)}")
+    # 将kept_sorted保存到文件
+    save_json(f'scenes_fused_{basename}/merged_timestamps.json', kept_sorted)
+
     for key, value in pairs.items():
         timestamp = value[1]
         save_frames_around_timestamp(my_video_path, timestamp, 3,
@@ -1115,10 +1118,137 @@ def get_scene():
     print(f"所有场景信息: {all_scene_info_dict}")
 
 
+def process_scenes(text_results, scene_splits, inclusion_threshold=0.9, merge_threshold=0.2):
+    """
+    将文本识别结果根据场景切分进行组织，并根据重叠率合并场景。(最终版)
+
+    Args:
+        text_results (list): 文本识别结果列表。
+        scene_splits (list): 最小场景切分列表。
+        inclusion_threshold (float): 判断句子是否属于场景的重叠率阈值。
+        merge_threshold (float): 触发场景合并的最低重叠率阈值。
+
+    Returns:
+        list: 整理后的场景列表。
+    """
+    if not text_results or not scene_splits:
+        return []
+
+    # 1. 预处理场景切分列表
+    scenes = []
+    for i in range(len(scene_splits) - 1):
+        start_time = scene_splits[i][0]
+        end_time = scene_splits[i + 1][0]
+        scenes.append({'start': start_time, 'end': end_time})
+
+    last_scene_start = scene_splits[-1][0]
+    max_text_end = max(item['end'] for item in text_results) if text_results else last_scene_start
+    scenes.append({'start': last_scene_start, 'end': max(last_scene_start, max_text_end)})
+
+    # 2. 初始化指针和最终结果列表
+    final_scenes = []
+    text_cursor = 0
+    scene_cursor = 0
+
+    # 3. 遍历场景
+    while scene_cursor < len(scenes):
+        current_merged_scene = {
+            'scene_start': scenes[scene_cursor]['start'],
+            'scene_end': scenes[scene_cursor]['end'],
+            'content_list': []
+        }
+
+        merged_scene_count = 1
+
+        # 4. 为当前场景分配文本
+        while text_cursor < len(text_results):
+            sentence = text_results[text_cursor]
+
+            # 优化：如果句子完全在新场景的后面，当前场景肯定处理结束
+            if sentence['start'] >= current_merged_scene['scene_end']:
+                # 检查句子和当前场景是否有任何重叠
+                # 如果完全没有重叠，且场景已有内容，则结束
+                if current_merged_scene['content_list']:
+                    break
+
+            sentence_duration = sentence['end'] - sentence['start']
+
+            overlap_start = max(sentence['start'], current_merged_scene['scene_start'])
+            overlap_end = min(sentence['end'], current_merged_scene['scene_end'])
+            overlap_duration = max(0, overlap_end - overlap_start)
+
+            overlap_ratio = 0.0
+            if sentence_duration > 0:
+                overlap_ratio = overlap_duration / sentence_duration
+            elif current_merged_scene['scene_start'] <= sentence['start'] < current_merged_scene['scene_end']:
+                overlap_ratio = 1.0
+
+            # 5. 根据重叠率进行三段式判断
+            if overlap_ratio >= inclusion_threshold:
+                # 场景1: 高度重叠，直接包含
+                current_merged_scene['content_list'].append(sentence)
+                text_cursor += 1
+            elif overlap_ratio > merge_threshold:
+                # 场景2: 中度重叠，不满足包含条件但满足合并条件
+                # 尝试合并下一个场景来容纳它
+                next_scene_index = scene_cursor + merged_scene_count
+                if next_scene_index < len(scenes):
+                    current_merged_scene['scene_end'] = scenes[next_scene_index]['end']
+                    merged_scene_count += 1
+                    # 保持 text_cursor 不动，用新场景重新判断当前句子
+                else:
+                    # 没有更多场景可合并，强制加入
+                    current_merged_scene['content_list'].append(sentence)
+                    text_cursor += 1
+            else:  # overlap_ratio <= merge_threshold
+                # 场景3: 低度或无重叠，认为句子与当前场景组无关
+                # 结束当前场景的构建，让这个句子在下一个新场景中被处理
+                # 但如果当前场景是空的，我们必须处理这个句子，所以需要合并
+                if not current_merged_scene['content_list']:
+                    # 强制合并以处理第一个句子
+                    next_scene_index = scene_cursor + merged_scene_count
+                    if next_scene_index < len(scenes):
+                        current_merged_scene['scene_end'] = scenes[next_scene_index]['end']
+                        merged_scene_count += 1
+                    else:
+                        current_merged_scene['content_list'].append(sentence)
+                        text_cursor += 1
+                else:
+                    # 场景已有内容，则结束
+                    break
+
+        if current_merged_scene['content_list']:
+            final_scenes.append(current_merged_scene)
+
+        scene_cursor += merged_scene_count
+
+    return final_scenes
+
+
+def get_scene_sub_text():
+    my_video_path = 'test2.mp4'
+    base_name = os.path.basename(my_video_path).split('.')[0]
+    merged_timestamps_file = f'scenes_fused_{base_name}/merged_timestamps.json'
+    merged_timestamps = read_json(merged_timestamps_file)
+    output_file = f'output/{base_name}/{base_name}_fixed_speech_asr.json'
+    fixed_speech_asr = read_json(output_file)
+    all_sub_text_list = []
+    for speech_info in fixed_speech_asr:
+        sub_text_list = speech_info.get('sub_text', '')
+        speaker = speech_info.get('speaker', '')
+        for sub_text in sub_text_list:
+            sub_text['speaker'] = speaker
+            all_sub_text_list.append(sub_text)
+    mapped = process_scenes(all_sub_text_list, merged_timestamps)
+    print(mapped)
+
+
 if __name__ == '__main__':
     # fun()
 
-    get_scene()
+    # get_scene()
+
+    get_scene_sub_text()
     #
     #
     # reorganize_speech_asr_fun()
