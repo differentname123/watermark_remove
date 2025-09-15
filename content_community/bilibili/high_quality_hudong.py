@@ -17,6 +17,8 @@ import os
 import json
 import threading
 from queue import Queue, Empty
+
+from content_community.bilibili.bili_utils import update_bili_user_sign
 from content_community.bilibili.get_comment import get_bilibili_comments
 from common_utils.common_utils import get_config, init_config, merge_json_files
 # 评论相关代码保留，但暂时不使用
@@ -1520,8 +1522,42 @@ def fix_metadata_cache_with_uploads(all_found_videos, metadata_cache_with_upload
 
 stop_event = threading.Event()
 
+NEED_UPDATE_SIGN = True
+signatures = [
+    "谢谢你这么好看还来看看我，愿你每天都被温柔对待。",
+    "能遇见你真好，祝你笑口常开。",
+    "你看我一眼，我就把好运给你留着。",
+    "看到你真暖，愿你的每一天都晴朗。",
+    "谢谢你停留，愿快乐找上门。",
+    "因为有你，我的世界更亮。",
+    "你这么棒，别忘了对自己好一点。",
+    "感谢你的关注，愿你心想事成。",
+    "谢谢你来看我，愿你夜夜好梦。",
+    "你好可爱，谢谢你来，愿你事事顺心。",
+    "你的出现，让我的心情变好了。",
+    "你来过，我就足够幸福了。",
+    "看见你就想笑，愿你永远被喜欢。",
+    "谢谢你温柔以待，愿你被生活温柔相待。",
+    "有你在，平凡也变有趣。",
+    "遇见你是最好的巧合，祝你安好。",
+    "你的微笑很暖，谢谢你停留。",
+    "谢谢你把时间借给我，愿你被世界温柔以待。",
+    "你在的地方就有光，愿你前路无忧。",
+    "感谢今天的相遇，愿你一直好运连连。",
+    "谢谢你来看看，愿所有小确幸都向你靠近。",
+    "谢谢你为我点亮一眼，愿你每天被幸运宠爱。",
+    "你的好看值得被世界赞美，祝你被爱包围。",
+    "因为你，平淡也变成仪式感。",
+    "你的出现，让我相信美好还在。",
+    "谢谢你这么温柔地看我，愿你永远被温柔相待。",
+    "你把好心情带来，我把祝福送给你。",
+    "有你点赞真开心，愿你此刻快乐。",
+    "谢谢你路过我的世界，愿你永远心平气和。"
+]
+
 
 def fun():
+    global NEED_UPDATE_SIGN
     try:
         processed_count = 0
         print("开始执行 fun 函数...当前时间:", datetime.datetime.now().isoformat())
@@ -1536,9 +1572,10 @@ def fun():
             name = detail_config.get('name', key)
             if name in ['mama']:
                 continue
+            cookie = detail_config.get('total_cookie', '')
             all_params = detail_config.get('all_params', {})
             commenter_map[key] = BilibiliCommenter(
-                total_cookie=detail_config.get('total_cookie', ''),
+                total_cookie=cookie,
                 csrf_token=detail_config.get('BILI_JCT', ''),
                 all_params=all_params,
             )
@@ -1559,6 +1596,14 @@ def fun():
             #     continue
             if name in ['yiyi', 'lin', 'yang', 'tao', 'dahao', 'xiaodan', 'xiaoxue']:
                 continue
+
+            if NEED_UPDATE_SIGN:
+                detail_config = config_map[uid]
+                signature = random.choice(signatures)
+                cookie = detail_config.get('total_cookie', '')
+                result = update_bili_user_sign(cookie,signature)
+                print(f"更新用户签名结果: {result}")
+
             logging.info(f"  > 正在获取UP主(UID: {uid} {name})的最新动态...")
             temp_found_videos = commenter.get_user_videos(mid=uid, desired_count=100)
             bvid_uid_map.update({video.get('bvid'): uid for video in temp_found_videos if 'bvid' in video})
@@ -1569,7 +1614,7 @@ def fun():
 
             save_json(all_bvid_file_path, all_bvid_file_data)
             save_json(bvid_file_path, bvid_file_data)
-
+        NEED_UPDATE_SIGN = False
         all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
         # 只保留最近1小时的视频
         one_hour_ago = time.time() - 3600 * 3

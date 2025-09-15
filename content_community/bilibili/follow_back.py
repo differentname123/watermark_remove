@@ -11,7 +11,7 @@ from content_community.bilibili.BiliVideoCommenter import load_processed_set
 # 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-total_cookie = get_config("ning_bilibili_total_cookie")
+total_cookie = get_config("xiaodan_bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为
@@ -143,7 +143,7 @@ def get_user_list(url, vmid, page_size, list_type="用户"):
             break
 
     logging.info(f"成功获取到 {len(user_mids)} 个{list_type}。")
-    return user_mids
+    return user_mids, total_count
 
 
 def modify_relation(fid, action_type):
@@ -223,6 +223,7 @@ def main_task():
     """
     主任务：先清理非互关用户，再回关新粉丝
     """
+    need_clear = False
     # 初始化 session 和登录信息
     init_session()
     uid = get_my_uid()
@@ -232,20 +233,31 @@ def main_task():
 
     # --- 阶段 1: 清理非互关用户 ---
     logging.info("\n--- 阶段 1: 开始清理非互关用户 ---")
-    followers_set = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
+    followers_set, followers_total_count = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
     update_followers(followers_set)
     followings_set = set()
+    if need_clear:
+        followings_set, followings_total_count = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
     followings_set = {str(fid) for fid in followings_set}
 
     followers_fids_set = load_processed_set("followers_fids.json")
     processed_fids_set = load_processed_set("target_processed_fids.json")
 
     non_mutual_followings = followings_set - followers_set - followers_fids_set
+    if need_clear:
+        more_count = followers_total_count - 1000
+        need_add_count = max(0, more_count - len(non_mutual_followings))
+        print(f"当前粉丝数: {followers_total_count}, 需要额外添加的非互关用户数: {need_add_count}")
+        if need_add_count > 0:
+            additional_to_add = set(list(followers_set)[:need_add_count])
+            non_mutual_followings.update(additional_to_add)
+            logging.info(f"为了达到清理目标，额外添加了 {len(additional_to_add)} 位非互关用户进行清理。")
+
 
     if not non_mutual_followings:
         logging.info("您当前关注的人都已关注您，阶段 1 无需清理。")
     else:
-        if len(followings_set) > 4000:
+        if len(followings_set) > 4000 or need_clear:
             logging.info(f"--- 发现 {len(non_mutual_followings)} 位您已关注但未回关的用户 ---")
             non_mutual_followings_list = list(non_mutual_followings)
             random.shuffle(non_mutual_followings_list)
@@ -271,13 +283,14 @@ def main_task():
             logging.info("\n--- 阶段 1: 清理操作完成 ---")
             logging.info(f"总计尝试取消关注: {len(non_mutual_followings_list)} 人")
             logging.info(f"成功取消关注: {successful_unfollows} 人, 失败: {failed_unfollows} 人")
-
+    if need_clear:
+        return
     # --- 阶段 2: 回关粉丝 ---
     logging.info("\n--- 阶段 2: 开始回关新粉丝 ---")
     # 重新获取最新的列表，因为阶段1可能已经更改了关注状态
-    new_followers_set = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
+    new_followers_set, total_count = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
     update_followers(new_followers_set)  # 更新粉丝列表
-    new_followings_set = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
+    new_followings_set, total_count = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
     # 将new_followings_set的元素全部变成字符串形式
     new_followings_set = {str(fid) for fid in new_followings_set}
 
@@ -326,7 +339,7 @@ def main_task():
             if modify_relation(fid, 1):  # 1 代表关注
                 successful_follows += 1
             else:
-                time.sleep(600)
+                time.sleep(1200)
                 failed_follows += 1
                 failed_set.add(fid)  # 将失败的 FID 添加到集合中
             if successful_follows > 5000:
