@@ -29,7 +29,7 @@ yiyi_total_cookie = get_config("yiyi_bilibili_total_cookie")
 yiyi_csrf_token = get_config("yiyi_bilibili_csrf_token")
 yiyi_commenter = BilibiliCommenter(yiyi_total_cookie, yiyi_csrf_token)
 commenter_list.append(yiyi_commenter)
-cookie_list.append(yiyi_total_cookie)
+# cookie_list.append(yiyi_total_cookie)
 
 
 lin_total_cookie = get_config("lin_bilibili_total_cookie")
@@ -42,7 +42,7 @@ yang_total_cookie = get_config("yang_bilibili_total_cookie")
 yang_csrf_token = get_config("yang_bilibili_csrf_token")
 yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
 commenter_list.append(yang_commenter)
-cookie_list.append(yang_total_cookie)
+# cookie_list.append(yang_total_cookie)
 
 
 tao_total_cookie = get_config("tao_bilibili_total_cookie")
@@ -69,7 +69,7 @@ xiaoxue_total_cookie = get_config("xiaoxue_bilibili_total_cookie")
 xiaoxue_csrf_token = get_config("xiaoxue_bilibili_csrf_token")
 xiaoxue_commenter = BilibiliCommenter(xiaoxue_total_cookie, xiaoxue_csrf_token)
 commenter_list.append(xiaoxue_commenter)
-cookie_list.append(xiaoxue_total_cookie)
+# cookie_list.append(xiaoxue_total_cookie)
 
 
 CONFIG = {
@@ -521,59 +521,68 @@ def comment_worker():
                                        "只会回关通过我视频关注我的粉丝，请一定通过我的视频页面来关注我，不然会认为是异常粉丝的")
         print(f"更新用户签名结果: {result}")
 
-
-
     while True:
-        for commenter in commenter_list:
-            valid_video = None
-            start_time = time.time()
-            # 尝试在最多30秒内获取一条有效视频
-            while time.time() - start_time < 30:
-                try:
-                    candidate = comment_videos_queue.get(timeout=5)
-                except Empty:
-                    logging.warning("评论视频队列为空，本评论者暂时跳过。")
-                    break
-                # 判断视频是否有效
-                bvid = candidate.get('bvid')
-                if not bvid:
-                    logging.warning("获取视频无效，bvid为空，跳过该视频。")
-                    # 可选：如果认为该视频以后可能恢复，就放回队列
-                    # comment_videos_queue.put(candidate)
-                    continue
-                else:
-                    valid_video = candidate
-                    break
-
-            # 如果没有获取到有效视频则跳过当前评论者
-            if not valid_video:
+        # 尝试在最多 30 秒内从队列中获取一个有效的视频
+        start_time = time.time()
+        valid_video = None
+        while time.time() - start_time < 30:
+            try:
+                candidate = comment_videos_queue.get(timeout=5)
+            except Empty:
+                logging.warning("评论视频队列为空，暂时没有视频可处理。")
+                break
+            bvid = candidate.get('bvid')
+            if not bvid:
+                logging.warning("获取视频无效，bvid 为空，跳过该条视频。")
+                # 如果希望以后再次处理，可以重新放回队列：comment_videos_queue.put(candidate)
                 continue
+            valid_video = candidate
+            break
 
-            # 准备评论
-            bvid = valid_video.get('bvid')
-            comment_text = random.choice(interactive_comment_list)
-            title = valid_video.get('title', '无标题')
-            logging.info(f"准备评论视频：BVID {bvid} | 标题：{title} 内容 {comment_text}")
+        # 没拿到有效视频则短暂休眠后重试整个流程
+        if not valid_video:
+            time.sleep(random.uniform(5, 10))
+            continue
 
-            success = commenter.post_comment(bvid, comment_text, 1, like_video=True)
-            if success:
-                logging.info(f"  > 评论成功: '{comment_text}'")
-            else:
-                logging.error("  > 评论失败。")
-            danmaku_text = random.choice(danmu_list)
-            danmaku_sent = commenter.send_danmaku(
-                bvid=bvid,
-                msg=danmaku_text,
-                progress=2000
-            )
+        bvid = valid_video.get('bvid')
+        title = valid_video.get('title', '无标题')
+        logging.info(f"开始处理视频：BVID {bvid} | 标题：{title}，将由所有评论者逐一评论并发送弹幕。")
 
-            if danmaku_sent:
-                print("弹幕发送流程成功完成！")
-            else:
-                print("弹幕发送流程失败。")
+        # 对同一视频，所有 commenter 都要评论并发弹幕一次
+        for commenter in commenter_list:
+            commenter_name = getattr(commenter, "username", None) or getattr(commenter, "name", None) or str(commenter)
+            try:
+                # 评论
+                comment_text = random.choice(interactive_comment_list)
+                logging.info(f"评论者 {commenter_name} -> 准备评论: '{comment_text}'")
+                success = commenter.post_comment(bvid, comment_text, 1, like_video=True)
+                if success:
+                    logging.info(f"  > {commenter_name} 评论成功: '{comment_text}'")
+                else:
+                    logging.error(f"  > {commenter_name} 评论失败。")
 
-        # 每轮所有评论者执行完后随机休眠一段时间
-        time.sleep(random.uniform(200, 210))
+                # 弹幕
+                danmaku_text = random.choice(danmu_list)
+                danmaku_sent = commenter.send_danmaku(
+                    bvid=bvid,
+                    msg=danmaku_text,
+                    progress=2000
+                )
+                if danmaku_sent:
+                    logging.info(f"  > {commenter_name} 弹幕发送成功: '{danmaku_text}'")
+                else:
+                    logging.error(f"  > {commenter_name} 弹幕发送失败。")
+
+                # 每个评论者间加一个短延迟，避免瞬时并发造成风控
+                time.sleep(random.uniform(1.0, 3.0))
+
+            except Exception as e:
+                logging.exception(f"处理评论者 {commenter_name} 时发生异常：{e}")
+
+        logging.info(f"视频 {bvid} 已由所有评论者处理完毕。")
+
+        # 处理完一个视频后，短暂休眠再取下一个视频（按需调整）
+        time.sleep(random.uniform(200, 300))
 
 def get_comment_user(bvid):
     result_id_list = []

@@ -301,7 +301,7 @@ def get_llm_content_gemini_flash_video(
 
         video_file = None
         try:
-            print(f"[INFO] 使用 API Key “{key_name}” 上传视频…")
+            print(f"[INFO] 使用 API Key “{key_name}” 上传视频… {model_name}， {video_path}")
             api_key_manager.record_success(key_name)
             video_file = genai_flash.upload_file(path=video_path)
 
@@ -351,7 +351,6 @@ def get_llm_content_gemini_flash_video(
 
 
 def get_llm_content_gemini2flash(prompt: str = '你好，Gemini！请介绍一下你自己。') -> str:
-    print("[INFO] 使用模型: gemini-2.0-flash")
     last_error = None
     ordered_keys = api_key_manager.get_ordered_keys()
     for key_name in ordered_keys:
@@ -362,7 +361,7 @@ def get_llm_content_gemini2flash(prompt: str = '你好，Gemini！请介绍一�
             client = genai.Client(api_key=api_key)
             contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
             config = types.GenerateContentConfig(response_mime_type="text/plain")
-            response = client.models.generate_content(model="gemini-2.0-flash", contents=contents, config=config)
+            response = client.models.generate_content(model="gemini-2.5-flash", contents=contents, config=config)
 
             api_key_manager.record_success(key_name)  # 成功，记录
             return response.text
@@ -454,7 +453,7 @@ if __name__ == "__main__":
 
     print("[TEST] 正在测试 get_llm_content (这将触发第一次动态排序)")
     start_time = time.time()
-    result = get_llm_content(prompt="再给我讲个笑话吧", model_name="gemini-2.5-pro")
+    result = get_llm_content(prompt="再给我讲个笑话吧", model_name="gemini-2.5-flash")
     if result:
         print("\n[RESULT] 模型输出：\n", result)
     else:

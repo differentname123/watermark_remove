@@ -741,8 +741,11 @@ def auto_upload():
         best_scheme_final = None
         best_cover_path = None
         all_files_to_cleanup = []
+        comment_list_all = []
         for video_id in video_id_list:
             video_info = metadata_cache.get(video_id, {})
+            comment_list = video_info.get('hudong', {}).get('comment_list', [])
+            comment_list_all.extend(comment_list)
             # 选择最佳投稿方案
             best_scheme = value.get('best_scheme') or get_best_plan_by_potential(video_info.get('title_schemes', {}))
             if not best_scheme:
@@ -775,6 +778,10 @@ def auto_upload():
                 break
         final_output_path = video_path.replace('.mp4', '_final.mp4')
         all_files_to_cleanup.append(final_output_path)
+        # 将comment_list_all 按照第二个元素降序排序
+        comment_list_all = sorted(comment_list_all, key=lambda x: x[1], reverse=True)
+        comment_list_all = comment_list_all[:30]
+        updated_entry['hudong']['comment_list'] = comment_list_all
 
         merge_videos_ffmpeg(video_path_list, output_path=final_output_path)
         if os.path.exists(final_output_path) and os.path.getsize(final_output_path) > 0:
