@@ -928,7 +928,7 @@ def modify_relation(fid, action_type, cookie_str, url: str = URL_MODIFY_RELATION
     last_err = None
     for attempt in range(1, retries + 2):  # 总尝试次数 = retries + 1
         try:
-            print(f"INFO: 尝试 {action_text} UID:{fid}（第 {attempt} 次）...")
+            print(f"INFO: 尝试{action_text} UID:{fid}（第 {attempt} 次）...")
             resp = requests.post(url, data=payload, headers=headers, cookies=cookies, timeout=timeout)
             resp.raise_for_status()
             try:

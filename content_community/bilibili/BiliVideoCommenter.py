@@ -71,6 +71,13 @@ xiaoxue_commenter = BilibiliCommenter(xiaoxue_total_cookie, xiaoxue_csrf_token)
 commenter_list.append(xiaoxue_commenter)
 cookie_list.append(xiaoxue_total_cookie)
 
+jie_total_cookie = get_config("jie_bilibili_total_cookie")
+jie_csrf_token = get_config("jie_bilibili_csrf_token")
+jie_commenter = BilibiliCommenter(jie_total_cookie, jie_csrf_token)
+commenter_list.append(jie_commenter)
+cookie_list.append(jie_total_cookie)
+
+
 
 CONFIG = {
     "STRATEGIES": {
