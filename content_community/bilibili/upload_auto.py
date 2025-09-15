@@ -11,7 +11,7 @@
 4. 上传成功后，把「权威元数据 + upload_info」写入 / 更新到 metadata_cache_with_uploads.json。
 5. 任何情况下都不修改 metadata_cache.json。
 """
-
+import datetime
 import json
 import os
 import copy
@@ -38,7 +38,7 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 # mama_total_cookie = get_config("mama_bilibili_total_cookie")
 # config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT, mama_total_cookie)
 
-video_recommend_user_list = ['jie', 'nana']
+video_recommend_user_list = ['nana']
 # 定义需要处理的账号名及其对应的config_map键名（区分大小写）
 accounts = {
     'tao': 'tao',
@@ -314,7 +314,7 @@ def upload_worker(upload_params, key, updated_entry, files_to_cleanup, stage_tim
                 # 打印阶段耗时汇总
                 if stage_times:
                     stage_lines = [f"{k}: {v:.2f} 秒" for k, v in stage_times.items()]
-                    print(f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE}。阶段耗时：{' | '.join(stage_lines)} {userName}")
+                    print(f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE}。阶段耗时：{' | '.join(stage_lines)} {userName} {datetime.datetime.now().isoformat()}")
                 else:
                     print(f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE} {userName}.")
             except Exception as e:

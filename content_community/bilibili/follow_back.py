@@ -10,8 +10,9 @@ from content_community.bilibili.BiliVideoCommenter import load_processed_set
 
 # 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+need_clear = False
 
-total_cookie = get_config("xiaodan_bilibili_total_cookie")
+total_cookie = get_config("ruruxiao_bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为
@@ -223,7 +224,6 @@ def main_task():
     """
     主任务：先清理非互关用户，再回关新粉丝
     """
-    need_clear = False
     # 初始化 session 和登录信息
     init_session()
     uid = get_my_uid()
@@ -249,7 +249,7 @@ def main_task():
         need_add_count = max(0, more_count - len(non_mutual_followings))
         print(f"当前粉丝数: {followers_total_count}, 需要额外添加的非互关用户数: {need_add_count}")
         if need_add_count > 0:
-            additional_to_add = set(list(followers_set)[:need_add_count])
+            additional_to_add = set(list(followings_set)[:need_add_count])
             non_mutual_followings.update(additional_to_add)
             logging.info(f"为了达到清理目标，额外添加了 {len(additional_to_add)} 位非互关用户进行清理。")
 

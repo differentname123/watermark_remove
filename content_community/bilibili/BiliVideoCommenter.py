@@ -29,7 +29,7 @@ yiyi_total_cookie = get_config("yiyi_bilibili_total_cookie")
 yiyi_csrf_token = get_config("yiyi_bilibili_csrf_token")
 yiyi_commenter = BilibiliCommenter(yiyi_total_cookie, yiyi_csrf_token)
 commenter_list.append(yiyi_commenter)
-# cookie_list.append(yiyi_total_cookie)
+cookie_list.append(yiyi_total_cookie)
 
 
 lin_total_cookie = get_config("lin_bilibili_total_cookie")
@@ -42,7 +42,7 @@ yang_total_cookie = get_config("yang_bilibili_total_cookie")
 yang_csrf_token = get_config("yang_bilibili_csrf_token")
 yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
 commenter_list.append(yang_commenter)
-# cookie_list.append(yang_total_cookie)
+cookie_list.append(yang_total_cookie)
 
 
 tao_total_cookie = get_config("tao_bilibili_total_cookie")
@@ -69,7 +69,7 @@ xiaoxue_total_cookie = get_config("xiaoxue_bilibili_total_cookie")
 xiaoxue_csrf_token = get_config("xiaoxue_bilibili_csrf_token")
 xiaoxue_commenter = BilibiliCommenter(xiaoxue_total_cookie, xiaoxue_csrf_token)
 commenter_list.append(xiaoxue_commenter)
-# cookie_list.append(xiaoxue_total_cookie)
+cookie_list.append(xiaoxue_total_cookie)
 
 
 CONFIG = {
