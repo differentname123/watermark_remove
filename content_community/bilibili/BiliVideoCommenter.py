@@ -29,14 +29,14 @@ yiyi_total_cookie = get_config("yiyi_bilibili_total_cookie")
 yiyi_csrf_token = get_config("yiyi_bilibili_csrf_token")
 yiyi_commenter = BilibiliCommenter(yiyi_total_cookie, yiyi_csrf_token)
 commenter_list.append(yiyi_commenter)
-cookie_list.append(yiyi_total_cookie)
+# cookie_list.append(yiyi_total_cookie)
 
 
 lin_total_cookie = get_config("lin_bilibili_total_cookie")
 lin_csrf_token = get_config("lin_bilibili_csrf_token")
 lin_commenter = BilibiliCommenter(lin_total_cookie, lin_csrf_token)
 commenter_list.append(lin_commenter)
-# cookie_list.append(lin_total_cookie)
+cookie_list.append(lin_total_cookie)
 
 yang_total_cookie = get_config("yang_bilibili_total_cookie")
 yang_csrf_token = get_config("yang_bilibili_csrf_token")
@@ -59,23 +59,23 @@ commenter_list.append(dahao_commenter)
 cookie_list.append(dahao_total_cookie)
 
 
-xiaodan_total_cookie = get_config("xiaodan_bilibili_total_cookie")
-xiaodan_csrf_token = get_config("xiaodan_bilibili_csrf_token")
-xiaodan_commenter = BilibiliCommenter(xiaodan_total_cookie, xiaodan_csrf_token)
-commenter_list.append(xiaodan_commenter)
-cookie_list.append(xiaodan_total_cookie)
-
 xiaoxue_total_cookie = get_config("xiaoxue_bilibili_total_cookie")
 xiaoxue_csrf_token = get_config("xiaoxue_bilibili_csrf_token")
 xiaoxue_commenter = BilibiliCommenter(xiaoxue_total_cookie, xiaoxue_csrf_token)
 commenter_list.append(xiaoxue_commenter)
-cookie_list.append(xiaoxue_total_cookie)
+# cookie_list.append(xiaoxue_total_cookie)
 
 jie_total_cookie = get_config("jie_bilibili_total_cookie")
 jie_csrf_token = get_config("jie_bilibili_csrf_token")
 jie_commenter = BilibiliCommenter(jie_total_cookie, jie_csrf_token)
 commenter_list.append(jie_commenter)
-cookie_list.append(jie_total_cookie)
+# cookie_list.append(jie_total_cookie)
+
+hong_total_cookie = get_config("hong_bilibili_total_cookie")
+hong_csrf_token = get_config("hong_bilibili_csrf_token")
+hong_commenter = BilibiliCommenter(hong_total_cookie, hong_csrf_token)
+commenter_list.append(hong_commenter)
+cookie_list.append(hong_total_cookie)
 
 
 
