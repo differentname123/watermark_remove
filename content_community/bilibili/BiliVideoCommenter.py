@@ -36,13 +36,13 @@ lin_total_cookie = get_config("lin_bilibili_total_cookie")
 lin_csrf_token = get_config("lin_bilibili_csrf_token")
 lin_commenter = BilibiliCommenter(lin_total_cookie, lin_csrf_token)
 commenter_list.append(lin_commenter)
-cookie_list.append(lin_total_cookie)
+# cookie_list.append(lin_total_cookie)
 
 yang_total_cookie = get_config("yang_bilibili_total_cookie")
 yang_csrf_token = get_config("yang_bilibili_csrf_token")
 yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
 commenter_list.append(yang_commenter)
-cookie_list.append(yang_total_cookie)
+# cookie_list.append(yang_total_cookie)
 
 
 tao_total_cookie = get_config("tao_bilibili_total_cookie")
@@ -76,6 +76,25 @@ hong_csrf_token = get_config("hong_bilibili_csrf_token")
 hong_commenter = BilibiliCommenter(hong_total_cookie, hong_csrf_token)
 commenter_list.append(hong_commenter)
 cookie_list.append(hong_total_cookie)
+
+qiqi_total_cookie = get_config("qiqi_bilibili_total_cookie")
+qiqi_csrf_token = get_config("qiqi_bilibili_csrf_token")
+qiqi_commenter = BilibiliCommenter(qiqi_total_cookie, qiqi_csrf_token)
+commenter_list.append(qiqi_commenter)
+cookie_list.append(qiqi_total_cookie)
+
+yan_total_cookie = get_config("yan_bilibili_total_cookie")
+yan_csrf_token = get_config("yan_bilibili_csrf_token")
+yan_commenter = BilibiliCommenter(yan_total_cookie, yan_csrf_token)
+commenter_list.append(yan_commenter)
+cookie_list.append(yan_total_cookie)
+
+mama_total_cookie = get_config("mama_bilibili_total_cookie")
+mama_csrf_token = get_config("mama_bilibili_csrf_token")
+mama_commenter = BilibiliCommenter(mama_total_cookie, mama_csrf_token)
+commenter_list.append(mama_commenter)
+cookie_list.append(mama_total_cookie)
+
 
 
 
