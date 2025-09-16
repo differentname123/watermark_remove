@@ -18,7 +18,7 @@ from collections import Counter
 
 from typing import List, Dict, Any, Tuple
 
-from LLM.gemini import get_llm_content
+from LLM.gemini import get_llm_content, get_llm_content_gemini_flash_video
 from common_utils.ASR.asr_fusion import gen_precise_asr
 from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time, read_file_to_str, string_to_object
 from common_utils.image_utils import save_frames_around_timestamp
@@ -1240,16 +1240,186 @@ def get_scene_sub_text():
             sub_text['speaker'] = speaker
             all_sub_text_list.append(sub_text)
     mapped = process_scenes(all_sub_text_list, merged_timestamps)
+    output_file_scene_sub_text = f'output/{base_name}/{base_name}_scene_sub_text.json'
+    save_json(output_file_scene_sub_text, mapped)
     print(mapped)
 
+
+def extract_and_merge_by_speaker(scenes, target_speaker):
+    """
+    scenes: list of scenes, each scene 是 dict，包含 'scene_start','scene_end','content_list'
+    target_speaker: 要筛选的 speaker 字符串
+
+    返回: list，格式示例：
+    [
+      {
+        'scene_name': 'scene_1',
+        'scene_start': 0,
+        'scene_end': 5433,
+        'text': '拼接后的文本...',
+        'text_start': 130,
+        'text_end': 5490
+      },
+      ...
+    ]
+    """
+    result = []
+    out_idx = 1
+
+    for scene in scenes:
+        contents = scene.get('content_list', [])
+        # 筛选出目标说话人的片段
+        target_segments = [c for c in contents if c.get('speaker') == target_speaker]
+
+        if not target_segments:
+            continue
+
+        # 按 start 排序（以保证文本顺序与时间顺序一致）
+        target_segments.sort(key=lambda x: x.get('start', 0))
+
+        # 拼接文本（中文常见直接拼接，保留原始标点）
+        merged_text = ''.join([seg.get('text', '') for seg in target_segments])
+
+        text_start = min(seg.get('start', 0) for seg in target_segments)
+        text_end = max(seg.get('end', 0) for seg in target_segments)
+
+        result.append({
+            'scene_name': f'scene_{out_idx}',
+            'scene_start': scene.get('scene_start'),
+            'scene_end': scene.get('scene_end'),
+            'text': merged_text,
+            'text_start': text_start,
+            'text_end': text_end
+        })
+
+        out_idx += 1
+
+    return result
+
+def extract_and_merge_owner_other(scenes, target_speaker):
+    """
+    scenes: list of scene dicts, each contains 'scene_start','scene_end','content_list'
+    target_speaker: 要作为 owner 的说话人字符串
+
+    返回: list，格式示例：
+    [
+      {
+        'scene_name': 'scene_1',
+        'scene_start': 0,
+        'scene_end': 5433,
+        'owner_text': '拼接后的目标说话人文本',
+        'owner_text_start': 130 or None,
+        'owner_text_end': 5490 or None,
+        'other_text': '拼接后的其它说话人文本',
+        'other_text_start': 20011 or None,
+        'other_text_end': 25917 or None,
+      },
+      ...
+    ]
+    """
+    result = []
+    idx = 1
+
+    for scene in scenes:
+        contents = scene.get('content_list', [])
+        # 如果场景没有内容就跳过（可根据需要改成保留空条目）
+        if not contents:
+            continue
+
+        # 分出 owner 和 other
+        owner_segs = [c for c in contents if c.get('speaker') == target_speaker]
+        other_segs = [c for c in contents if c.get('speaker') != target_speaker]
+
+        # 按时间排序，保证拼接顺序和时间一致
+        owner_segs.sort(key=lambda x: x.get('start', 0))
+        other_segs.sort(key=lambda x: x.get('start', 0))
+
+        # 合并文本与时间
+        if owner_segs:
+            owner_text = ''.join(seg.get('text', '') for seg in owner_segs)
+            owner_start = min(seg.get('start', 0) for seg in owner_segs)
+            owner_end = max(seg.get('end', 0) for seg in owner_segs)
+        else:
+            owner_text = ''
+            owner_start = None
+            owner_end = None
+
+        if other_segs:
+            other_text = ''.join(seg.get('text', '') for seg in other_segs)
+            other_start = min(seg.get('start', 0) for seg in other_segs)
+            other_end = max(seg.get('end', 0) for seg in other_segs)
+        else:
+            other_text = ''
+            other_start = None
+            other_end = None
+
+        result.append({
+            'scene_number': f'{idx}',
+            'scene_start': scene.get('scene_start'),
+            'scene_end': scene.get('scene_end'),
+            'owner_text': owner_text,
+            'owner_text_start': owner_start,
+            'owner_text_end': owner_end,
+            'other_text': other_text,
+            'other_text_start': other_start,
+            'other_text_end': other_end
+        })
+
+        idx += 1
+
+    return result
+
+def gen_new_video_script_llm(scene_info, video_path):
+    """
+    生成新的视频方案
+    """
+    retry_delay = 10
+    max_retries = 3
+    prompt_file_path = '../../content_community/app/视频场景生成新视频.txt'
+    prompt = read_file_to_str(prompt_file_path)
+    full_prompt = f'{prompt}\n{scene_info}'
+    raw = ""
+    for attempt in range(1, max_retries + 1):
+        try:
+            model_name = "gemini-2.5-flash"
+            raw = get_llm_content_gemini_flash_video(prompt=full_prompt,video_path=video_path,model_name=model_name)
+            new_video_script = string_to_object(raw)
+            return new_video_script
+        except Exception as e:
+            print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
+            if attempt < max_retries:
+                print(f"[INFO] 正在重试... (等待 {retry_delay} 秒)")
+                time.sleep(retry_delay)  # 等待一段时间后再重试
+            else:
+                print("[ERROR] 达到最大重试次数，失败.")
+                return None  # 达到最大重试次数后返回 None
+            traceback.print_exc()
+
+def gen_new_video_script():
+    """
+    生成新视频的文本脚本
+    """
+    my_video_path = 'test2.mp4'
+    base_name = os.path.basename(my_video_path).split('.')[0]
+    output_file = f'output/{base_name}/{base_name}_scene_sub_text.json'
+    scene_sub_text_list = read_json(output_file)
+    target_speaker = 'SPEAKER_00'
+    scene_info = extract_and_merge_owner_other(scene_sub_text_list, target_speaker)
+    output_file_scene_info = f'output/{base_name}/{base_name}_new_video_script.json'
+    save_json(output_file_scene_info, scene_info)
+
+    result = gen_new_video_script_llm(scene_info, video_path=my_video_path)
+    print(result)
 
 if __name__ == '__main__':
     # fun()
 
     # get_scene()
 
-    get_scene_sub_text()
+    # get_scene_sub_text()
     #
+
+    gen_new_video_script()
     #
     # reorganize_speech_asr_fun()
     #
