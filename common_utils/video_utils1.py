@@ -251,7 +251,7 @@ def redub_video_with_ffmpeg(video_path: str,
         temp_files_list = []
         concat_file_path = os.path.join(temp_dir, "file_list.txt")
 
-        print(f"开始处理视频片段... (保留原始音频混合: {keep_original_audio})")
+        # print(f"开始处理视频片段... (保留原始音频混合: {keep_original_audio})")
         for i, segment in enumerate(segments_info):
             segment_id = segment.get('id', i + 1)
             start_time_str = segment['startTime']
@@ -298,7 +298,8 @@ def redub_video_with_ffmpeg(video_path: str,
                 if keep_original_audio and not source_has_audio:
                     print("模式: 源视频无音轨，使用新音频替换。")
                 else:
-                    print("模式: 替换原始音频")
+                    # print("模式: 替换原始音频")
+                    pass
                 filter_complex = (
                     f"[0:v]setpts={speed_multiplier:.6f}*PTS[v];"
                     f"[1:a]aformat=sample_fmts=fltp:channel_layouts=stereo,alimiter=limit=0.97[a]"
@@ -340,7 +341,7 @@ def redub_video_with_ffmpeg(video_path: str,
             return ""
 
         # ---------- 拼接片段 ----------
-        print("\n所有片段处理完毕，正在拼接成最终视频...")
+        # print("\n所有片段处理完毕，正在拼接成最终视频...")
         concat_file_path = os.path.join(temp_dir, "file_list.txt")
         with open(concat_file_path, 'w', encoding='utf-8') as f:
             for file_path in temp_files_list:
@@ -366,7 +367,7 @@ def redub_video_with_ffmpeg(video_path: str,
             print(f"FFmpeg Stderr:\n{e.stderr}")
             raise
 
-    print(f"成功！最终视频已保存至: {output_path}")
+    # print(f"成功！最终视频已保存至: {output_path}")
     return output_path
 
 segments_data =[

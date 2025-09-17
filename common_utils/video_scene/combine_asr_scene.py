@@ -33,6 +33,8 @@ import string
 import re
 from copy import deepcopy
 
+from common_utils.video_utils_cut import gen_video
+
 # ==============================================================================
 # 1. 辅助常量与函数 (Helpers & Constants)
 # ==============================================================================
@@ -1120,7 +1122,7 @@ def get_scene():
 
 def process_scenes(text_results, scene_splits, inclusion_threshold=0.9, merge_threshold=0.2):
     """
-    将文本识别结果根据场景切分进行组织，并根据重叠率合并场景。(最终版)
+    将文本识别结果根据场景切分进行组织，并根据重叠率合并场景。(基于关键洞察的最终修正版)
 
     Args:
         text_results (list): 文本识别结果列表。
@@ -1150,29 +1152,25 @@ def process_scenes(text_results, scene_splits, inclusion_threshold=0.9, merge_th
     text_cursor = 0
     scene_cursor = 0
 
-    # 3. 遍历场景
+    # 3. 遍历所有原始场景
     while scene_cursor < len(scenes):
         current_merged_scene = {
             'scene_start': scenes[scene_cursor]['start'],
             'scene_end': scenes[scene_cursor]['end'],
             'content_list': []
         }
-
         merged_scene_count = 1
 
-        # 4. 为当前场景分配文本
+        # 4. 为当前潜在的合并场景分配文本
         while text_cursor < len(text_results):
             sentence = text_results[text_cursor]
 
-            # 优化：如果句子完全在新场景的后面，当前场景肯定处理结束
-            if sentence['start'] >= current_merged_scene['scene_end']:
-                # 检查句子和当前场景是否有任何重叠
-                # 如果完全没有重叠，且场景已有内容，则结束
-                if current_merged_scene['content_list']:
-                    break
+            # 优化：句子完全在场景之后，且场景已有内容，则场景结束
+            if sentence['start'] >= current_merged_scene['scene_end'] and current_merged_scene['content_list']:
+                break
 
+            # 计算重叠率
             sentence_duration = sentence['end'] - sentence['start']
-
             overlap_start = max(sentence['start'], current_merged_scene['scene_start'])
             overlap_end = min(sentence['end'], current_merged_scene['scene_end'])
             overlap_duration = max(0, overlap_end - overlap_start)
@@ -1183,39 +1181,47 @@ def process_scenes(text_results, scene_splits, inclusion_threshold=0.9, merge_th
             elif current_merged_scene['scene_start'] <= sentence['start'] < current_merged_scene['scene_end']:
                 overlap_ratio = 1.0
 
-            # 5. 根据重叠率进行三段式判断
+            # 5. 基于新逻辑进行决策
+            can_merge_next = (scene_cursor + merged_scene_count) < len(scenes)
+
             if overlap_ratio >= inclusion_threshold:
-                # 场景1: 高度重叠，直接包含
+                # 情况一: 高度重叠，直接接纳
                 current_merged_scene['content_list'].append(sentence)
                 text_cursor += 1
+
             elif overlap_ratio > merge_threshold:
-                # 场景2: 中度重叠，不满足包含条件但满足合并条件
-                # 尝试合并下一个场景来容纳它
-                next_scene_index = scene_cursor + merged_scene_count
-                if next_scene_index < len(scenes):
-                    current_merged_scene['scene_end'] = scenes[next_scene_index]['end']
+                # 情况二: 中度重叠
+                is_merge_useful = sentence['end'] > current_merged_scene['scene_end']
+
+                if is_merge_useful and can_merge_next:
+                    # 合并有效且可行，执行合并，并用同个句子重新评估
+                    current_merged_scene['scene_end'] = scenes[scene_cursor + merged_scene_count]['end']
                     merged_scene_count += 1
-                    # 保持 text_cursor 不动，用新场景重新判断当前句子
+                    # continue to re-evaluate the same sentence with the new scene boundaries
                 else:
-                    # 没有更多场景可合并，强制加入
-                    current_merged_scene['content_list'].append(sentence)
-                    text_cursor += 1
-            else:  # overlap_ratio <= merge_threshold
-                # 场景3: 低度或无重叠，认为句子与当前场景组无关
-                # 结束当前场景的构建，让这个句子在下一个新场景中被处理
-                # 但如果当前场景是空的，我们必须处理这个句子，所以需要合并
-                if not current_merged_scene['content_list']:
-                    # 强制合并以处理第一个句子
-                    next_scene_index = scene_cursor + merged_scene_count
-                    if next_scene_index < len(scenes):
-                        current_merged_scene['scene_end'] = scenes[next_scene_index]['end']
-                        merged_scene_count += 1
+                    # 合并无效或不可行，拒绝该句子，结束当前场景
+                    if not current_merged_scene['content_list']:
+                        # 场景为空，不能拒绝第一个句子，强制接纳
+                        current_merged_scene['content_list'].append(sentence)
+                        text_cursor += 1
                     else:
+                        break  # 结束为此场景分配文本
+
+            else:  # overlap_ratio <= merge_threshold
+                # 情况三: 低度重叠
+                if not current_merged_scene['content_list']:
+                    # 场景为空，不能丢弃，必须尝试合并
+                    if can_merge_next:
+                        current_merged_scene['scene_end'] = scenes[scene_cursor + merged_scene_count]['end']
+                        merged_scene_count += 1
+                        # continue to re-evaluate
+                    else:
+                        # 无法合并，强制接纳
                         current_merged_scene['content_list'].append(sentence)
                         text_cursor += 1
                 else:
-                    # 场景已有内容，则结束
-                    break
+                    # 场景已有内容，明确不属于，结束当前场景
+                    break  # 结束为此场景分配文本
 
         if current_merged_scene['content_list']:
             final_scenes.append(current_merged_scene)
@@ -1369,6 +1375,17 @@ def extract_and_merge_owner_other(scenes, target_speaker):
 
     return result
 
+def check_new_video_script(new_video_script, scene_info):
+    """
+    生成的original_scene_number是否都在scene_info中
+    """
+    scene_numbers = {str(scene['scene_number']) for scene in scene_info}
+    for scene in new_video_script.get('场景顺序与新文案', []):
+        if str(scene['original_scene_number']) not in scene_numbers:
+            print(f"[ERROR] original_scene_number {scene['original_scene_number']} 不在 scene_info 中")
+            return False
+    return True
+
 def gen_new_video_script_llm(scene_info, video_path):
     """
     生成新的视频方案
@@ -1384,6 +1401,9 @@ def gen_new_video_script_llm(scene_info, video_path):
             model_name = "gemini-2.5-flash"
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt,video_path=video_path,model_name=model_name)
             new_video_script = string_to_object(raw)
+            check_result = check_new_video_script(new_video_script, scene_info)
+            if not check_result:
+                raise ValueError("生成的视频脚本检查未通过")
             return new_video_script
         except Exception as e:
             print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
@@ -1409,22 +1429,124 @@ def gen_new_video_script():
     save_json(output_file_scene_info, scene_info)
 
     result = gen_new_video_script_llm(scene_info, video_path=my_video_path)
+    output_file_final = f'output/{base_name}/{base_name}_scene_format_new_script.json'
+    save_json(output_file_final, result)
+
     print(result)
+
+
+def gen_new_video_by_scene_and_script():
+    """
+    生成新视频的文本脚本
+    """
+    max_diff = 500
+    my_video_path = 'test2.mp4'
+    base_name = os.path.basename(my_video_path).split('.')[0]
+    output_file_scene_info = f'output/{base_name}/{base_name}_new_video_script.json'
+    scene_info = read_json(output_file_scene_info)
+    output_file_final = f'output/{base_name}/{base_name}_scene_format_new_script.json'
+    new_video_script_result = read_json(output_file_final)
+    final_video_script = new_video_script_result[0]
+
+    need_merge_video_file = []
+    for new_scene in final_video_script['场景顺序与新文案']:
+        original_scene_number = new_scene['original_scene_number']
+        # 找到scene_info中scene_number等于original_scene_number的场景
+        for scene in scene_info:
+            if scene['scene_number'] == original_scene_number:
+                new_scene.update(scene)
+    print(f'完成场景信息合并')
+
+    new_scene_list = final_video_script['场景顺序与新文案']
+    # new_scene_list = new_scene_list[:2]
+    for fused_new_scene in new_scene_list:
+        scene_start = fused_new_scene.get('scene_start')
+        scene_end = fused_new_scene.get('scene_end')
+
+        new_owner_text = fused_new_scene.get('new_owner_text', '').strip()
+        owner_text = fused_new_scene.get('owner_text', '').strip()
+        if not new_owner_text:
+            new_owner_text = owner_text
+
+        if new_owner_text:
+            def _to_int(v):
+                try:
+                    return int(float(v))
+                except:
+                    return None
+
+            s = _to_int(fused_new_scene.get('owner_text_start')) or int(scene_start)
+            e = _to_int(fused_new_scene.get('owner_text_end'))
+
+            if e is None:
+                MS_PER_CHAR = 200
+                MIN_MS = 500
+                est = max(MIN_MS, len(new_owner_text) * MS_PER_CHAR)
+                scene_end = _to_int(fused_new_scene.get('scene_end'))
+                e = min(s + est, scene_end) if scene_end is not None else s + est
+
+            if e <= s:
+                e = s + max(500, len(new_owner_text) * MS_PER_CHAR)
+
+            owner_text_start, owner_text_end = s, e
+
+            # 规范化时间，确保在场景时间范围内
+            format_start_time = max(scene_start, owner_text_start)
+            format_end_time = min(scene_end, owner_text_end)
+            if abs(format_start_time - scene_start) < max_diff:
+                format_start_time = scene_start
+            if abs(format_end_time - scene_end) < max_diff:
+                format_end_time = scene_end
+            # 获取三个时间段，分别是scene_start到format_start_time，format_start_time到format_end_time，format_end_time到scene_end
+            video_time_segments = []
+            video_time_segments.append((scene_start, format_start_time))
+            video_time_segments.append((format_start_time, format_end_time))
+            video_time_segments.append((format_end_time, scene_end))
+            sub_count = 0
+            for video_time_segment in video_time_segments:
+                sub_count += 1
+                seg_start, seg_end = video_time_segment
+                if seg_end > seg_start:
+                    segment_output_scene_file = f'output/{base_name}/split_scene/new_{fused_new_scene["new_scene_number"]}_origin_{fused_new_scene["scene_number"]}_part{sub_count}.mp4'
+                    output_path = segment_output_scene_file
+                    if not os.path.exists(segment_output_scene_file) or os.path.getsize(segment_output_scene_file) == 0:
+                        clip_video_ms(my_video_path, seg_start, seg_end, segment_output_scene_file)
+
+                    if sub_count == 2:
+                        output_path = segment_output_scene_file.replace('.mp4', '_with_text.mp4')
+                        gen_video(new_owner_text, output_path, segment_output_scene_file)
+
+                    need_merge_video_file.append(output_path)
+        else:
+            output_scene_file = f'output/{base_name}/split_scene/new_{fused_new_scene["new_scene_number"]}_origin_{fused_new_scene["scene_number"]}_part{0}.mp4'
+            if not os.path.exists(output_scene_file) or os.path.getsize(output_scene_file) == 0:
+                clip_video_ms(my_video_path, scene_start, scene_end, output_scene_file)
+            need_merge_video_file.append(output_scene_file)
+    final_output_path = f'output/{base_name}/{base_name}_remake.mp4'
+    merge_videos_ffmpeg(need_merge_video_file, output_path=final_output_path)
+    bgm_path = r"W:\project\python_project\watermark_remove\content_community\app\bgm_audio" + os.sep + '4f7ed367245a6ba525d07f21d4790a25.wav'
+    if bgm_path and os.path.exists(bgm_path):
+        # print(f"正在为视频添加背景音乐: {bgm_path}")
+        final_with_bgm_path = final_output_path.replace('.mp4', '_with_bgm.mp4')
+        add_bgm_to_video(final_output_path, bgm_path, str(final_with_bgm_path), volume_percentage=50)
+
 
 if __name__ == '__main__':
     # fun()
-
+    #
     # get_scene()
-
+    #
     # get_scene_sub_text()
+    # #
     #
+    # gen_new_video_script()
 
-    gen_new_video_script()
-    #
+    gen_new_video_by_scene_and_script()
+
     # reorganize_speech_asr_fun()
     #
-    # # gen_new_video()
-    # # split_video()
+    # gen_new_video()
+    # split_video()
     # #
     # # fun()
     # #

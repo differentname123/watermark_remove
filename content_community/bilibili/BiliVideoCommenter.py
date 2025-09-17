@@ -49,7 +49,7 @@ tao_total_cookie = get_config("tao_bilibili_total_cookie")
 tao_csrf_token = get_config("tao_bilibili_csrf_token")
 tao_commenter = BilibiliCommenter(tao_total_cookie, tao_csrf_token)
 commenter_list.append(tao_commenter)
-cookie_list.append(tao_total_cookie)
+# cookie_list.append(tao_total_cookie)
 
 
 xiaoxue_total_cookie = get_config("xiaoxue_bilibili_total_cookie")
@@ -92,13 +92,13 @@ xiaosu_total_cookie = get_config("xiaosu_bilibili_total_cookie")
 xiaosu_csrf_token = get_config("xiaosu_bilibili_csrf_token")
 xiaosu_commenter = BilibiliCommenter(xiaosu_total_cookie, xiaosu_csrf_token)
 commenter_list.append(xiaosu_commenter)
-cookie_list.append(xiaosu_total_cookie)
+# cookie_list.append(xiaosu_total_cookie)
 
 jun_total_cookie = get_config("jun_bilibili_total_cookie")
 jun_csrf_token = get_config("jun_bilibili_csrf_token")
 jun_commenter = BilibiliCommenter(jun_total_cookie, jun_csrf_token)
 commenter_list.append(jun_commenter)
-cookie_list.append(jun_total_cookie)
+# cookie_list.append(jun_total_cookie)
 
 
 
@@ -577,6 +577,12 @@ def comment_worker():
 
         bvid = valid_video.get('bvid')
         title = valid_video.get('title', '无标题')
+        desc = valid_video.get('description', '')
+        text_to_check = f"{title} {desc}".lower()
+        should_comment = any(keyword.lower() in text_to_check for keyword in CONFIG['FOLLOW_KEYWORDS'])
+        if not should_comment:
+            logging.info(f"视频 BVID {bvid} 标题和描述均不包含关注关键词，跳过评论。")
+            continue
         logging.info(f"开始处理视频：BVID {bvid} | 标题：{title}，将由所有评论者逐一评论并发送弹幕。")
         # 打乱commenter_list顺序，避免行为模式过于固定
         random.shuffle(commenter_list)
@@ -619,7 +625,7 @@ def comment_worker():
         logging.info(f"视频 {bvid} 已由所有评论者处理完毕。")
 
         # 处理完一个视频后，短暂休眠再取下一个视频（按需调整）
-        time.sleep(random.uniform(200, 300))
+        time.sleep(random.uniform(100, 110))
 
 def get_comment_user(bvid):
     result_id_list = []

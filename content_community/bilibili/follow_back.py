@@ -10,9 +10,9 @@ from content_community.bilibili.BiliVideoCommenter import load_processed_set
 
 # 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-need_clear = False
+need_clear = True
 
-total_cookie = get_config("jie_bilibili_total_cookie")
+total_cookie = get_config("dahao_bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为
@@ -238,7 +238,7 @@ def main_task():
     followings_set = set()
     if need_clear:
         followings_set, followings_total_count = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
-    followings_set = {str(fid) for fid in followings_set}
+    followings_set = {fid for fid in followings_set}
 
     followers_fids_set = load_processed_set("followers_fids.json")
     processed_fids_set = load_processed_set("target_processed_fids.json")

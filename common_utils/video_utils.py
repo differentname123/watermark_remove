@@ -818,7 +818,7 @@ def add_subtitles_to_video(
         # [调整] 同时获取视频宽度和高度
         video_width, video_height = get_video_dimensions(video_path)
         max_subtitle_width = video_width * 0.9
-        print(f"视频尺寸: {video_width}x{video_height}px, 字幕最大允许宽度: {max_subtitle_width:.0f}px")
+        # print(f"视频尺寸: {video_width}x{video_height}px, 字幕最大允许宽度: {max_subtitle_width:.0f}px")
     except (ValueError, FileNotFoundError) as e:
         print(f"警告: 无法获取视频尺寸，将不执行字幕分割和矩形自动计算。错误: {e}")
         processed_subtitles = subtitles_info
@@ -833,17 +833,17 @@ def add_subtitles_to_video(
             raise FileNotFoundError(f"无法加载字体文件，请检查路径和文件格式: {font_path}")
 
         # 3. 预处理字幕，分割过长行
-        print("正在预处理字幕，检查并分割过长行...")
+        # print("正在预处理字幕，检查并分割过长行...")
         processed_subtitles = _process_and_split_subtitles(
             subtitles_info,
             font,
             max_subtitle_width
         )
-        print(f"字幕预处理完成。原始字幕数: {len(subtitles_info)}, 处理后字幕数: {len(processed_subtitles)}")
+        # print(f"字幕预处理完成。原始字幕数: {len(subtitles_info)}, 处理后字幕数: {len(processed_subtitles)}")
 
         # [调整] 如果 fixed_rect 未指定，则在此处自动计算
         if fixed_rect is None:
-            print("fixed_rect 未提供，开始自动计算矩形区域...")
+            # print("fixed_rect 未提供，开始自动计算矩形区域...")
             if not processed_subtitles:
                 print("警告：没有字幕信息，无法计算矩形。将不绘制背景。")
                 fixed_rect = [[0, 0], [0, 0]]  # 创建一个0尺寸的矩形，避免后续代码出错
@@ -859,7 +859,7 @@ def add_subtitles_to_video(
                     if text_h > max_text_h:
                         max_text_h = text_h
 
-                print(f"计算出的最大字幕尺寸: {max_text_w:.0f}x{max_text_h:.0f}px")
+                # print(f"计算出的最大字幕尺寸: {max_text_w:.0f}x{max_text_h:.0f}px")
 
                 # 为矩形添加一些内边距（padding）
                 padding_x = font_size  # 水平方向使用一个字体大小作为边距
@@ -880,7 +880,7 @@ def add_subtitles_to_video(
                 rect_y2 = rect_y1 + rect_h
 
                 fixed_rect = [[int(rect_x1), int(rect_y1)], [int(rect_x2), int(rect_y2)]]
-                print(f"自动计算的矩形区域为: {fixed_rect}")
+                # print(f"自动计算的矩形区域为: {fixed_rect}")
 
     # ------------------- [ 核心修改结束 ] -------------------
 
@@ -956,7 +956,7 @@ def add_subtitles_to_video(
     ]
 
     try:
-        print("正在为视频添加字幕和矩形背景...")
+        # print("正在为视频添加字幕和矩形背景...")
         subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
         print(f"成功！已将带字幕的视频保存至: {output_path}")
     except FileNotFoundError:
@@ -2443,8 +2443,8 @@ def clip_video_ms(
         f"-y {shlex.quote(output_path)}"
     )
 
-    print("模式: 精确重编码 (速度较慢)")
-    print(f"正在执行命令: {command}")
+    # print("模式: 精确重编码 (速度较慢)")
+    # print(f"正在执行命令: {command}")
 
     try:
         # 执行命令并等待完成
