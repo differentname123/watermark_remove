@@ -12,7 +12,7 @@ from content_community.bilibili.BiliVideoCommenter import load_processed_set
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 need_clear = False
 
-total_cookie = get_config("ruruxiao_bilibili_total_cookie")
+total_cookie = get_config("jie_bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为
@@ -245,6 +245,7 @@ def main_task():
 
     non_mutual_followings = followings_set - followers_set - followers_fids_set
     if need_clear:
+        non_mutual_followings = followings_set - followers_set
         more_count = followers_total_count - 1000
         need_add_count = max(0, more_count - len(non_mutual_followings))
         print(f"当前粉丝数: {followers_total_count}, 需要额外添加的非互关用户数: {need_add_count}")
@@ -315,14 +316,14 @@ def main_task():
                 already_added_to_list.add(fid)
                 # print(f"Added prioritized FID: {fid}") # 可选：用于调试
 
-    # 5. **处理来自 processed_fids.json 的剩余 FIDs**
-    #    将那些不在 new_followings_set 中，并且还没有被添加到列表中的 FID 添加
-    print("--- Identifying Remaining FIDs to follow ---")
-    for fid in processed_fids_set:
-        if fid not in new_followings_set:
-            if fid not in already_added_to_list and fid not in failed_set:  # 确保不会重复添加 (虽然这里不应该重复)
-                followers_to_follow_list.append(fid)
-                already_added_to_list.add(fid)
+    # # 5. **处理来自 processed_fids.json 的剩余 FIDs**
+    # #    将那些不在 new_followings_set 中，并且还没有被添加到列表中的 FID 添加
+    # print("--- Identifying Remaining FIDs to follow ---")
+    # for fid in processed_fids_set:
+    #     if fid not in new_followings_set:
+    #         if fid not in already_added_to_list and fid not in failed_set:  # 确保不会重复添加 (虽然这里不应该重复)
+    #             followers_to_follow_list.append(fid)
+    #             already_added_to_list.add(fid)
     followers_to_follow = already_added_to_list
     if not followers_to_follow:
         logging.info("所有粉丝均已关注，阶段 2 无需操作。")

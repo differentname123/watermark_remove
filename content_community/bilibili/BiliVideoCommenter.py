@@ -36,7 +36,7 @@ lin_total_cookie = get_config("lin_bilibili_total_cookie")
 lin_csrf_token = get_config("lin_bilibili_csrf_token")
 lin_commenter = BilibiliCommenter(lin_total_cookie, lin_csrf_token)
 commenter_list.append(lin_commenter)
-# cookie_list.append(lin_total_cookie)
+cookie_list.append(lin_total_cookie)
 
 yang_total_cookie = get_config("yang_bilibili_total_cookie")
 yang_csrf_token = get_config("yang_bilibili_csrf_token")
@@ -49,14 +49,7 @@ tao_total_cookie = get_config("tao_bilibili_total_cookie")
 tao_csrf_token = get_config("tao_bilibili_csrf_token")
 tao_commenter = BilibiliCommenter(tao_total_cookie, tao_csrf_token)
 commenter_list.append(tao_commenter)
-# cookie_list.append(tao_total_cookie)
-
-
-dahao_total_cookie = get_config("dahao_bilibili_total_cookie")
-dahao_csrf_token = get_config("dahao_bilibili_csrf_token")
-dahao_commenter = BilibiliCommenter(dahao_total_cookie, dahao_csrf_token)
-commenter_list.append(dahao_commenter)
-cookie_list.append(dahao_total_cookie)
+cookie_list.append(tao_total_cookie)
 
 
 xiaoxue_total_cookie = get_config("xiaoxue_bilibili_total_cookie")
@@ -69,31 +62,31 @@ jie_total_cookie = get_config("jie_bilibili_total_cookie")
 jie_csrf_token = get_config("jie_bilibili_csrf_token")
 jie_commenter = BilibiliCommenter(jie_total_cookie, jie_csrf_token)
 commenter_list.append(jie_commenter)
-# cookie_list.append(jie_total_cookie)
+cookie_list.append(jie_total_cookie)
 
 hong_total_cookie = get_config("hong_bilibili_total_cookie")
 hong_csrf_token = get_config("hong_bilibili_csrf_token")
 hong_commenter = BilibiliCommenter(hong_total_cookie, hong_csrf_token)
 commenter_list.append(hong_commenter)
-# cookie_list.append(hong_total_cookie)
+cookie_list.append(hong_total_cookie)
 
 qiqi_total_cookie = get_config("qiqi_bilibili_total_cookie")
 qiqi_csrf_token = get_config("qiqi_bilibili_csrf_token")
 qiqi_commenter = BilibiliCommenter(qiqi_total_cookie, qiqi_csrf_token)
 commenter_list.append(qiqi_commenter)
-# cookie_list.append(qiqi_total_cookie)
+cookie_list.append(qiqi_total_cookie)
 
 yan_total_cookie = get_config("yan_bilibili_total_cookie")
 yan_csrf_token = get_config("yan_bilibili_csrf_token")
 yan_commenter = BilibiliCommenter(yan_total_cookie, yan_csrf_token)
 commenter_list.append(yan_commenter)
-# cookie_list.append(yan_total_cookie)
+cookie_list.append(yan_total_cookie)
 
 mama_total_cookie = get_config("mama_bilibili_total_cookie")
 mama_csrf_token = get_config("mama_bilibili_csrf_token")
 mama_commenter = BilibiliCommenter(mama_total_cookie, mama_csrf_token)
 commenter_list.append(mama_commenter)
-# cookie_list.append(mama_total_cookie)
+cookie_list.append(mama_total_cookie)
 
 
 
@@ -675,9 +668,10 @@ def follower_worker(csrf_token):
                     processed_fids.add(fid)
 
                     # 随机暂停一段时间再执行关注，模拟人类行为
-                    time.sleep(random.uniform(40, 60))
                     for cookie in cookie_list:
                         success = modify_relation(fid, 1, cookie)
+                    time.sleep(random.uniform(40, 60))
+
 
             save_processed_set(processed_fids, CONFIG['PROCESSED_FIDS_FILE'])
             save_processed_set(target_processed_bvideos, CONFIG['TARGET_PROCESSED_FIDS_FILE'])
