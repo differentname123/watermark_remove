@@ -1,4 +1,7 @@
+import hashlib
 import json
+import random
+
 import requests
 import base64
 import os
@@ -29,13 +32,40 @@ HEADERS = {
     "Connection": "keep-alive",
 }
 
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:142.0) Gecko/20100101 Firefox/142.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 QuarkPC/4.4.5.505",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
+]
+
+
+def get_deterministic_ua(bili_jct: str) -> str:
+    """
+    根据 bili_jct 计算一个确定的 User-Agent。
+    """
+    # 1. 使用 hashlib.md5 对 bili_jct 进行哈希。MD5对于这种非安全场景足够了，且速度快。
+    #    必须先将字符串编码为字节串。
+    hasher = hashlib.md5(bili_jct.encode('utf-8'))
+
+    # 2. 获取哈希值的十六进制表示，并将其转换为一个大整数。
+    hash_as_int = int(hasher.hexdigest(), 16)
+
+    # 3. 使用这个大整数对 User-Agent 列表的长度取模，得到一个稳定的索引。
+    index = hash_as_int % len(USER_AGENTS)
+
+    return USER_AGENTS[index]
+
 
 def get_session(sessdata, bili_jct) -> requests.Session:
-    """
-    创建并返回带有登录 Cookie 的 requests Session
-    """
     sess = requests.Session()
-    sess.headers.update(HEADERS)
+
+    session_headers = HEADERS.copy()
+    # 调用新函数来获取确定的UA
+    session_headers['User-Agent'] = get_deterministic_ua(bili_jct)
+
+    sess.headers.update(session_headers)
     sess.cookies.set("SESSDATA", sessdata)
     sess.cookies.set("bili_jct", bili_jct)
     return sess
@@ -322,9 +352,11 @@ def upload_to_bilibili(
 
     sess = get_session(sessdata, bili_jct)
     cover_url = upload_cover(sess, cover_path, bili_jct=bili_jct)
+    time.sleep(random.uniform(1, 10))  # 模拟人类操作，等待1-3秒
     pre = preupload_video(sess, video_path)
     biz_id = pre["biz_id"]
     filename = os.path.splitext(os.path.basename(pre["upos_uri"]))[0]
+    time.sleep(random.uniform(1, 10))  # 模拟人类操作，等待1-3秒
     meta = post_video_meta(sess, pre, video_path)
     parts = upload_chunks(sess, video_path, pre, meta)
     finalize_upload(sess, pre, meta, parts)
