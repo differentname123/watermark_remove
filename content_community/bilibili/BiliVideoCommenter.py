@@ -36,7 +36,7 @@ lin_total_cookie = get_config("lin_bilibili_total_cookie")
 lin_csrf_token = get_config("lin_bilibili_csrf_token")
 lin_commenter = BilibiliCommenter(lin_total_cookie, lin_csrf_token)
 commenter_list.append(lin_commenter)
-cookie_list.append(lin_total_cookie)
+# cookie_list.append(lin_total_cookie)
 
 yang_total_cookie = get_config("yang_bilibili_total_cookie")
 yang_csrf_token = get_config("yang_bilibili_csrf_token")
@@ -62,32 +62,43 @@ jie_total_cookie = get_config("jie_bilibili_total_cookie")
 jie_csrf_token = get_config("jie_bilibili_csrf_token")
 jie_commenter = BilibiliCommenter(jie_total_cookie, jie_csrf_token)
 commenter_list.append(jie_commenter)
-cookie_list.append(jie_total_cookie)
+# cookie_list.append(jie_total_cookie)
 
 hong_total_cookie = get_config("hong_bilibili_total_cookie")
 hong_csrf_token = get_config("hong_bilibili_csrf_token")
 hong_commenter = BilibiliCommenter(hong_total_cookie, hong_csrf_token)
 commenter_list.append(hong_commenter)
-cookie_list.append(hong_total_cookie)
+# cookie_list.append(hong_total_cookie)
 
 qiqi_total_cookie = get_config("qiqi_bilibili_total_cookie")
 qiqi_csrf_token = get_config("qiqi_bilibili_csrf_token")
 qiqi_commenter = BilibiliCommenter(qiqi_total_cookie, qiqi_csrf_token)
 commenter_list.append(qiqi_commenter)
-cookie_list.append(qiqi_total_cookie)
+# cookie_list.append(qiqi_total_cookie)
 
 yan_total_cookie = get_config("yan_bilibili_total_cookie")
 yan_csrf_token = get_config("yan_bilibili_csrf_token")
 yan_commenter = BilibiliCommenter(yan_total_cookie, yan_csrf_token)
 commenter_list.append(yan_commenter)
-cookie_list.append(yan_total_cookie)
+# cookie_list.append(yan_total_cookie)
 
 mama_total_cookie = get_config("mama_bilibili_total_cookie")
 mama_csrf_token = get_config("mama_bilibili_csrf_token")
 mama_commenter = BilibiliCommenter(mama_total_cookie, mama_csrf_token)
 commenter_list.append(mama_commenter)
-cookie_list.append(mama_total_cookie)
+# cookie_list.append(mama_total_cookie)
 
+xiaosu_total_cookie = get_config("xiaosu_bilibili_total_cookie")
+xiaosu_csrf_token = get_config("xiaosu_bilibili_csrf_token")
+xiaosu_commenter = BilibiliCommenter(xiaosu_total_cookie, xiaosu_csrf_token)
+commenter_list.append(xiaosu_commenter)
+cookie_list.append(xiaosu_total_cookie)
+
+jun_total_cookie = get_config("jun_bilibili_total_cookie")
+jun_csrf_token = get_config("jun_bilibili_csrf_token")
+jun_commenter = BilibiliCommenter(jun_total_cookie, jun_csrf_token)
+commenter_list.append(jun_commenter)
+cookie_list.append(jun_total_cookie)
 
 
 
@@ -567,9 +578,14 @@ def comment_worker():
         bvid = valid_video.get('bvid')
         title = valid_video.get('title', '无标题')
         logging.info(f"开始处理视频：BVID {bvid} | 标题：{title}，将由所有评论者逐一评论并发送弹幕。")
-
+        # 打乱commenter_list顺序，避免行为模式过于固定
+        random.shuffle(commenter_list)
+        success_count = 0
         # 对同一视频，所有 commenter 都要评论并发弹幕一次
         for commenter in commenter_list:
+            if success_count > 3:
+                logging.info(f"本视频评论者成功数已达上限({success_count})，跳过剩余评论者。")
+                break
             commenter_name = getattr(commenter, "username", None) or getattr(commenter, "name", None) or str(commenter)
             try:
                 # 评论
@@ -592,9 +608,10 @@ def comment_worker():
                     logging.info(f"  > {commenter_name} 弹幕发送成功: '{danmaku_text}'")
                 else:
                     logging.error(f"  > {commenter_name} 弹幕发送失败。")
-
+                success_count += 1
                 # 每个评论者间加一个短延迟，避免瞬时并发造成风控
                 time.sleep(random.uniform(1.0, 3.0))
+
 
             except Exception as e:
                 logging.exception(f"处理评论者 {commenter_name} 时发生异常：{e}")
@@ -653,7 +670,8 @@ def follower_worker(csrf_token):
         text_to_check = f"{title} {desc}".lower()
         should_follow = any(keyword.lower() in text_to_check for keyword in CONFIG['FOLLOW_KEYWORDS'])
         result_id_list = [author_id]
-        if should_follow:
+        random_value = random.random() < 0.1  # True ~0.1, False ~0.9
+        if should_follow or random_value:
             result_id_list.extend(get_comment_user(bvid=video.get('bvid')))
             author_name = video.get('author') or (video.get('owner') and video['owner'].get('name'))
             result_id_list = list(set(result_id_list))

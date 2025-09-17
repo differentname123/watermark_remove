@@ -299,7 +299,7 @@ def simulate_watch_video_with_log(sessdata, bili_jct, bvid):
         logging.error(f"线程执行出错: {e}")
 
 
-def run_parallel_watch(config_list, bvid, max_workers=20):
+def run_parallel_watch(config_list, bvid, max_workers=25):
     temp_config_list = config_list
     # 只随机保存max_workers个config_list
     if len(config_list) > max_workers:
