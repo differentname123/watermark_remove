@@ -2456,7 +2456,7 @@ def clip_video_ms(
             text=True,
             encoding='utf-8'
         )
-        success_message = f"视频精确截取成功！已保存至: {output_path}"
+        success_message = f"视频精确截取成功！已保存至: {output_path} 截取时长: {float(end_formatted) - float(start_formatted)}"
         print(success_message)
         # ffmpeg 正常运行时会将大量信息输出到 stderr
         return True, result.stderr or success_message
