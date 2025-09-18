@@ -104,7 +104,7 @@ commenter_list.append(jun_commenter)
 
 CONFIG = {
     "STRATEGIES": {
-        "popular": False,  # 热门视频通常不是目标用户，可以关闭
+        "popular": True,  # 热门视频通常不是目标用户，可以关闭
         "following": False,  # 已经关注的UP主不需要再处理
         "search": True,
     },

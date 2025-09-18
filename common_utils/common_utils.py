@@ -20,6 +20,39 @@ from filelock import FileLock, Timeout
 from pathlib import Path
 from typing import Union
 
+import time
+import functools
+from datetime import datetime
+import asyncio
+
+def timeit_print(func):
+    """
+    装饰器：打印函数名、运行耗时（秒，保留3位小数）和当前时间。
+    支持同步函数和异步函数。
+    """
+    if asyncio.iscoroutinefunction(func):
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            start = time.perf_counter()
+            try:
+                return await func(*args, **kwargs)
+            finally:
+                elapsed = time.perf_counter() - start
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(f"{func.__name__} 运行耗时：{elapsed:.3f} 秒 — 当前时间：{now}")
+        return async_wrapper
+    else:
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            start = time.perf_counter()
+            try:
+                return func(*args, **kwargs)
+            finally:
+                elapsed = time.perf_counter() - start
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(f"{func.__name__} 运行耗时：{elapsed:.3f} 秒 — 当前时间：{now}")
+        return sync_wrapper
+
 def find_key_values(data, target_key) -> list:
     """
     在嵌套的 dict 或 list 中查找所有匹配 target_key 的值。
@@ -1519,10 +1552,10 @@ def init_config():
         '3546977184778261': 'yan',
         '1614926977': 'xue',
         # '3546961709894089': 'cai',
-        '3546978046708266':'jun',
-        '3546972143225467':'lin',
+        # '3546978046708266':'jun',
+        # '3546972143225467':'lin',
         # '3546945675069746': 'jj',
-        '3546978048805307':'xiaosu',
+        # '3546978048805307':'xiaosu',
         # '3546913316014394':'xiaohao',
         # '196823511': 'hao',
         '3546777716263815': 'chabian',
@@ -1533,7 +1566,7 @@ def init_config():
         '3546970887031023': 'yang',
         '3546957842746100': 'ruruxiao',
         '391225237': 'xiaodan',
-        '3546967068117356': 'xiaoxue',
+        # '3546967068117356': 'xiaoxue',
 
         # '3546909677455941': 'base'  # 如果需要恢复 base 账号，取消注释即可
     }

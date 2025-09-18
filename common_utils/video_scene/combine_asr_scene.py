@@ -15,12 +15,14 @@ import time
 import traceback
 from typing import List, Dict, Any, Optional
 from collections import Counter
+from pypinyin import lazy_pinyin, Style
 
 from typing import List, Dict, Any, Tuple
 
 from LLM.gemini import get_llm_content, get_llm_content_gemini_flash_video
 from common_utils.ASR.asr_fusion import gen_precise_asr
-from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time, read_file_to_str, string_to_object
+from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time, read_file_to_str, string_to_object, \
+    timeit_print
 from common_utils.image_utils import save_frames_around_timestamp
 from common_utils.split_scenes import find_and_split_scenes, split_scenes_json
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
@@ -89,13 +91,16 @@ def split_text_into_sentences(text: str) -> list[str]:
 
 
 # --- 模拟函数，请替换为您自己的实现 ---
-def get_pinyin_for_char(char: str) -> str:
-    # 示例实现
-    if char == "你": return "ni"
-    if char == "好": return "hao"
-    if char == "世": return "shi"
-    if char == "界": return "jie"
-    return char  # 默认返回原字符
+def get_pinyin_for_char(s: str) -> str:
+    """
+    - 若输入不含中文，原样返回 s（例如 "ABC" -> "ABC"）。
+    - 若输入含中文，则对每个字符返回无声调拼音并以空格分隔（例如 "你好" -> "ni hao"，"你A" -> "ni A"）。
+    """
+    if not s:
+        return s
+    if not any('\u4e00' <= ch <= '\u9fff' for ch in s):
+        return s
+    return " ".join(lazy_pinyin(s, style=Style.NORMAL, errors="keep"))
 
 
 # ------------------------------------------
@@ -110,6 +115,12 @@ def _find_char_in_asr(
         return None, -1
 
     center_idx = int(round(search_center_index))
+
+    n = len(asr_data)
+    if center_idx < 0:
+        center_idx = 0
+    elif center_idx >= n:
+        center_idx = n - 1
 
     if 0 <= center_idx < len(asr_data):
         asr_word_info = asr_data[center_idx]
@@ -140,26 +151,36 @@ def _find_char_in_asr(
 # ==============================================================================
 
 def generate_sub_sentence_timestamps(
-        asr_data: list[dict],
-        corrected_text_data: list[dict],
-        search_window: int = 5,
-        time_margin: int = 500
-) -> list[dict]:
+        asr_data_list: List[List[Dict]],
+        corrected_text_data: Dict,
+        search_window: int = 10,
+        time_margin: int = 1000
+) -> Dict:
+    """
+    asr_data_list: 一个包含多个 asr_data 的列表，每个 asr_data 本身是 list[dict]
+    corrected_text_data: 原来的 corrected_text_data（包含 'fixed_asr_list'）
+    返回值结构保持不变，但每个 sub_text 的 start/end 为各 ASR 结果的平均（若存在）
+    """
     processed_data = deepcopy(corrected_text_data)
 
-    for segment in processed_data:
+    for segment in processed_data['fixed_asr_list']:
         final_text = segment.get("final_text", "")
         if not final_text:
             segment['sub_text'] = []
             continue
 
-        relevant_asr = [
-            word for word in asr_data
-            if word.get('end', 0) > segment.get('start', 0) - time_margin and
-               word.get('start', 0) < segment.get('end', 0) + time_margin
-        ]
+        # 针对每个 asr_data 预先筛选与当前 segment 相关的 words 列表
+        relevant_asr_per_source = []
+        for asr_data in asr_data_list:
+            relevant_asr = [
+                word for word in asr_data
+                if word.get('end', 0) > segment.get('start', 0) - time_margin and
+                   word.get('start', 0) < segment.get('end', 0) + time_margin
+            ]
+            relevant_asr_per_source.append(relevant_asr)
 
-        if not relevant_asr:
+        # 如果所有来源都没有相关 asr，则直接置空
+        if all(len(r) == 0 for r in relevant_asr_per_source):
             segment['sub_text'] = []
             continue
 
@@ -167,44 +188,95 @@ def generate_sub_sentence_timestamps(
         pass1_results = []
 
         segment_char_cursor = 0
-        offset = 0.0
+        # 每个 asr source 单独维护 offset（用于 search center index）
+        offsets = [0.0 for _ in asr_data_list]
 
         for sentence_text in sub_sentence_list:
-            # 现在 is_not_punctuation 完全依赖于分割逻辑
             effective_chars = [c for c in sentence_text if is_not_punctuation(c)]
 
             if not effective_chars:
                 pass1_results.append({"text": sentence_text, "start": None, "end": None})
                 continue
 
-            sentence_start_time, sentence_end_time = None, None
+            # 为每个 asr source 尝试找到 first/last char 的信息（可能为 None）
+            sentence_start_candidates = []  # 每个 source 的 start（或 None）
+            sentence_end_candidates = []    # 每个 source 的 end（或 None）
 
+            # 先处理首字符
             first_char_pinyin = get_pinyin_for_char(effective_chars[0])
             text_expected_pos = segment_char_cursor
-            search_center_index = text_expected_pos + offset
 
-            first_char_info, first_char_match_idx = _find_char_in_asr(
-                first_char_pinyin, search_center_index, relevant_asr, window_size=search_window
-            )
+            for idx, relevant_asr in enumerate(relevant_asr_per_source):
+                # 如果该 source 没有相关 asr，跳过
+                if not relevant_asr:
+                    sentence_start_candidates.append(None)
+                    continue
 
-            if first_char_info:
-                sentence_start_time = first_char_info['start']
-                offset = first_char_match_idx - text_expected_pos
+                search_center_index = text_expected_pos + offsets[idx]
+                first_info, first_match_idx = _find_char_in_asr(
+                    first_char_pinyin, search_center_index, relevant_asr, window_size=search_window
+                )
+                if first_info:
+                    sentence_start_candidates.append(first_info.get('start'))
+                    # 更新对应 source 的 offset
+                    offsets[idx] = first_match_idx - text_expected_pos
+                else:
+                    sentence_start_candidates.append(None)
 
+            sentence_start_time: Optional[int] = None
+            # 取所有非 None start 的平均
+            starts = [s for s in sentence_start_candidates if s is not None]
+            if starts:
+                sentence_start_time = int(sum(starts) / len(starts))
+
+            # 处理 end（单字与多字不同处理）
             if len(effective_chars) == 1:
-                if first_char_info:
-                    sentence_end_time = first_char_info['end']
+                # end 来自首字符的 end（每个 source）
+                for idx, relevant_asr in enumerate(relevant_asr_per_source):
+                    if not relevant_asr:
+                        sentence_end_candidates.append(None)
+                        continue
+                    # 如果我们之前在该 source 找到 first_info，我们 should get its 'end' value.
+                    # 重新 run 找一次首字（为了得到 end）——可以优化复用，但保持接口一致
+                    search_center_index = text_expected_pos + offsets[idx]
+                    first_info, _ = _find_char_in_asr(
+                        first_char_pinyin, search_center_index, relevant_asr, window_size=search_window
+                    )
+                    if first_info:
+                        sentence_end_candidates.append(first_info.get('end'))
+                    else:
+                        sentence_end_candidates.append(None)
             else:
+                # 多字符，找最后一个字符
                 last_char_pinyin = get_pinyin_for_char(effective_chars[-1])
                 text_expected_pos_last = segment_char_cursor + len(effective_chars) - 1
-                search_center_index_last = text_expected_pos_last + offset
 
-                last_char_info, last_char_match_idx = _find_char_in_asr(
-                    last_char_pinyin, search_center_index_last, relevant_asr, window_size=search_window
-                )
-                if last_char_info:
-                    sentence_end_time = last_char_info['end']
-                    offset = last_char_match_idx - text_expected_pos_last
+                for idx, relevant_asr in enumerate(relevant_asr_per_source):
+                    if not relevant_asr:
+                        sentence_end_candidates.append(None)
+                        continue
+
+                    search_center_index_last = text_expected_pos_last + offsets[idx]
+                    last_info, last_match_idx = _find_char_in_asr(
+                        last_char_pinyin, search_center_index_last, relevant_asr, window_size=search_window
+                    )
+                    if last_info:
+                        sentence_end_candidates.append(last_info.get('end'))
+                        # 更新对应 source 的 offset（基于最后字符的位置）
+                        offsets[idx] = last_match_idx - text_expected_pos_last
+                    else:
+                        sentence_end_candidates.append(None)
+
+            sentence_end_time: Optional[int] = None
+            ends = [e for e in sentence_end_candidates if e is not None]
+            if ends:
+                sentence_end_time = int(sum(ends) / len(ends))
+
+            # 如果长度小且没有时间信息，则跳过（保留你原有的规则）
+            if len(effective_chars) <= 5 and sentence_start_time is None and sentence_end_time is None:
+                # 不添加这一短句
+                segment_char_cursor += len(effective_chars)
+                continue
 
             pass1_results.append({
                 "text": sentence_text,
@@ -214,13 +286,14 @@ def generate_sub_sentence_timestamps(
 
             segment_char_cursor += len(effective_chars)
 
+        # 第二遍：填补缺失 start/end（沿用原逻辑）
         final_sub_text = []
         for i, sub in enumerate(pass1_results):
             if sub['start'] is None:
                 prev_end = segment.get('start', 0)
                 for j in range(i - 1, -1, -1):
                     if pass1_results[j]['end'] is not None:
-                        prev_end = pass1_results[j]['end'];
+                        prev_end = pass1_results[j]['end']
                         break
                 sub['start'] = prev_end
 
@@ -228,7 +301,7 @@ def generate_sub_sentence_timestamps(
                 next_start = segment.get('end', 0)
                 for j in range(i + 1, len(pass1_results)):
                     if pass1_results[j]['start'] is not None:
-                        next_start = pass1_results[j]['start'];
+                        next_start = pass1_results[j]['start']
                         break
                 sub['end'] = next_start
 
@@ -911,24 +984,54 @@ def merge_by_key(temp_list: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     return merged
 
 
-def fix_speech_asr(speech_asr_info):
+def check_fix_speech_asr(fixed_speech_asr_info, speech_asr_info):
+    """
+    检查修复后的说话人文本是否合理
+    """
+    if not fixed_speech_asr_info or 'fixed_asr_list' not in fixed_speech_asr_info:
+        print("[ERROR] 修复后的说话人文本信息无效或缺失 'fixed_asr_list' 字段")
+        return False
+
+    fixed_list = fixed_speech_asr_info['fixed_asr_list']
+    if len(fixed_list) != len(speech_asr_info):
+        print(f"[ERROR] 修复后的说话人文本长度与原始不匹配: {len(fixed_list)} != {len(speech_asr_info)}")
+        return False
+
+    # 检查'owner_speaker'是否为空或者是否是已存在的说话人
+    speaker_list = {entry.get('speaker') for entry in speech_asr_info if 'speaker' in entry}
+    owner_speaker = fixed_speech_asr_info.get('owner_speaker', '')
+    if not owner_speaker or owner_speaker not in speaker_list:
+        print(f"[ERROR] 修复后的说话人文本中 'owner_speaker' 无效: '{owner_speaker}'")
+        return False
+
+    # 将fixed_list中所有speaker为owner_speaker的值设置为 'owner_speaker'
+    for entry in fixed_list:
+        if entry.get('speaker') == owner_speaker:
+            entry['speaker'] = 'owner_speaker'
+
+
+    print("[INFO] 修复后的说话人文本信息通过基本检查")
+    return True
+
+def fix_speech_asr(speech_asr_info, video_path):
     """
     纠正每个说话人的文本
     """
     retry_delay = 10
     max_retries = 3
-    prompt_file_path = '../../content_community/app/视频分解素材_纠正说话人文本.txt'
+    prompt_file_path = '../../content_community/app/视频分解素材_纠正说话人文本_结合视频识别主人.txt'
     prompt = read_file_to_str(prompt_file_path)
     full_prompt = f'{prompt}\n{speech_asr_info}'
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            raw = get_llm_content(prompt=full_prompt, model_name="gemini-2.5-flash")
+            model_name = "gemini-2.5-pro"
+            raw = get_llm_content_gemini_flash_video(prompt=full_prompt,video_path=video_path,model_name=model_name)
+
             fix_speech_asr_info = string_to_object(raw)
             # 检测fix_speech_asr_info和speech_asr_info长度是否一致
-            if len(fix_speech_asr_info) != len(speech_asr_info):
-                raise ValueError(
-                    f"返回的数据长度与输入数据长度不一致: {len(fix_speech_asr_info)} != {len(speech_asr_info)}")
+            if check_fix_speech_asr(fix_speech_asr_info, speech_asr_info) is False:
+                raise ValueError(f"[ERROR] 生成的视频信息与原始不匹配，尝试重新生成 (尝试 {attempt}/{max_retries})")
             return fix_speech_asr_info
         except Exception as e:
             print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
@@ -941,45 +1044,27 @@ def fix_speech_asr(speech_asr_info):
             traceback.print_exc()
 
 
-def reorganize_speech_asr_fun():
-    video_path = 'test2.mp4'
-    speech_info_path = "output/segments_speech.json"
-    speech_info = read_json(speech_info_path)
-    ASR_FILES, ASR_FILES = gen_precise_asr(video_path, '')
-    temp_list = []
-    for ASR_FILE in ASR_FILES:
-        asr_list = read_json(ASR_FILE)
-        temp = fill_speaker_texts(asr_list, speech_info)
-        for value in temp:
-            value['ASR_FILE'] = os.path.basename(ASR_FILE)
-        temp_list.append(temp)
-    sentence_info = merge_by_key(temp_list)
-    origin_sentence_info = sentence_info.copy()
-    # 遍历sentence_info，删除start，end,speaker这三个字段，替换为一个自增的id
-    for i, entry in enumerate(sentence_info):
-        entry['id'] = i + 1
-        entry.pop('start', None)
-        entry.pop('end', None)
-        entry.pop('speaker', None)
-    fix_speech_asr_info = fix_speech_asr(origin_sentence_info)
-    save_json('output/final_speech_asr.json', fix_speech_asr_info)
-    print(fix_speech_asr_info)
-
-
-def fun():
-    video_path = 'test2.mp4'
+@timeit_print
+def gen_asr(video_path):
+    """
+    生成修复后的asr以及句子时间段
+    """
+    start_time = time.time()
     base_name = os.path.basename(video_path).split('.')[0]
-    output_file = f'output/{base_name}/{base_name}_fixed_speech_asr.json'
-    result_file_info = gen_precise_asr(video_path, output_file)
+    speech_asr_output_file = f'output/{base_name}/{base_name}_speech_asr.json'
+    if not os.path.exists(speech_asr_output_file) or os.path.getsize(speech_asr_output_file) == 0:
+        result_file_info = gen_precise_asr(video_path, speech_asr_output_file)
+    print(f"生成精准asr与说话人信息文件耗时: {time.time() - start_time} 秒")
 
     asr_file_list = result_file_info['asr_file']
     speaker_file = result_file_info['speaker_file']
 
     speech_info = read_json(speaker_file)
+    asr_info_list = []
     temp_list = []
     for asr_file in asr_file_list:
         asr_info = read_json(asr_file)
-        break
+        asr_info_list.append(asr_info)
         temp = fill_speaker_texts(asr_info, speech_info)
         for value in temp:
             value['asr_file'] = os.path.basename(asr_file)
@@ -994,15 +1079,19 @@ def fun():
         entry.pop('end', None)
         entry.pop('speaker', None)
 
-    # fixed_speech_asr_info = fix_speech_asr(origin_sentence_info)
-    # save_json(output_file, fixed_speech_asr_info)
-    fixed_speech_asr_info = read_json(output_file)
-    # fixed_speech_asr_info = fixed_speech_asr_info[:1]
-    result = generate_sub_sentence_timestamps(asr_info, fixed_speech_asr_info)
-    save_json(output_file, result)
+    fixed_speech_asr_output_file = f'output/{base_name}/{base_name}_fixed_speech_asr.json'
+    if not os.path.exists(fixed_speech_asr_output_file) or os.path.getsize(fixed_speech_asr_output_file) == 0:
+        fixed_speech_asr_info = fix_speech_asr(origin_sentence_info, video_path)
+        save_json(fixed_speech_asr_output_file, fixed_speech_asr_info)
+    print(f"纠正说话人文本耗时: {time.time() - start_time} 秒")
 
 
-    print()
+    fixed_speech_asr_info = read_json(fixed_speech_asr_output_file)
+    fixed_speech_asr_with_sub_text_output_file = f'output/{base_name}/{base_name}_fixed_speech_asr_with_sub_text.json'
+    result = generate_sub_sentence_timestamps(asr_info_list, fixed_speech_asr_info)
+    save_json(fixed_speech_asr_with_sub_text_output_file, result)
+    print(f"生成句子时间段耗时: {time.time() - start_time} 秒")
+    return result
 
 
 def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True):
@@ -1080,44 +1169,44 @@ def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True):
     return kept_sorted, pairs
 
 
-
-def get_scene():
-    my_video_path = 'test2.mp4'
-    basename = os.path.basename(my_video_path).split('.')[0]
+@timeit_print
+def get_scene(video_path):
+    basename = os.path.basename(video_path).split('.')[0]
 
     all_scene_info_dict = {}
     for high_threshold in [30, 40, 50, 60, 70]:
-        scene_info_file = f'scenes_{basename}_{high_threshold}/scene_info.json'
+        start_time = time.time()
+        scene_info_file = f'output/{basename}/scenes_{basename}_{high_threshold}/scene_info.json'
         if os.path.exists(scene_info_file):
-            print(f"场景信息文件已存在，跳过处理: {scene_info_file}")
+            # print(f"场景信息文件已存在，跳过处理: {scene_info_file}")
             all_scene_info_dict[high_threshold] = read_json(scene_info_file)
             continue
 
         # 运行带有精炼功能的场景分割
         scene_info_dict = split_scenes_json(
-            my_video_path,
+            video_path,
             high_threshold=high_threshold,  # 初始高阈值
             min_scene_len=25,  # 最小场景长度（帧）
         )
-        print("\n场景信息字典已生成并打印。")
-        for key, value in scene_info_dict.items():
-            timestamp = value[1]
-            save_frames_around_timestamp(my_video_path, timestamp, 3, str(os.path.join(f'scenes_{basename}_{high_threshold}', key)))
+        print(f"阈值为 {high_threshold}场景信息字典已生成并打印。共 {len(scene_info_dict)} 个场景。 耗时: {time.time() - start_time} 秒\n")
+        # for key, value in scene_info_dict.items():
+        #     timestamp = value[1]
+        #     save_frames_around_timestamp(video_path, timestamp, 3, str(os.path.join(f'output/{basename}/scenes_{basename}_{high_threshold}', key)))
 
         save_json(scene_info_file, scene_info_dict)
         all_scene_info_dict[high_threshold] = scene_info_dict
     kept_sorted, pairs = merge_scene_timestamps(all_scene_info_dict, min_count=3)
 
-    print(f"\n合并后的场景数量为: {len(pairs)}")
+    print(f"\n合并后的场景数量为: {len(kept_sorted)}")
     # 将kept_sorted保存到文件
-    save_json(f'scenes_fused_{basename}/merged_timestamps.json', kept_sorted)
+    save_json(f'output/{basename}/scenes_fused_{basename}/merged_timestamps.json', kept_sorted)
 
-    for key, value in pairs.items():
-        timestamp = value[1]
-        save_frames_around_timestamp(my_video_path, timestamp, 3,
-                                     str(os.path.join(f'scenes_fused_{basename}', key)))
+    # for key, value in pairs.items():
+    #     timestamp = value[1]
+    #     save_frames_around_timestamp(my_video_path, timestamp, 3,
+    #                                  str(os.path.join(f'scenes_fused_{basename}', key)))
 
-    print(f"所有场景信息: {all_scene_info_dict}")
+    return kept_sorted
 
 
 def process_scenes(text_results, scene_splits, inclusion_threshold=0.9, merge_threshold=0.2):
@@ -1230,25 +1319,22 @@ def process_scenes(text_results, scene_splits, inclusion_threshold=0.9, merge_th
 
     return final_scenes
 
-
-def get_scene_sub_text():
-    my_video_path = 'test2.mp4'
-    base_name = os.path.basename(my_video_path).split('.')[0]
-    merged_timestamps_file = f'scenes_fused_{base_name}/merged_timestamps.json'
-    merged_timestamps = read_json(merged_timestamps_file)
-    output_file = f'output/{base_name}/{base_name}_fixed_speech_asr.json'
-    fixed_speech_asr = read_json(output_file)
+@timeit_print
+def get_scene_sub_text(video_path, sorted_scene_timestamp, fixed_speech_asr_with_sub_text):
+    base_name = os.path.basename(video_path).split('.')[0]
+    merged_timestamps = sorted_scene_timestamp
+    fixed_speech_asr = fixed_speech_asr_with_sub_text
     all_sub_text_list = []
-    for speech_info in fixed_speech_asr:
+    for speech_info in fixed_speech_asr['fixed_asr_list']:
         sub_text_list = speech_info.get('sub_text', '')
         speaker = speech_info.get('speaker', '')
         for sub_text in sub_text_list:
             sub_text['speaker'] = speaker
             all_sub_text_list.append(sub_text)
-    mapped = process_scenes(all_sub_text_list, merged_timestamps)
+    scene_sub_text = process_scenes(all_sub_text_list, merged_timestamps)
     output_file_scene_sub_text = f'output/{base_name}/{base_name}_scene_sub_text.json'
-    save_json(output_file_scene_sub_text, mapped)
-    print(mapped)
+    save_json(output_file_scene_sub_text, scene_sub_text)
+    return scene_sub_text
 
 
 def extract_and_merge_by_speaker(scenes, target_speaker):
@@ -1380,10 +1466,11 @@ def check_new_video_script(new_video_script, scene_info):
     生成的original_scene_number是否都在scene_info中
     """
     scene_numbers = {str(scene['scene_number']) for scene in scene_info}
-    for scene in new_video_script.get('场景顺序与新文案', []):
-        if str(scene['original_scene_number']) not in scene_numbers:
-            print(f"[ERROR] original_scene_number {scene['original_scene_number']} 不在 scene_info 中")
-            return False
+    for detail_new_video_script in new_video_script:
+        for scene in detail_new_video_script.get('场景顺序与新文案', []):
+            if str(scene['original_scene_number']) not in scene_numbers:
+                print(f"[ERROR] original_scene_number {scene['original_scene_number']} 不在 scene_info 中")
+                return False
     return True
 
 def gen_new_video_script_llm(scene_info, video_path):
@@ -1398,7 +1485,7 @@ def gen_new_video_script_llm(scene_info, video_path):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            model_name = "gemini-2.5-flash"
+            model_name = "gemini-2.5-pro"
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt,video_path=video_path,model_name=model_name)
             new_video_script = string_to_object(raw)
             check_result = check_new_video_script(new_video_script, scene_info)
@@ -1415,37 +1502,40 @@ def gen_new_video_script_llm(scene_info, video_path):
                 return None  # 达到最大重试次数后返回 None
             traceback.print_exc()
 
-def gen_new_video_script():
+@timeit_print
+def gen_new_video_script(video_path, scene_sub_text, target_speaker='owner_speaker'):
     """
     生成新视频的文本脚本
     """
-    my_video_path = 'test2.mp4'
-    base_name = os.path.basename(my_video_path).split('.')[0]
-    output_file = f'output/{base_name}/{base_name}_scene_sub_text.json'
-    scene_sub_text_list = read_json(output_file)
-    target_speaker = 'SPEAKER_00'
+    base_name = os.path.basename(video_path).split('.')[0]
+    scene_sub_text_list = scene_sub_text
+    output_file_final = f'output/{base_name}/{base_name}_scene_format_new_script.json'
+    output_file_scene_info = f'output/{base_name}/{base_name}_merge_speaker_scene_info.json'
+
+    if os.path.exists(output_file_final):
+        new_video_script = read_json(output_file_final)
+        scene_info = read_json(output_file_scene_info)
+        return new_video_script, scene_info
+
+
     scene_info = extract_and_merge_owner_other(scene_sub_text_list, target_speaker)
-    output_file_scene_info = f'output/{base_name}/{base_name}_new_video_script.json'
     save_json(output_file_scene_info, scene_info)
 
-    result = gen_new_video_script_llm(scene_info, video_path=my_video_path)
-    output_file_final = f'output/{base_name}/{base_name}_scene_format_new_script.json'
-    save_json(output_file_final, result)
+    new_video_script = gen_new_video_script_llm(scene_info, video_path=video_path)
+    save_json(output_file_final, new_video_script)
 
-    print(result)
+    return new_video_script, scene_info
 
 
-def gen_new_video_by_scene_and_script():
+def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
     """
     生成新视频的文本脚本
     """
     max_diff = 500
-    my_video_path = 'test2.mp4'
-    base_name = os.path.basename(my_video_path).split('.')[0]
-    output_file_scene_info = f'output/{base_name}/{base_name}_new_video_script.json'
-    scene_info = read_json(output_file_scene_info)
-    output_file_final = f'output/{base_name}/{base_name}_scene_format_new_script.json'
-    new_video_script_result = read_json(output_file_final)
+    base_name = os.path.basename(video_path).split('.')[0]
+    # 将new_video_script安装 方案整体评分 降序排序
+    new_video_script.sort(key=lambda x: x.get('方案整体评分', 0), reverse=True)
+    new_video_script_result = new_video_script
     final_video_script = new_video_script_result[0]
 
     need_merge_video_file = []
@@ -1510,7 +1600,7 @@ def gen_new_video_by_scene_and_script():
                     segment_output_scene_file = f'output/{base_name}/split_scene/new_{fused_new_scene["new_scene_number"]}_origin_{fused_new_scene["scene_number"]}_part{sub_count}.mp4'
                     output_path = segment_output_scene_file
                     if not os.path.exists(segment_output_scene_file) or os.path.getsize(segment_output_scene_file) == 0:
-                        clip_video_ms(my_video_path, seg_start, seg_end, segment_output_scene_file)
+                        clip_video_ms(video_path, seg_start, seg_end, segment_output_scene_file)
 
                     if sub_count == 2:
                         output_path = segment_output_scene_file.replace('.mp4', '_with_text.mp4')
@@ -1520,7 +1610,7 @@ def gen_new_video_by_scene_and_script():
         else:
             output_scene_file = f'output/{base_name}/split_scene/new_{fused_new_scene["new_scene_number"]}_origin_{fused_new_scene["scene_number"]}_part{0}.mp4'
             if not os.path.exists(output_scene_file) or os.path.getsize(output_scene_file) == 0:
-                clip_video_ms(my_video_path, scene_start, scene_end, output_scene_file)
+                clip_video_ms(video_path, scene_start, scene_end, output_scene_file)
             need_merge_video_file.append(output_scene_file)
     final_output_path = f'output/{base_name}/{base_name}_remake.mp4'
     merge_videos_ffmpeg(need_merge_video_file, output_path=final_output_path)
@@ -1529,10 +1619,24 @@ def gen_new_video_by_scene_and_script():
         # print(f"正在为视频添加背景音乐: {bgm_path}")
         final_with_bgm_path = final_output_path.replace('.mp4', '_with_bgm.mp4')
         add_bgm_to_video(final_output_path, bgm_path, str(final_with_bgm_path), volume_percentage=50)
+        return final_with_bgm_path
+    return final_output_path
+
+@timeit_print
+def video_remake(video_path, output_path):
+    fixed_speech_asr_with_sub_text = gen_asr(video_path)
+
+    sorted_scene_timestamp = get_scene(video_path)
+
+    scene_sub_text = get_scene_sub_text(video_path, sorted_scene_timestamp, fixed_speech_asr_with_sub_text)
+
+    new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text)
+
+    final_video_path = gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info)
 
 
 if __name__ == '__main__':
-    # fun()
+    video_remake('test2.mp4', 'output/test2/test2_remake.mp4')
     #
     # get_scene()
     #
@@ -1541,7 +1645,7 @@ if __name__ == '__main__':
     #
     # gen_new_video_script()
 
-    gen_new_video_by_scene_and_script()
+    # gen_new_video_by_scene_and_script()
 
     # reorganize_speech_asr_fun()
     #

@@ -4,6 +4,7 @@ import os
 import re
 import statistics
 import time
+import traceback
 from itertools import groupby
 import difflib
 
@@ -424,32 +425,38 @@ def gen_precise_asr(audio_file, output_file):
     """
     生成融合后准确的asr文件
     """
-    result_file_info = {}
-    base_name = os.path.basename(audio_file).split('.')[0]
-    output_dir = os.path.dirname(output_file)
+    try:
+        result_file_info = {}
+        base_name = os.path.basename(audio_file).split('.')[0]
+        output_dir = os.path.dirname(output_file)
 
-    funasr_file = os.path.join(output_dir, f"{base_name}_funasr_asr.json")
-    funasr_file = run_funasr(audio_file, funasr_file)
-
-
-    whisper_v2_file = os.path.join(output_dir, f"{base_name}_whisper_v2_asr.json")
-    whisper_v2_file = transcribe_words_to_json(audio_file, output_file=whisper_v2_file, MODEL_SIZE="large-v2")
-    time.sleep(10)
+        funasr_file = os.path.join(output_dir, f"{base_name}_funasr_asr.json")
+        funasr_file = run_funasr(audio_file, funasr_file)
+        time.sleep(10)
 
 
-    whisper_v3_file = os.path.join(output_dir, f"{base_name}_whisper_v3_asr.json")
-    whisper_v3_file = transcribe_words_to_json(audio_file, output_file=whisper_v3_file)
 
-    speaker_file_path = os.path.join(output_dir, f"{base_name}_speaker.json")
-    # return ASR_FILES, ASR_FILES
-    speaker_file_path = perform_speaker_diarization(audio_file, output_path=speaker_file_path)
+        whisper_v2_file = os.path.join(output_dir, f"{base_name}_whisper_v2_asr.json")
+        whisper_v2_file = transcribe_words_to_json(audio_file, output_file=whisper_v2_file, MODEL_SIZE="large-v2")
+        time.sleep(10)
 
 
-    result_file_info['asr_file'] = [funasr_file, whisper_v2_file, whisper_v3_file]
-    result_file_info['speaker_file'] = speaker_file_path
+        whisper_v3_file = os.path.join(output_dir, f"{base_name}_whisper_v3_asr.json")
+        whisper_v3_file = transcribe_words_to_json(audio_file, output_file=whisper_v3_file)
+        time.sleep(10)
 
-    return result_file_info
 
+        speaker_file_path = os.path.join(output_dir, f"{base_name}_speaker.json")
+        # return ASR_FILES, ASR_FILES
+        speaker_file_path = perform_speaker_diarization(audio_file, output_path=speaker_file_path)
+
+
+        result_file_info['asr_file'] = [funasr_file, whisper_v2_file, whisper_v3_file]
+        result_file_info['speaker_file'] = speaker_file_path
+
+        return result_file_info
+    except Exception as e:
+        traceback.print_exc()
 
 
 
