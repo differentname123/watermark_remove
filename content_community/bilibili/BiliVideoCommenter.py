@@ -38,11 +38,11 @@ lin_commenter = BilibiliCommenter(lin_total_cookie, lin_csrf_token)
 commenter_list.append(lin_commenter)
 cookie_list.append(lin_total_cookie)
 
-# yang_total_cookie = get_config("yang_bilibili_total_cookie")
-# yang_csrf_token = get_config("yang_bilibili_csrf_token")
-# yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
-# commenter_list.append(yang_commenter)
-# cookie_list.append(yang_total_cookie)
+yang_total_cookie = get_config("yang_bilibili_total_cookie")
+yang_csrf_token = get_config("yang_bilibili_csrf_token")
+yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
+commenter_list.append(yang_commenter)
+cookie_list.append(yang_total_cookie)
 
 
 tao_total_cookie = get_config("tao_bilibili_total_cookie")
@@ -723,7 +723,7 @@ def follower_worker(csrf_token):
 
 
 if __name__ == '__main__':
-    if True:
+    if False:
         # 清楚DISCOVERED_VIDEOS_FILE.json中的数据
         if os.path.exists(CONFIG['DISCOVERED_VIDEOS_FILE']):
             os.remove(CONFIG['DISCOVERED_VIDEOS_FILE'])

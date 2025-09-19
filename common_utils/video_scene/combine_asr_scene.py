@@ -150,48 +150,72 @@ def _find_char_in_asr(
 # 2. 主逻辑函数 (Main Logic)
 # ==============================================================================
 
-def compute_sentence_time(starts: List[float]) -> Optional[int]:
+def compute_sentence_time(starts: List[Dict], key: str = "start") -> Optional[int]:
     """
-    计算 sentence_start_time：
-      - 如果 starts 为空或全为 None，返回 None
-      - 如果有 >= 3 个值，剔除与其他值差别（绝对差之和）最大的一个，再取平均
-      - 否则直接取平均
-    返回 int 类型（原样用 int(sum/len) 的行为）
+    用 items 中每项的 probability^2 作为权重，计算 key 对应值的加权平均并返回 int。
+    - items: 列表，每项为 dict，期望包含 key 和 "probability"（若无 probability 则视为 1）。
+    - 若没有有效的数值则返回 None。
     """
-    # 过滤掉 None 并确保是数字
-    vals = [float(s) for s in starts if s is not None]
+    total_w = 0.0
+    weighted_sum = 0.0
 
-    if not vals:
+    for item in starts:
+        # 提取并验证 value
+        val = item.get(key)
+        if val is None:
+            continue
+        try:
+            v = float(val)
+        except Exception:
+            continue
+
+        # 提取并验证 probability（缺失则默认 1）
+        p = item.get("probability", 1)
+        try:
+            p = float(p)
+        except Exception:
+            p = 1.0
+
+        w = p * p
+        if w <= 0:
+            continue
+
+        weighted_sum += v * w
+        total_w += w
+
+    if total_w == 0:
         return None
 
-    n = len(vals)
-    if n >= 3:
-        # 计算每个值与其它值的绝对差之和
-        diff_sums = []
-        for i, v in enumerate(vals):
-            s = 0.0
-            for j, w in enumerate(vals):
-                if i == j:
-                    continue
-                s += abs(v - w)
-            diff_sums.append(s)
-        # 找到差之和最大的元素索引（若相等，选择第一个）
-        idx_to_remove = int(max(range(n), key=lambda i: diff_sums[i]))
-        # 构造新的列表（剔除该项）
-        remaining = [v for i, v in enumerate(vals) if i != idx_to_remove]
-    else:
-        remaining = vals
+    avg = weighted_sum / total_w
+    return int(round(avg))
 
-    if not remaining:
-        return None
-
-    # 返回和你原来代码一致的 int 平均值
-    return int(sum(remaining) / len(remaining))
+def split_tokens_linear(tokens):
+    out = []
+    for it in tokens:
+        w = it.get("word", "") or ""
+        try:
+            s = int(it.get("start", 0)); e = int(it.get("end", 0))
+        except Exception:
+            out.append(it.copy()); continue
+        if not w or len(w) <= 1 or s >= e:
+            out.append(it.copy()); continue
+        parts = list(w); total = e - s; n = len(parts)
+        base, rem = divmod(total, n)
+        cur = s
+        for i, p in enumerate(parts):
+            dur = base + (1 if i < rem else 0)
+            new = it.copy()
+            new.update({"word": p, "start": cur, "end": cur + dur})
+            out.append(new)
+            cur += dur
+        if out and out[-1]["end"] != e:
+            out[-1]["end"] = e
+    return out
 
 def generate_sub_sentence_timestamps(
         asr_data_list: List[List[Dict]],
         corrected_text_data: Dict,
-        search_window: int = 10,
+        search_window: int = 20,
         time_margin: int = 1000
 ) -> Dict:
     """
@@ -210,6 +234,7 @@ def generate_sub_sentence_timestamps(
         # 针对每个 asr_data 预先筛选与当前 segment 相关的 words 列表
         relevant_asr_per_source = []
         for asr_data in asr_data_list:
+            asr_data = split_tokens_linear(asr_data)
             relevant_asr = [
                 word for word in asr_data
                 if word.get('end', 0) > segment.get('start', 0) - time_margin and
@@ -255,7 +280,7 @@ def generate_sub_sentence_timestamps(
                     first_char_pinyin, search_center_index, relevant_asr, window_size=search_window
                 )
                 if first_info:
-                    sentence_start_candidates.append(first_info.get('start'))
+                    sentence_start_candidates.append(first_info)
                     # 更新对应 source 的 offset
                     offsets[idx] = first_match_idx - text_expected_pos
                 else:
@@ -278,7 +303,7 @@ def generate_sub_sentence_timestamps(
                         first_char_pinyin, search_center_index, relevant_asr, window_size=search_window
                     )
                     if first_info:
-                        sentence_end_candidates.append(first_info.get('end'))
+                        sentence_end_candidates.append(first_info)
                     else:
                         sentence_end_candidates.append(None)
             else:
@@ -296,14 +321,14 @@ def generate_sub_sentence_timestamps(
                         last_char_pinyin, search_center_index_last, relevant_asr, window_size=search_window
                     )
                     if last_info:
-                        sentence_end_candidates.append(last_info.get('end'))
+                        sentence_end_candidates.append(last_info)
                         # 更新对应 source 的 offset（基于最后字符的位置）
                         offsets[idx] = last_match_idx - text_expected_pos_last
                     else:
                         sentence_end_candidates.append(None)
 
             ends = [e for e in sentence_end_candidates if e is not None]
-            sentence_end_time = compute_sentence_time(ends)
+            sentence_end_time = compute_sentence_time(ends, key="end")
 
 
             # 如果长度小且没有时间信息，则跳过（保留你原有的规则）
@@ -1500,6 +1525,115 @@ def process_scenes_refactored(
 
     return final_scenes
 
+
+def process_scenes_simple(text_results, scene_splits, merge_tolerance_ms=100):
+    """
+    一个更稳健、分步实现的场景文本整理与合并函数 (V4 - 逻辑澄清与格式调整)。
+
+    核心逻辑：
+    1. 初步分配：
+       - 优先将文本分配给有实际重叠(>0)且重叠最大的场景。
+       - 如果文本与所有场景都无重叠，则将其分配给时间上最接近的场景。
+    2. 识别与合并：使用双向、带容差的判断条件，合并由文本内容连接起来的场景。
+    3. 格式化输出：调整最终字典的字段顺序。
+
+    Args:
+        text_results (list): 文本识别结果列表。
+        scene_splits (list): 最小场景切分列表。
+        merge_tolerance_ms (int): 合并容差（毫秒）。
+
+    Returns:
+        list: 整理后的场景列表，字段顺序为 (scene_start, scene_end, content_list)。
+    """
+    if not text_results or not scene_splits:
+        return []
+
+    # --- 步骤 0: 预处理，构建场景对象 ---
+    scenes = []
+    if len(scene_splits) > 1:
+        for i in range(len(scene_splits) - 1):
+            scenes.append({
+                'start': scene_splits[i][0],
+                'end': scene_splits[i + 1][0],
+                'content_list': []
+            })
+        last_scene_start = scene_splits[-1][0]
+        max_text_end = max(item['end'] for item in text_results) if text_results else last_scene_start
+        scenes.append({
+            'start': last_scene_start,
+            'end': max(last_scene_start, max_text_end),
+            'content_list': []
+        })
+
+    if not scenes:
+        return []
+
+    # --- 步骤 1: 修正后的初步分配逻辑 ---
+    for text in text_results:
+        best_scene_idx = -1
+        max_overlap = 0
+        for i, scene in enumerate(scenes):
+            overlap_start = max(text['start'], scene['start'])
+            overlap_end = min(text['end'], scene['end'])
+            overlap_duration = max(0, overlap_end - overlap_start)
+            if overlap_duration > max_overlap:
+                max_overlap = overlap_duration
+                best_scene_idx = i
+        if best_scene_idx == -1:
+            min_distance = float('inf')
+            for i, scene in enumerate(scenes):
+                distance = min(abs(scene['start'] - text['end']), abs(text['start'] - scene['end']))
+                if distance < min_distance:
+                    min_distance = distance
+                    best_scene_idx = i
+        if best_scene_idx != -1:
+            scenes[best_scene_idx]['content_list'].append(text)
+
+    # --- 步骤 2: 过滤空场景并对内容排序 ---
+    scenes_with_content = []
+    for scene in scenes:
+        if scene['content_list']:
+            scene['content_list'].sort(key=lambda x: x['start'])
+            scenes_with_content.append(scene)
+
+    if not scenes_with_content:
+        return []
+
+    # --- 步骤 3: 使用稳健的双向逻辑进行合并 ---
+    merged_scenes_unformatted = []
+    current_merged_scene = scenes_with_content[0].copy()
+    merge_tolerance = merge_tolerance_ms
+
+    for i in range(1, len(scenes_with_content)):
+        next_scene = scenes_with_content[i]
+
+        # 条件1: 当前场景的最后一个文本，是否“溢出”到了下一个场景
+        cond1 = current_merged_scene['content_list'][-1]['end'] > (next_scene['start'] + merge_tolerance)
+        # 条件2: 下一个场景的第一个文本，是否实际上开始于当前场景之内
+        cond2 = next_scene['content_list'][0]['start'] < (current_merged_scene['end'] - merge_tolerance)
+
+        if cond1 or cond2:
+            current_merged_scene['end'] = max(current_merged_scene['end'], next_scene['end'])
+            current_merged_scene['content_list'].extend(next_scene['content_list'])
+            current_merged_scene['content_list'].sort(key=lambda x: x['start'])
+        else:
+            merged_scenes_unformatted.append(current_merged_scene)
+            current_merged_scene = next_scene.copy()
+
+    merged_scenes_unformatted.append(current_merged_scene)
+
+    # --- [核心修正] 步骤 4: 格式化输出，确保字段顺序 ---
+    final_scenes = []
+    for scene in merged_scenes_unformatted:
+        formatted_scene = {
+            'scene_start': scene['start'],
+            'scene_end': scene['end'],
+            'content_list': scene['content_list']
+        }
+        final_scenes.append(formatted_scene)
+
+    return final_scenes
+
 @timeit_print
 def get_scene_sub_text(video_path, sorted_scene_timestamp, fixed_speech_asr_with_sub_text):
     base_name = os.path.basename(video_path).split('.')[0]
@@ -1510,12 +1644,12 @@ def get_scene_sub_text(video_path, sorted_scene_timestamp, fixed_speech_asr_with
         sub_text_list = speech_info.get('sub_text', '')
         speaker = speech_info.get('speaker', '')
         for sub_text in sub_text_list:
-            # if speaker == 'owner_speaker':
+            # if speaker != 'owner_speaker':
             sub_text['speaker'] = speaker
             all_sub_text_list.append(sub_text)
     # 将all_sub_text_list按照end升序排序
     all_sub_text_list.sort(key=lambda x: x.get('end', 0))
-    scene_sub_text = process_scenes_refactored(all_sub_text_list, merged_timestamps)
+    scene_sub_text = process_scenes_simple(all_sub_text_list, merged_timestamps)
     output_file_scene_sub_text = f'output/{base_name}/{base_name}_scene_sub_text.json'
     save_json(output_file_scene_sub_text, scene_sub_text)
     return scene_sub_text
