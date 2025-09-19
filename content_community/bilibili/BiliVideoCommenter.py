@@ -38,11 +38,11 @@ lin_commenter = BilibiliCommenter(lin_total_cookie, lin_csrf_token)
 commenter_list.append(lin_commenter)
 cookie_list.append(lin_total_cookie)
 
-yang_total_cookie = get_config("yang_bilibili_total_cookie")
-yang_csrf_token = get_config("yang_bilibili_csrf_token")
-yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
-commenter_list.append(yang_commenter)
-cookie_list.append(yang_total_cookie)
+# yang_total_cookie = get_config("yang_bilibili_total_cookie")
+# yang_csrf_token = get_config("yang_bilibili_csrf_token")
+# yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
+# commenter_list.append(yang_commenter)
+# cookie_list.append(yang_total_cookie)
 
 
 tao_total_cookie = get_config("tao_bilibili_total_cookie")
@@ -112,7 +112,7 @@ CONFIG = {
     "STRATEGIES": {
         "popular": True,  # 热门视频通常不是目标用户，可以关闭
         "following": False,  # 已经关注的UP主不需要再处理
-        "search": False,
+        "search": True,
     },
     "COOKIE": total_cookie,
     "CSRF_TOKEN": csrf_token,
@@ -585,9 +585,10 @@ def comment_worker():
         title = valid_video.get('title', '无标题')
         desc = valid_video.get('description', '')
         text_to_check = f"{title} {desc}".lower()
+        source = valid_video.get('_source_strategy', 'unknown')
         should_comment = any(keyword.lower() in text_to_check for keyword in CONFIG['FOLLOW_KEYWORDS'])
-        should_comment = True
-        if not should_comment:
+        # should_comment = True
+        if not should_comment and source != 'popular':
             logging.info(f"视频 BVID {bvid} 标题和描述均不包含关注关键词，跳过评论。")
             continue
         logging.info(f"开始处理视频：BVID {bvid} | 标题：{title}，将由所有评论者逐一评论并发送弹幕。")
@@ -670,6 +671,7 @@ def follower_worker(csrf_token):
 
         title = video.get('title', '')
         desc = video.get('description', '')
+        source = video.get('_source_strategy', 'unknown')
         # 兼容不同API返回的用户ID字段 ('mid' 或 'owner.mid')
         author_id = video.get('mid')
         if not author_id and 'owner' in video and isinstance(video['owner'], dict):
@@ -677,6 +679,9 @@ def follower_worker(csrf_token):
 
         if not author_id:
             logging.info(f"视频 BVID {video.get('bvid')} 缺少作者ID，跳过。")
+            continue
+        if 'popular' != source:
+            logging.info(f"视频 BVID {video.get('bvid')} 来源于 '{source}'，跳过。")
             continue
 
         # 检查标题或描述是否包含关注关键词

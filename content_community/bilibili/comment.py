@@ -343,7 +343,7 @@ class BilibiliCommenter:
             print(f"当前 Cookies: {cookies}")
 
         if not (self.img_key and self.sub_key):
-            print("警告：未能成功加载 WBI Keys，评论或点赞请求可能失败或被风控。")
+            print(f"警告：未能成功加载 WBI Keys，评论或点赞请求可能失败或被风控。{self.all_params}")
 
     def send_danmaku(self, bvid: str, msg: str, progress: int, mode: int = 1, fontsize: int = 25, color: int = 16777215,
                      pool: int = 0, is_up: bool = False) -> bool:
