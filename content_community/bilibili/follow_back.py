@@ -5,14 +5,14 @@ import time
 import random
 import re  # 用于解析Cookie
 import logging
-from common_utils.common_utils import get_config
+from common_utils.common_utils import get_config, read_json, save_json
 from content_community.bilibili.BiliVideoCommenter import load_processed_set
 
 # 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-need_clear = True
+need_clear = False
 
-total_cookie = get_config("dahao_bilibili_total_cookie")
+total_cookie = get_config("mama_bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为
@@ -209,15 +209,35 @@ def save_followers_set(filename, followers_set):
         logging.error(f"保存粉丝列表到 {filename} 失败: {e}")
 
 
-def update_followers(new_followers_set):
-    # 加载之前保存的粉丝列表（如果存在）
-    previous_followers_set = load_followers_set("followers_fids.json")
-    # 取并集更新后的粉丝列表和之前的粉丝列表
-    updated_followers_set = previous_followers_set.union(new_followers_set)
+def update_followers(new_followers_iterable, path: str = "followers_fids.json"):
+    """
+    new_followers_iterable: 新抓取到的 followers（可以是 set/list/iterable）
+    结果会以 JSON list 的形式保存到 path，且新出现的 ID 会追加到文件末尾（并去重）。
+    """
+    # 读已有（保持原有顺序）
+    previous_list = read_json(path)
+    previous_set = set(previous_list)
+
+    # 保证 new_followers 有序（保持传入顺序），并过滤掉已有的
+    new_followers_list = list(new_followers_iterable)
+    new_added = [fid for fid in new_followers_list if fid not in previous_set]
+
+    if new_added:
+        logging.info(f"新添加的粉丝UID示例（最多5个）: {new_added[:5]}")
+
+    # 把新加的追加到旧列表末尾
+    updated_list = list(previous_list) + new_added
+
+    # 去重
+    updated_list = list(dict.fromkeys(updated_list))
+
     logging.info(
-        f"之前的粉丝列表中有 {len(previous_followers_set)} 条记录，最新的粉丝列表中有 {len(new_followers_set)} 条记录。 合并之后的粉丝列表中有 {len(updated_followers_set)} 条记录。")
-    # 保存更新后的粉丝列表到文件
-    save_followers_set("followers_fids.json", updated_followers_set)
+        f"之前的粉丝记录: {len(previous_list)} 条，" 
+        f"新抓取: {len(new_followers_list)} 条，" 
+        f"合并后: {len(updated_list)} 条。"
+    )
+
+    save_json(path, updated_list)
 
 
 def main_task():
@@ -293,10 +313,11 @@ def main_task():
     update_followers(new_followers_set)  # 更新粉丝列表
     new_followings_set, total_count = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
     # 将new_followings_set的元素全部变成字符串形式
-    new_followings_set = {str(fid) for fid in new_followings_set}
 
     # 1. 加载两个来源的数据到独立的集合
-    followers_fids_set = load_processed_set("followers_fids.json")
+    followers_fids_set = read_json("followers_fids.json")
+    # 将followers_fids_set逆序
+    followers_fids_set.reverse()
     processed_fids_set = load_processed_set("target_processed_fids.json")
 
     # 2. 创建一个空列表，用于存放最终需要 follow 的 FID (保持顺序)
@@ -304,7 +325,7 @@ def main_task():
     failed_set = load_processed_set("failed_set.json")
 
     # 3. 使用一个集合来跟踪已经添加到列表中的 FID，避免重复
-    already_added_to_list = set()
+    already_added_to_list = []
 
     # 4. **优先处理来自 followers_fids.json 的 FIDs**
     #    将那些不在 new_followings_set 中的添加到列表中
@@ -313,7 +334,7 @@ def main_task():
         if fid not in new_followings_set:
             if fid not in already_added_to_list and fid not in failed_set:  # 确保不会重复添加 (虽然这里不应该重复)
                 followers_to_follow_list.append(fid)
-                already_added_to_list.add(fid)
+                already_added_to_list.append(fid)
                 # print(f"Added prioritized FID: {fid}") # 可选：用于调试
 
     # # 5. **处理来自 processed_fids.json 的剩余 FIDs**
