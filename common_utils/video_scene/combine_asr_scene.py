@@ -22,7 +22,7 @@ from typing import List, Dict, Any, Tuple
 from LLM.gemini import get_llm_content, get_llm_content_gemini_flash_video
 from common_utils.ASR.asr_fusion import gen_precise_asr
 from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time, read_file_to_str, string_to_object, \
-    timeit_print
+    timeit_print, is_valid_target_file_simple
 from common_utils.image_utils import save_frames_around_timestamp
 from common_utils.split_scenes import find_and_split_scenes, split_scenes_json
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
@@ -846,65 +846,6 @@ def split_video():
         clip_video_ms(video_path, start_time, end_time, f'scenes/{count}.mp4')
 
 
-def gen_new_video():
-    # 读取test1_scene_format_new_script.json
-    script_info = read_json('test1_scene_format_new_script.json')
-    acts = script_info['new_video_script']['acts']
-    audio_video_path_list = []
-    for act in acts:
-        scenes = act['scenes']
-        for scene in scenes:
-            original_scene_ref = scene['original_scene_ref']
-            original_video_path = f'scenes/{original_scene_ref}.mp4'
-            text = scene['new_script_text']
-            output_path = f'scenes/{original_scene_ref}_new.mp4'
-            audio_video_path = output_path.replace('.mp4', '_av.mp4')
-            # if os.path.exists(audio_video_path):
-            #     audio_video_path_list.append(audio_video_path)
-            #     continue
-            video_duration = probe_duration(original_video_path)
-            audio_path = output_path.replace('.mp4', '.wav')
-            duration = generate_audio_and_get_duration_sync(
-                text=text,
-                output_filename=str(audio_path),
-                voice_name="zh-CN-YunjianNeural",
-                trim_silence=False,
-                # rate="+15%",
-                # pitch='+10Hz',
-            )
-
-            segments_info = [{
-                'startTime': "00:00:00.000",
-                'endTime': ms_to_time(video_duration * 1000),
-                'outputPath': str(audio_path),
-                'trimmedDuration': duration,
-            }]
-            redub_video_with_ffmpeg(original_video_path, segments_info, output_path=str(audio_video_path))
-
-            subtitle_data = [{
-                'startTime': "00:00:00.000",
-                'endTime': ms_to_time(duration * 1000),
-                'optimizedText': text
-            }]
-            subtitle_video_path = output_path.replace('.mp4', '_sub.mp4')
-            add_subtitles_to_video(
-                video_path=str(audio_video_path),
-                subtitles_info=subtitle_data,
-                output_path=str(subtitle_video_path),
-                font_size=70,
-                bottom_margin=30
-            )
-
-            audio_video_path_list.append(subtitle_video_path)
-
-    merge_videos_ffmpeg(audio_video_path_list, output_path=f'scenes/final_video.mp4')
-    bgm_path = r"W:\project\python_project\watermark_remove\content_community\app\bgm_audio" + os.sep + '4f7ed367245a6ba525d07f21d4790a25.wav'
-    if bgm_path and os.path.exists(bgm_path):
-        # print(f"正在为视频添加背景音乐: {bgm_path}")
-        final_with_bgm_path = 'scenes/final_video_with_bgm.mp4'
-        add_bgm_to_video(f'scenes/final_video.mp4', bgm_path, str(final_with_bgm_path))
-
-
 def reorganize_scene_asr_fun():
     video_path = 'test1.mp4'
     scene_info = video_path.replace('.mp4', '.json')
@@ -1059,7 +1000,7 @@ def check_fix_speech_asr(fixed_speech_asr_info, speech_asr_info):
     # 检查'owner_speaker'是否为空或者是否是已存在的说话人
     speaker_list = {entry.get('speaker') for entry in speech_asr_info if 'speaker' in entry}
     owner_speaker = fixed_speech_asr_info.get('owner_speaker', '')
-    if not owner_speaker or owner_speaker not in speaker_list:
+    if owner_speaker and owner_speaker not in speaker_list:
         print(f"[ERROR] 修复后的说话人文本中 'owner_speaker' 无效: '{owner_speaker}'")
         return False
 
@@ -1111,7 +1052,7 @@ def gen_asr(video_path):
     start_time = time.time()
     base_name = os.path.basename(video_path).split('.')[0]
     speech_asr_output_file = f'output/{base_name}/{base_name}_speech_asr.json'
-    if not os.path.exists(speech_asr_output_file) or os.path.getsize(speech_asr_output_file) == 0:
+    if not is_valid_target_file_simple(speech_asr_output_file):
         result_file_info = gen_precise_asr(video_path, speech_asr_output_file)
         save_json(speech_asr_output_file, result_file_info)
     print(f"生成精准asr与说话人信息文件耗时: {time.time() - start_time} 秒")
@@ -1141,7 +1082,7 @@ def gen_asr(video_path):
         entry.pop('speaker', None)
 
     fixed_speech_asr_output_file = f'output/{base_name}/{base_name}_fixed_speech_asr.json'
-    if not os.path.exists(fixed_speech_asr_output_file) or os.path.getsize(fixed_speech_asr_output_file) == 0:
+    if not is_valid_target_file_simple(fixed_speech_asr_output_file):
         fixed_speech_asr_info = fix_speech_asr(origin_sentence_info, video_path)
         save_json(fixed_speech_asr_output_file, fixed_speech_asr_info)
     print(f"纠正说话人文本耗时: {time.time() - start_time} 秒")
@@ -1238,7 +1179,7 @@ def get_scene(video_path):
     for high_threshold in [30, 40, 50, 60, 70]:
         start_time = time.time()
         scene_info_file = f'output/{basename}/scenes_{basename}_{high_threshold}/scene_info.json'
-        if os.path.exists(scene_info_file):
+        if is_valid_target_file_simple(scene_info_file):
             # print(f"场景信息文件已存在，跳过处理: {scene_info_file}")
             all_scene_info_dict[high_threshold] = read_json(scene_info_file)
             continue
@@ -1634,6 +1575,204 @@ def process_scenes_simple(text_results, scene_splits, merge_tolerance_ms=100):
 
     return final_scenes
 
+
+def _contains_owner_speaker(scene, owner_speaker):
+    """辅助函数：检查场景的 content_list 是否包含 owner_speaker 的文本。"""
+    if not scene['content_list']:
+        return False
+    for text in scene['content_list']:
+        if text.get('speaker') == owner_speaker:
+            return True
+    return False
+
+
+def process_scenes_advanced(
+        text_results,
+        scene_splits,
+        owner_speaker='owner_speaker',
+        merge_tolerance_ms=500,
+        keep_empty_scenes=False,
+        min_scene_duration_ms=10000
+):
+    """
+    一个高级的、分阶段的场景文本整理与合并函数 (V6)。
+
+    核心逻辑：
+    1. 初步分配：将文本分配到对应的场景中。
+    2. (可选) 过滤空场景：根据 `keep_empty_scenes` 参数决定是否移除无文本的场景。
+    3. 第一阶段合并：仅当 `owner_speaker` 的文本跨越场景边界时，才触发合并。
+    4. 第二阶段合并 (Short Scene Cleanup):
+       - 识别时长小于 `min_scene_duration_ms` 且不含 `owner_speaker` 的场景。
+       - 按照 “优先向上合并，其次向下合并” 的逻辑进行清理合并。
+    5. 格式化输出。
+
+    Args:
+        text_results (list): 文本识别结果列表。
+        scene_splits (list): 最小场景切分列表。
+        owner_speaker (str): 指定的核心说话人。
+        merge_tolerance_ms (int): 合并容差（毫秒）。
+        keep_empty_scenes (bool): 是否保留没有文本内容的场景，默认为 False。
+        min_scene_duration_ms (int): 第二阶段合并时，用于判断场景是否过短的阈值。
+
+    Returns:
+        list: 最终整理后的场景列表。
+    """
+    if not scene_splits:
+        return []
+
+    # --- 步骤 0: 预处理，构建场景对象 ---
+    # (此部分与之前版本相同)
+    scenes = []
+    if len(scene_splits) > 1:
+        for i in range(len(scene_splits) - 1):
+            scenes.append({
+                'start': scene_splits[i][0],
+                'end': scene_splits[i + 1][0],
+                'content_list': []
+            })
+        last_scene_start = scene_splits[-1][0]
+        max_text_end = max(item['end'] for item in text_results) if text_results else last_scene_start
+        scenes.append({
+            'start': last_scene_start,
+            'end': max(last_scene_start, max_text_end),
+            'content_list': []
+        })
+    else:  # 处理只有一个场景切分点的边缘情况
+        start_time = scene_splits[0][0] if scene_splits else 0
+        max_text_end = max(item['end'] for item in text_results) if text_results else start_time
+        scenes.append({'start': start_time, 'end': max_text_end, 'content_list': []})
+
+    if not scenes:
+        return []
+
+    # --- 步骤 1: 初步分配文本 ---
+    # (此部分与之前版本相同)
+    for text in text_results:
+        best_scene_idx = -1
+        max_overlap = 0
+        for i, scene in enumerate(scenes):
+            overlap_duration = max(0, min(text['end'], scene['end']) - max(text['start'], scene['start']))
+            if overlap_duration > max_overlap:
+                max_overlap = overlap_duration
+                best_scene_idx = i
+        if best_scene_idx == -1:
+            min_distance, best_scene_idx = float('inf'), -1
+            for i, scene in enumerate(scenes):
+                distance = min(abs(scene['start'] - text['end']), abs(text['start'] - scene['end']))
+                if distance < min_distance:
+                    min_distance, best_scene_idx = distance, i
+        if best_scene_idx != -1:
+            scenes[best_scene_idx]['content_list'].append(text)
+
+    # --- [核心修正 1] 步骤 2: 根据参数过滤空场景并排序 ---
+    processed_scenes = []
+    for scene in scenes:
+        if scene['content_list']:
+            scene['content_list'].sort(key=lambda x: x['start'])
+            processed_scenes.append(scene)
+        elif keep_empty_scenes:
+            processed_scenes.append(scene)
+
+    if not processed_scenes:
+        return []
+
+    # --- 步骤 3: 第一阶段合并 (Owner Speaker驱动) ---
+    if len(processed_scenes) > 1:
+        first_pass_merged = []
+        current_merged_scene = processed_scenes[0].copy()
+        for i in range(1, len(processed_scenes)):
+            next_scene = processed_scenes[i]
+
+            # 只有场景中有内容时，才进行合并判断
+            cond1, cond2 = False, False
+            if current_merged_scene['content_list'] and next_scene['content_list']:
+                last_text = current_merged_scene['content_list'][-1]
+                first_text = next_scene['content_list'][0]
+                # 条件1: 当前场景的最后一个 owner_speaker 文本 "溢出"
+                cond1 = (last_text.get('speaker') == owner_speaker and
+                         last_text['end'] > (next_scene['start'] + merge_tolerance_ms))
+                # 条件2: 下一个场景的第一个 owner_speaker 文本 "提前开始"
+                cond2 = (first_text.get('speaker') == owner_speaker and
+                         first_text['start'] < (current_merged_scene['end'] - merge_tolerance_ms))
+
+            if cond1 or cond2:
+                current_merged_scene['end'] = max(current_merged_scene['end'], next_scene['end'])
+                current_merged_scene['content_list'].extend(next_scene['content_list'])
+                current_merged_scene['content_list'].sort(key=lambda x: x['start'])
+            else:
+                first_pass_merged.append(current_merged_scene)
+                current_merged_scene = next_scene.copy()
+        first_pass_merged.append(current_merged_scene)
+    else:
+        first_pass_merged = processed_scenes
+
+    # --- [核心新增] 步骤 4: 第二阶段合并 (Short Scene Cleanup) ---
+    if len(first_pass_merged) <= 1:
+        final_scenes_unformatted = first_pass_merged
+    else:
+        final_scenes_unformatted = []
+        i = 0
+        while i < len(first_pass_merged):
+            current_scene = first_pass_merged[i]
+
+            # 判断当前场景是否是需要清理的短场景
+            is_short = (current_scene['end'] - current_scene['start']) < min_scene_duration_ms
+            has_owner = _contains_owner_speaker(current_scene, owner_speaker)
+
+            if not is_short or has_owner:
+                final_scenes_unformatted.append(current_scene)
+                i += 1
+                continue
+
+            # --- 执行合并逻辑 ---
+            # 1. 尝试向上合并
+            can_merge_up = False
+            if final_scenes_unformatted:  # 确保有上一个场景可以合并
+                prev_scene = final_scenes_unformatted[-1]
+                if not prev_scene['content_list'] or prev_scene['content_list'][-1].get('speaker') != owner_speaker:
+                    can_merge_up = True
+
+            if can_merge_up:
+                prev_scene['end'] = max(prev_scene['end'], current_scene['end'])
+                prev_scene['content_list'].extend(current_scene['content_list'])
+                prev_scene['content_list'].sort(key=lambda x: x['start'])
+                i += 1  # 当前场景已被合并，继续下一个
+                continue
+
+            # 2. 尝试向下合并
+            can_merge_down = False
+            if (i + 1) < len(first_pass_merged):  # 确保有下一个场景
+                next_scene = first_pass_merged[i + 1]
+                if not next_scene['content_list'] or next_scene['content_list'][0].get('speaker') != owner_speaker:
+                    can_merge_down = True
+
+            if can_merge_down:
+                next_scene = first_pass_merged[i + 1]
+                # 创建一个新的合并场景，而不是直接修改 next_scene
+                merged_down_scene = current_scene.copy()
+                merged_down_scene['end'] = max(current_scene['end'], next_scene['end'])
+                merged_down_scene['content_list'].extend(next_scene['content_list'])
+                merged_down_scene['content_list'].sort(key=lambda x: x['start'])
+                final_scenes_unformatted.append(merged_down_scene)
+                i += 2  # 跳过当前和下一个场景
+                continue
+
+            # 3. 无法合并，保持独立
+            final_scenes_unformatted.append(current_scene)
+            i += 1
+
+    # --- 步骤 5: 格式化输出 ---
+    final_scenes = []
+    for scene in final_scenes_unformatted:
+        formatted_scene = {
+            'scene_start': scene['start'],
+            'scene_end': scene['end'],
+            'content_list': scene['content_list']
+        }
+        final_scenes.append(formatted_scene)
+
+    return final_scenes
+
 @timeit_print
 def get_scene_sub_text(video_path, sorted_scene_timestamp, fixed_speech_asr_with_sub_text):
     base_name = os.path.basename(video_path).split('.')[0]
@@ -1649,7 +1788,7 @@ def get_scene_sub_text(video_path, sorted_scene_timestamp, fixed_speech_asr_with
             all_sub_text_list.append(sub_text)
     # 将all_sub_text_list按照end升序排序
     all_sub_text_list.sort(key=lambda x: x.get('end', 0))
-    scene_sub_text = process_scenes_simple(all_sub_text_list, merged_timestamps)
+    scene_sub_text = process_scenes_advanced(all_sub_text_list, merged_timestamps)
     output_file_scene_sub_text = f'output/{base_name}/{base_name}_scene_sub_text.json'
     save_json(output_file_scene_sub_text, scene_sub_text)
     return scene_sub_text
@@ -1830,7 +1969,7 @@ def gen_new_video_script(video_path, scene_sub_text, target_speaker='owner_speak
     output_file_final = f'output/{base_name}/{base_name}_scene_format_new_script.json'
     output_file_scene_info = f'output/{base_name}/{base_name}_merge_speaker_scene_info.json'
 
-    if os.path.exists(output_file_final):
+    if is_valid_target_file_simple(output_file_final):
         new_video_script = read_json(output_file_final)
         scene_info = read_json(output_file_scene_info)
         return new_video_script, scene_info
@@ -1868,6 +2007,7 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
     new_scene_list = final_video_script['场景顺序与新文案']
     # new_scene_list = new_scene_list[:2]
     for fused_new_scene in new_scene_list:
+        print(f'处理新场景: new_{fused_new_scene["new_scene_number"]}_origin_{fused_new_scene["scene_number"]} 进度: {new_scene_list.index(fused_new_scene)+1}/{len(new_scene_list)}')
         scene_start = fused_new_scene.get('scene_start')
         scene_end = fused_new_scene.get('scene_end')
 
@@ -1917,7 +2057,8 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
                 if seg_end > seg_start:
                     segment_output_scene_file = f'output/{base_name}/split_scene/new_{fused_new_scene["new_scene_number"]}_origin_{fused_new_scene["scene_number"]}_part{sub_count}.mp4'
                     output_path = segment_output_scene_file
-                    if not os.path.exists(segment_output_scene_file) or os.path.getsize(segment_output_scene_file) == 0:
+                    if not is_valid_target_file_simple(segment_output_scene_file):
+                        print(f'正在裁剪视频片段: {segment_output_scene_file} 时间段: {seg_start}-{seg_end}')
                         clip_video_ms(video_path, seg_start, seg_end, segment_output_scene_file)
 
                     if sub_count == 2:
@@ -1927,7 +2068,7 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
                     need_merge_video_file.append(output_path)
         else:
             output_scene_file = f'output/{base_name}/split_scene/new_{fused_new_scene["new_scene_number"]}_origin_{fused_new_scene["scene_number"]}_part{0}.mp4'
-            if not os.path.exists(output_scene_file) or os.path.getsize(output_scene_file) == 0:
+            if not is_valid_target_file_simple(output_scene_file):
                 clip_video_ms(video_path, scene_start, scene_end, output_scene_file)
             need_merge_video_file.append(output_scene_file)
     final_output_path = f'output/{base_name}/{base_name}_remake.mp4'
@@ -1941,7 +2082,7 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
     return final_output_path
 
 @timeit_print
-def video_remake(video_path, output_path):
+def video_remake(video_path):
     fixed_speech_asr_with_sub_text = gen_asr(video_path)
 
     sorted_scene_timestamp = get_scene(video_path)
@@ -1954,7 +2095,7 @@ def video_remake(video_path, output_path):
 
 
 if __name__ == '__main__':
-    video_remake('test2.mp4', 'output/test2/test2_remake.mp4')
+    video_remake('test4.mp4')
     #
     # get_scene()
     #

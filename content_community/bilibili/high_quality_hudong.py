@@ -1570,8 +1570,8 @@ def fun():
         commenter_map = {}
         for key, detail_config in config_map.items():
             name = detail_config.get('name', key)
-            if name in ['mama']:
-                continue
+            # if name in ['mama']:
+            #     continue
             cookie = detail_config.get('total_cookie', '')
             all_params = detail_config.get('all_params', {})
             commenter_map[key] = BilibiliCommenter(

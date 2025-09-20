@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import json
 import tempfile
+from pathlib import Path
 from typing import Union
 
 import ffmpeg
@@ -2445,7 +2446,8 @@ def clip_video_ms(
 
     # print("模式: 精确重编码 (速度较慢)")
     # print(f"正在执行命令: {command}")
-
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         # 执行命令并等待完成
         result = subprocess.run(

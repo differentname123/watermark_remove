@@ -1691,3 +1691,15 @@ def read_file_to_str(filepath: Union[str, Path],
     p = Path(filepath)
     with p.open("r", encoding=encoding, errors=errors) as f:
         return f.read()
+
+
+def is_valid_target_file_simple(path, min_size_bytes: int = 1) -> bool:
+    """
+    极简判断：文件存在且大小 >= min_size_bytes。
+    默认 min_size_bytes=1 （即大小必须大于 0 字节）。
+    """
+    p = Path(path)
+    try:
+        return p.exists() and p.stat().st_size >= int(min_size_bytes)
+    except Exception:
+        return False

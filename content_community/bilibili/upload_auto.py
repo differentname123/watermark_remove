@@ -701,10 +701,7 @@ def auto_upload():
         userName = value.get('userName', 'other')
         user_videos = bvid_file_data.get(userName, [])
         today_start = dt.datetime.combine(dt.date.today(), dt.time.min).timestamp()
-        recent_videos = [v for v in user_videos if v.get('created') and v['created'] >= today_start]
-        if len(recent_videos) >= 19:
-            print(f"⚠️ 跳过 {userName} 用户上传：今日已上传 {len(recent_videos)} 个视频，达到上限。")
-            continue
+
 
 
         start_time = time.time()
@@ -751,7 +748,11 @@ def auto_upload():
             userName = 'base'
             continue
         config = config_map.get(userName, config_map['base'])
+        recent_videos = [v for v in user_videos if v.get('created') and v['created'] >= today_start]
         print(f"🔍 处理 {key} (用户: {userName}) 今日已上传 {len(recent_videos)} 个视频，时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+        if len(recent_videos) >= 19:
+            print(f"⚠️ 跳过 {userName} 用户上传：今日已上传 {len(recent_videos)} 个视频，达到上限。")
+            continue
         video_path_list = []
         best_scheme_final = None
         best_cover_path = None
