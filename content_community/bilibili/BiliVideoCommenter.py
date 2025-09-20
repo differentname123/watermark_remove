@@ -25,87 +25,14 @@ csrf_token = get_config("dahao_bilibili_csrf_token")
 commenter_list = []
 cookie_list = []
 
-yiyi_total_cookie = get_config("yiyi_bilibili_total_cookie")
-yiyi_csrf_token = get_config("yiyi_bilibili_csrf_token")
-yiyi_commenter = BilibiliCommenter(yiyi_total_cookie, yiyi_csrf_token)
-commenter_list.append(yiyi_commenter)
-cookie_list.append(yiyi_total_cookie)
 
-
-lin_total_cookie = get_config("lin_bilibili_total_cookie")
-lin_csrf_token = get_config("lin_bilibili_csrf_token")
-lin_commenter = BilibiliCommenter(lin_total_cookie, lin_csrf_token)
-commenter_list.append(lin_commenter)
-cookie_list.append(lin_total_cookie)
-
-yang_total_cookie = get_config("yang_bilibili_total_cookie")
-yang_csrf_token = get_config("yang_bilibili_csrf_token")
-yang_commenter = BilibiliCommenter(yang_total_cookie, yang_csrf_token)
-commenter_list.append(yang_commenter)
-cookie_list.append(yang_total_cookie)
-
-
-tao_total_cookie = get_config("tao_bilibili_total_cookie")
-tao_csrf_token = get_config("tao_bilibili_csrf_token")
-tao_commenter = BilibiliCommenter(tao_total_cookie, tao_csrf_token)
-commenter_list.append(tao_commenter)
-cookie_list.append(tao_total_cookie)
-
-
-xiaoxue_total_cookie = get_config("xiaoxue_bilibili_total_cookie")
-xiaoxue_csrf_token = get_config("xiaoxue_bilibili_csrf_token")
-xiaoxue_commenter = BilibiliCommenter(xiaoxue_total_cookie, xiaoxue_csrf_token)
-commenter_list.append(xiaoxue_commenter)
-cookie_list.append(xiaoxue_total_cookie)
-
-jie_total_cookie = get_config("jie_bilibili_total_cookie")
-jie_csrf_token = get_config("jie_bilibili_csrf_token")
-jie_commenter = BilibiliCommenter(jie_total_cookie, jie_csrf_token)
-commenter_list.append(jie_commenter)
-cookie_list.append(jie_total_cookie)
-
-hong_total_cookie = get_config("hong_bilibili_total_cookie")
-hong_csrf_token = get_config("hong_bilibili_csrf_token")
-hong_commenter = BilibiliCommenter(hong_total_cookie, hong_csrf_token)
-commenter_list.append(hong_commenter)
-cookie_list.append(hong_total_cookie)
-
-qiqi_total_cookie = get_config("qiqi_bilibili_total_cookie")
-qiqi_csrf_token = get_config("qiqi_bilibili_csrf_token")
-qiqi_commenter = BilibiliCommenter(qiqi_total_cookie, qiqi_csrf_token)
-commenter_list.append(qiqi_commenter)
-cookie_list.append(qiqi_total_cookie)
-
-yan_total_cookie = get_config("yan_bilibili_total_cookie")
-yan_csrf_token = get_config("yan_bilibili_csrf_token")
-yan_commenter = BilibiliCommenter(yan_total_cookie, yan_csrf_token)
-commenter_list.append(yan_commenter)
-cookie_list.append(yan_total_cookie)
-
-mama_total_cookie = get_config("mama_bilibili_total_cookie")
-mama_csrf_token = get_config("mama_bilibili_csrf_token")
-mama_commenter = BilibiliCommenter(mama_total_cookie, mama_csrf_token)
-commenter_list.append(mama_commenter)
-cookie_list.append(mama_total_cookie)
-
-xiaosu_total_cookie = get_config("xiaosu_bilibili_total_cookie")
-xiaosu_csrf_token = get_config("xiaosu_bilibili_csrf_token")
-xiaosu_commenter = BilibiliCommenter(xiaosu_total_cookie, xiaosu_csrf_token)
-commenter_list.append(xiaosu_commenter)
-cookie_list.append(xiaosu_total_cookie)
-
-jun_total_cookie = get_config("jun_bilibili_total_cookie")
-jun_csrf_token = get_config("jun_bilibili_csrf_token")
-jun_commenter = BilibiliCommenter(jun_total_cookie, jun_csrf_token)
-commenter_list.append(jun_commenter)
-cookie_list.append(jun_total_cookie)
-
-jj_total_cookie = get_config("jj_bilibili_total_cookie")
-jj_csrf_token = get_config("jj_bilibili_csrf_token")
-jj_commenter = BilibiliCommenter(jj_total_cookie, jj_csrf_token)
-commenter_list.append(jj_commenter)
-cookie_list.append(jj_total_cookie)
-
+user_name_list = ['yiyi', 'lin', 'yang', 'tao', 'xiaoxue', 'jie', 'hong', 'qiqi', 'yan', 'mama', 'xiaosu', 'jun', 'jj']
+for name in user_name_list:
+    if not get_config(f"{name}_bilibili_total_cookie") or not get_config(f"{name}_bilibili_csrf_token"):
+        logging.error(f"请在配置文件中设置{name}_bilibili_total_cookie和{name}_bilibili_csrf_token")
+        exit(1)
+    commenter_list.append(BilibiliCommenter(get_config(f"{name}_bilibili_total_cookie"), get_config(f"{name}_bilibili_csrf_token")))
+    cookie_list.append(get_config(f"{name}_bilibili_total_cookie"))
 
 
 CONFIG = {
@@ -723,7 +650,7 @@ def follower_worker(csrf_token):
 
 
 if __name__ == '__main__':
-    if False:
+    if True:
         # 清楚DISCOVERED_VIDEOS_FILE.json中的数据
         if os.path.exists(CONFIG['DISCOVERED_VIDEOS_FILE']):
             os.remove(CONFIG['DISCOVERED_VIDEOS_FILE'])
