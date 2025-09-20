@@ -671,7 +671,11 @@ def auto_upload():
       以确保同一用户同一时刻只会有一个上传任务在运行。
     """
     global upload_log_global
-    bvid_file_data = read_json(bvid_file_path)
+    try:
+        bvid_file_data = read_json(bvid_file_path)
+    except Exception as e:
+        print(f"❌ 读取 {bvid_file_path} 失败：{e}")
+        bvid_file_data = {}
 
 
     temp_set: Set[str] = set()  # 临时集合，记录被跳过/需持久化的任务
