@@ -301,7 +301,7 @@ def get_llm_content_gemini_flash_video(
 
         video_file = None
         try:
-            print(f"[INFO] 使用 API Key “{key_name}” 上传视频… {model_name}， {video_path}")
+            print(f"[INFO] 使用 API Key “{key_name}” prompt length: {len(prompt)} 上传视频… {model_name}， {video_path}")
             api_key_manager.record_success(key_name)
             video_file = genai_flash.upload_file(path=video_path)
 
