@@ -18,8 +18,9 @@ import copy
 import random
 import time
 import traceback
+import datetime as dt
 
-from common_utils.common_utils import get_config, format_seconds_to_mmss
+from common_utils.common_utils import get_config, format_seconds_to_mmss, read_json
 from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover, \
     merge_videos_ffmpeg, apply_all_subtle_tweaks, _get_video_resolution, process_video_with_template, probe_duration
 from common_utils.video_utils_cut import text_image_to_video_with_subtitles, gen_ending_video
@@ -84,6 +85,7 @@ from content_community.bilibili.bilibili_uploader import upload_to_bilibili, fet
 METADATA_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache.json'           # 权威源
 UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志
 persistent_tasks_file = "../../LLM/TikTokDownloader/back_up/persistent_tasks.json"
+bvid_file_path = '../../LLM/TikTokDownloader/back_up/bvid_file.json'
 
 # ---------- 工具函数 ----------
 def load_json(path: str, default):
@@ -669,6 +671,8 @@ def auto_upload():
       以确保同一用户同一时刻只会有一个上传任务在运行。
     """
     global upload_log_global
+    bvid_file_data = read_json(bvid_file_path)
+
 
     temp_set: Set[str] = set()  # 临时集合，记录被跳过/需持久化的任务
     metadata_cache, upload_log = _load_metadata_and_log()
@@ -691,6 +695,13 @@ def auto_upload():
         if key in processed_video_id:
             continue
         userName = value.get('userName', 'other')
+        user_videos = bvid_file_data.get(userName, [])
+        today_start = dt.datetime.combine(dt.date.today(), dt.time.min).timestamp()
+        recent_videos = [v for v in user_videos if v.get('created') and v['created'] >= today_start]
+        if len(recent_videos) >= 19:
+            print(f"⚠️ 跳过 {userName} 用户上传：今日已上传 {len(recent_videos)} 个视频，达到上限。")
+            continue
+
 
         start_time = time.time()
         best_score_max = float('-inf')
@@ -736,7 +747,7 @@ def auto_upload():
             userName = 'base'
             continue
         config = config_map.get(userName, config_map['base'])
-        print(f"🔍 处理 {key} (用户: {userName})")
+        print(f"🔍 处理 {key} (用户: {userName}) 今日已上传 {len(recent_videos)} 个视频，时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
         video_path_list = []
         best_scheme_final = None
         best_cover_path = None
