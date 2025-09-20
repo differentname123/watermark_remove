@@ -12,7 +12,7 @@ from content_community.bilibili.BiliVideoCommenter import load_processed_set
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 need_clear = False
 
-total_cookie = get_config("yiyi_bilibili_total_cookie")
+total_cookie = get_config("xue_bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为
@@ -254,7 +254,8 @@ def main_task():
     # --- 阶段 1: 清理非互关用户 ---
     logging.info("\n--- 阶段 1: 开始清理非互关用户 ---")
     followers_set, followers_total_count = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
-    update_followers(followers_set)
+    if not need_clear:
+        update_followers(followers_set)
     followings_set = set()
     if need_clear:
         followings_set, followings_total_count = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
@@ -310,7 +311,8 @@ def main_task():
     logging.info("\n--- 阶段 2: 开始回关新粉丝 ---")
     # 重新获取最新的列表，因为阶段1可能已经更改了关注状态
     new_followers_set, total_count = get_user_list(URL_GET_FOLLOWERS, uid, PAGE_SIZE, "粉丝")
-    update_followers(new_followers_set)  # 更新粉丝列表
+    if not need_clear:
+        update_followers(new_followers_set)
     new_followings_set, total_count = get_user_list(URL_GET_FOLLOWINGS, uid, PAGE_SIZE, "关注")
     # 将new_followings_set的元素全部变成字符串形式
 
