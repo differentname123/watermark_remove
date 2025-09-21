@@ -24,6 +24,7 @@ from common_utils.ASR.asr_fusion import gen_precise_asr
 from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time, read_file_to_str, string_to_object, \
     timeit_print, is_valid_target_file_simple
 from common_utils.image_utils import save_frames_around_timestamp
+from common_utils.split_audio import separate_with_cli
 from common_utils.split_scenes import find_and_split_scenes, split_scenes_json
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
 from common_utils.video_utils import extract_audio_from_video, clip_video_ms, merge_videos_ffmpeg, probe_duration, \
@@ -232,8 +233,9 @@ def generate_sub_sentence_timestamps(
     """
     processed_data = deepcopy(corrected_text_data)
 
-    for segment in processed_data['fixed_asr_list']:
+    for segment in processed_data:
         final_text = segment.get("final_text", "")
+        segment['speaker'] = 'owner_speaker'
         if not final_text:
             segment['sub_text'] = []
             continue
@@ -557,6 +559,65 @@ def fix_speech_asr(speech_asr_info, video_path):
                 return None  # 达到最大重试次数后返回 None
             traceback.print_exc()
 
+def gen_audio_path(input_path: str, split_vocal=True) -> str:
+    """
+    生成处理好的音频文件路径。
+    """
+    processed_audio_path = input_path
+    input_audio_path = input_path
+    if input_path.lower().endswith(('.mp4', '.mkv', '.avi', '.mov')):
+        new_audio_file = input_path.replace('.mp4', '.wav')
+        extract_audio_from_video(input_path, new_audio_file)
+        input_audio_path = new_audio_file
+        processed_audio_path = new_audio_file
+    # 获取绝对路径
+    abs_input_path = os.path.abspath(input_path)
+    base_dir = os.path.dirname(abs_input_path)
+
+
+    if split_vocal:
+        split_audio_path = os.path.join(base_dir, "htdemucs", os.path.basename(input_audio_path).rsplit('.', 1)[0], "vocals.wav")
+        if not is_valid_target_file_simple(split_audio_path):
+            separate_with_cli(input_audio_path, base_dir)
+        if is_valid_target_file_simple(split_audio_path):
+            processed_audio_path = split_audio_path
+    print(f"处理后的音频文件路径: {processed_audio_path}")
+    return processed_audio_path
+
+def fix_owner_speaker(video_path, fixed_speech_asr_info):
+    """
+    进一步的修复主人语音，避免漏识别和误识别
+    """
+    owner_asr_list = []
+    fixed_list = fixed_speech_asr_info['fixed_asr_list']
+    for entry in fixed_list:
+        if entry.get('speaker') == 'owner_speaker' and entry.get('final_text', '').strip():
+            # 删除speaker字段
+            entry.pop('speaker', None)
+            owner_asr_list.append(entry)
+
+    retry_delay = 10
+    max_retries = 3
+    prompt_file_path = '../../content_community/app/视频分解素材_进一步进行准确的主人音频纠正.txt'
+    prompt = read_file_to_str(prompt_file_path)
+    full_prompt = f'{prompt}\n{owner_asr_list}'
+    raw = ""
+    for attempt in range(1, max_retries + 1):
+        try:
+            model_name = "gemini-2.5-pro"
+            raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
+
+            fix_speech_asr_info = string_to_object(raw)
+            return fix_speech_asr_info
+        except Exception as e:
+            print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
+            if attempt < max_retries:
+                print(f"[INFO] 正在重试... (等待 {retry_delay} 秒)")
+                time.sleep(retry_delay)  # 等待一段时间后再重试
+            else:
+                print("[ERROR] 达到最大重试次数，失败.")
+                return None  # 达到最大重试次数后返回 None
+            traceback.print_exc()
 
 @timeit_print
 def gen_asr(video_path):
@@ -567,7 +628,8 @@ def gen_asr(video_path):
     base_name = os.path.basename(video_path).split('.')[0]
     speech_asr_output_file = f'output/{base_name}/{base_name}_speech_asr.json'
     if not is_valid_target_file_simple(speech_asr_output_file):
-        result_file_info = gen_precise_asr(video_path, speech_asr_output_file)
+        processed_audio_path = gen_audio_path(video_path)
+        result_file_info = gen_precise_asr(processed_audio_path, speech_asr_output_file)
         save_json(speech_asr_output_file, result_file_info)
     print(f"生成精准asr与说话人信息文件耗时: {time.time() - start_time} 秒")
 
@@ -601,9 +663,17 @@ def gen_asr(video_path):
         save_json(fixed_speech_asr_output_file, fixed_speech_asr_info)
     print(f"纠正说话人文本耗时: {time.time() - start_time} 秒")
 
+
+
     fixed_speech_asr_info = read_json(fixed_speech_asr_output_file)
+    fix_owner_speech_asr_info_output_file = f'output/{base_name}/{base_name}_fixed_owner_speech_asr.json'
+    if not is_valid_target_file_simple(fix_owner_speech_asr_info_output_file):
+        fix_owner_speech_asr_info = fix_owner_speaker(video_path, fixed_speech_asr_info)
+        save_json(fix_owner_speech_asr_info_output_file, fix_owner_speech_asr_info)
+
+    fix_owner_speech_asr_info = read_json(fix_owner_speech_asr_info_output_file)
     fixed_speech_asr_with_sub_text_output_file = f'output/{base_name}/{base_name}_fixed_speech_asr_with_sub_text.json'
-    result = generate_sub_sentence_timestamps(asr_info_list, fixed_speech_asr_info)
+    result = generate_sub_sentence_timestamps(asr_info_list, fix_owner_speech_asr_info)
     save_json(fixed_speech_asr_with_sub_text_output_file, result)
     print(f"生成句子时间段耗时: {time.time() - start_time} 秒")
     return result
@@ -892,7 +962,7 @@ def get_scene_sub_text(video_path, sorted_scene_timestamp, fixed_speech_asr_with
     merged_timestamps = sorted_scene_timestamp
     fixed_speech_asr = fixed_speech_asr_with_sub_text
     all_sub_text_list = []
-    for speech_info in fixed_speech_asr['fixed_asr_list']:
+    for speech_info in fixed_speech_asr:
         sub_text_list = speech_info.get('sub_text', '')
         speaker = speech_info.get('speaker', '')
         for sub_text in sub_text_list:

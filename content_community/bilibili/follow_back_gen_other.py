@@ -31,7 +31,7 @@ from typing import List
 # ========== 在这里写死你要的 get_config 参数（按需修改） ==========
 COOKIE_NAMES = [
 ]
-user_name_list = ['yiyi', 'lin', 'yang', 'tao', 'xiaoxue', 'jie', 'hong', 'qiqi', 'yan', 'mama', 'xiaosu', 'jun', 'jj', 'cai']
+user_name_list = [ 'tao', 'xiaoxue', 'jie', 'qiqi', 'mama', 'xiaosu', 'jun', 'jj', 'cai', 'ruru']
 for name in user_name_list:
     cookie_var = f"{name}_bilibili_total_cookie"
     if cookie_var not in COOKIE_NAMES:
@@ -169,7 +169,7 @@ def main():
         except Exception as e:
             print(f"为 cookie '{cookie}' 生成文件失败：{e}", file=sys.stderr)
             continue
-        fname = f"follow_{safe_name(cookie)}.py"
+        fname = f"flw_{safe_name(cookie)}.py"
         out_path = src_path.parent / fname
         out_path.write_text(new_text, encoding="utf-8")
         generated_files.append((cookie, out_path))
@@ -185,7 +185,7 @@ def main():
     for cookie, out_path in generated_files:
         cmd = [sys.executable, str(out_path)]
         commands.append(cmd)
-        prefixes.append(safe_name(f"follow_{cookie}"))
+        prefixes.append(safe_name(f"flw_{cookie}"))
 
     # 创建日志目录
     log_dir = Path.cwd() / "fb_run_logs"

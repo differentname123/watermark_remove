@@ -5,12 +5,13 @@ import torch
 from pyannote.audio import Pipeline
 from pydub import AudioSegment  # 导入 pydub
 
-from common_utils.common_utils import save_json
+from common_utils.common_utils import save_json, is_valid_target_file_simple
+from common_utils.split_audio import separate_with_cli
 from common_utils.video_utils import extract_audio_from_video
 
 
 # --- 函数封装 ---
-def perform_speaker_diarization(input_audio_path: str, output_path):
+def perform_speaker_diarization(input_audio_path: str, output_path="./speaker_diarization_result.json") -> str:
     """
     对输入的音频文件执行说话人日志分析，并将结果保存为 JSON 文件。
 
@@ -24,10 +25,7 @@ def perform_speaker_diarization(input_audio_path: str, output_path):
         - 如果发生严重错误（如模型加载失败、文件未找到），脚本将终止。
     """
     # 如果input_audio_path是视频文件，则提取音频
-    if input_audio_path.lower().endswith(('.mp4', '.mkv', '.avi', '.mov')):
-        new_audio_file = input_audio_path.replace('.mp4', '.wav')
-        extract_audio_from_video(input_audio_path, new_audio_file)
-        input_audio_path = new_audio_file
+    format_input_audio_path = input_audio_path
 
     json_path = output_path
     output_dir = os.path.dirname(json_path)
@@ -70,12 +68,12 @@ def perform_speaker_diarization(input_audio_path: str, output_path):
     pipeline.to(device)
 
     # 4. 在音频文件上运行 pipeline
-    print(f"开始对 '{input_audio_path}' 进行说话人日志分析...")
+    print(f"开始对 '{format_input_audio_path}' 进行说话人日志分析...")
     try:
-        diarization = pipeline(input_audio_path)
+        diarization = pipeline(format_input_audio_path)
         print("分析完成！")
     except Exception as e:
-        print(f"音频文件 '{input_audio_path}' 分析时出错: {e}")
+        print(f"音频文件 '{format_input_audio_path}' 分析时出错: {e}")
         # 保持 exit()
         exit()
 
@@ -106,7 +104,7 @@ def perform_speaker_diarization(input_audio_path: str, output_path):
 
 # --- 如何使用函数 ---
 if __name__ == "__main__":
-    audio_file_to_process = "test.wav" # <<< 请在这里填写你的音频文件路径
+    audio_file_to_process = "test5.wav" # <<< 请在这里填写你的音频文件路径
 
     print("--- 开始执行说话人日志分析 ---")
     # 调用封装好的函数
