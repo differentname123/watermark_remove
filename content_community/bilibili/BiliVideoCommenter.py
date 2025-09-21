@@ -26,7 +26,7 @@ commenter_list = []
 cookie_list = []
 
 
-user_name_list = ['yiyi', 'lin', 'yang', 'tao', 'xiaoxue', 'jie', 'hong', 'qiqi', 'yan', 'mama', 'xiaosu', 'jun', 'jj', 'cai']
+user_name_list = ['tao', 'xiaoxue', 'jie', 'qiqi', 'mama', 'xiaosu', 'jun', 'jj', 'cai', 'ruru']
 for name in user_name_list:
     if not get_config(f"{name}_bilibili_total_cookie") or not get_config(f"{name}_bilibili_csrf_token"):
         logging.error(f"请在配置文件中设置{name}_bilibili_total_cookie和{name}_bilibili_csrf_token")

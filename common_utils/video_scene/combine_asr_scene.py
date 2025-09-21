@@ -189,17 +189,23 @@ def compute_sentence_time(starts: List[Dict], key: str = "start") -> Optional[in
     avg = weighted_sum / total_w
     return int(round(avg))
 
+
 def split_tokens_linear(tokens):
     out = []
     for it in tokens:
         w = it.get("word", "") or ""
         try:
-            s = int(it.get("start", 0)); e = int(it.get("end", 0))
+            s = int(it.get("start", 0));
+            e = int(it.get("end", 0))
         except Exception:
-            out.append(it.copy()); continue
+            out.append(it.copy());
+            continue
         if not w or len(w) <= 1 or s >= e:
-            out.append(it.copy()); continue
-        parts = list(w); total = e - s; n = len(parts)
+            out.append(it.copy());
+            continue
+        parts = list(w);
+        total = e - s;
+        n = len(parts)
         base, rem = divmod(total, n)
         cur = s
         for i, p in enumerate(parts):
@@ -211,6 +217,7 @@ def split_tokens_linear(tokens):
         if out and out[-1]["end"] != e:
             out[-1]["end"] = e
     return out
+
 
 def generate_sub_sentence_timestamps(
         asr_data_list: List[List[Dict]],
@@ -263,7 +270,7 @@ def generate_sub_sentence_timestamps(
 
             # 为每个 asr source 尝试找到 first/last char 的信息（可能为 None）
             sentence_start_candidates = []  # 每个 source 的 start（或 None）
-            sentence_end_candidates = []    # 每个 source 的 end（或 None）
+            sentence_end_candidates = []  # 每个 source 的 end（或 None）
 
             # 先处理首字符
             first_char_pinyin = get_pinyin_for_char(effective_chars[0])
@@ -330,7 +337,6 @@ def generate_sub_sentence_timestamps(
             ends = [e for e in sentence_end_candidates if e is not None]
             sentence_end_time = compute_sentence_time(ends, key="end")
 
-
             # 如果长度小且没有时间信息，则跳过（保留你原有的规则）
             if len(effective_chars) <= 5 and sentence_start_time is None and sentence_end_time is None:
                 # 不添加这一短句
@@ -372,498 +378,6 @@ def generate_sub_sentence_timestamps(
         segment['sub_text'] = final_sub_text
 
     return processed_data
-
-
-def find_silent_scene_timestamps(scenes: dict,
-                                 speakers: list,
-                                 margin_ms: int = 50) -> list:
-    """
-    找到场景时间戳中，那些在该时间点“没有人说话”的剪切点。
-
-    参数:
-      scenes: dict，场景字典，例如:
-          {
-            "场景1": ["00:00:00.000", "00:00:09.867"],
-            "场景2": ["00:00:09.867", "00:00:23.933"],
-            ...
-          }
-      speakers: list，说话人事件列表，每项包含 'start' (秒，float) 和 'end' (秒，float)。
-          例如 [{'speaker':'SPEAKER_03','start':0.0,'end':1.15,'text':...}, ...]
-      time_to_ms: 函数，接收场景中的时间字符串并返回对应的毫秒整数（用户已提供）。
-      margin_ms: int，可选。安全边界（毫秒）。如果某个说话段在 timestamp 的 margin_ms 范围内，也认为“在说话”，默认 50ms。
-
-    返回:
-      list，按时间升序的安全剪切点，每项为 dict:
-        {
-          "time_str": 原始时间字符串,
-          "time_ms": 毫秒整数
-        }
-      如果没有安全点，返回空列表。
-    """
-    # 收集所有场景时间戳（可能有重复）
-    candidate_strs = []
-    for scene_key, times in scenes.items():
-        if not isinstance(times, (list, tuple)) or len(times) < 2:
-            # 兼容只有一个时间的情况（仍然收集）
-            for t in times:
-                candidate_strs.append(t)
-        else:
-            candidate_strs.extend(times[:2])  # 只取前两个（start,end）
-    # 去重并保持可比较顺序
-    candidate_strs = sorted(set(candidate_strs), key=lambda s: time_to_ms(s))
-
-    # 把说话人时间转换为 ms 列表
-    speaker_intervals_ms = []
-    for sp in speakers:
-        try:
-            s_ms = int(round(float(sp.get('start', 0.0)) * 1000))
-            e_ms = int(round(float(sp.get('end', 0.0)) * 1000))
-        except Exception:
-            # 如果 start/end 不是数值，跳过该条
-            continue
-        # 保证 start <= end
-        if e_ms < s_ms:
-            s_ms, e_ms = e_ms, s_ms
-        speaker_intervals_ms.append((s_ms, e_ms))
-
-    safe_points = []
-    for t_str in candidate_strs:
-        try:
-            t_ms = int(time_to_ms(t_str))
-        except Exception:
-            # time_to_ms 出错则跳过该候选
-            continue
-
-        # 检查是否与任一说话段冲突（考虑 margin_ms）
-        conflict = False
-        left = t_ms - margin_ms
-        right = t_ms + margin_ms
-        for s_ms, e_ms in speaker_intervals_ms:
-            # 如果时间点（连同 margin）与说话段有重叠，即认为冲突
-            # 也即： not (right < s_ms or left > e_ms)
-            if not (right < s_ms or left > e_ms):
-                conflict = True
-                break
-
-        if not conflict:
-            safe_points.append({"time_str": t_str, "time_ms": t_ms})
-
-    # 按时间升序返回
-    safe_points.sort(key=lambda x: x["time_ms"])
-    return safe_points
-
-
-def create_speech_segments(scenes: dict,
-                           speakers: list,
-                           margin_ms: int = 50) -> list:
-    """
-    基于场景边界找到静音切点，并以此为边界生成时间段。
-    完全采纳用户指定的精确归属逻辑：
-    1. 生成一个从场景结束时间戳字符串(times[1])到 scene_key 的映射表。
-    2. 在生成时间段时，使用其 end_time_str 作为键，直接从映射表中查找归属的 scene_key。
-    (最终修正版 + 用户指定映射逻辑)
-    """
-
-    # 假设 time_to_ms 函数已定义
-    def time_to_ms(time_str):
-        # 这是一个示例实现，您可能需要根据您的时间格式进行调整
-        parts = time_str.split(':')
-        h, m, s_ms_str = parts[0], parts[1], parts[2].replace(',', '.')
-        s_parts = s_ms_str.split('.')
-        s = int(s_parts[0])
-        ms = int(s_parts[1]) if len(s_parts) > 1 else 0
-        return int((int(h) * 3600 + int(m) * 60 + s) * 1000 + ms)
-
-    # =========================================================================
-    # 步骤 1: 创建从 end_time_str 到 scene_key 的映射表 (您的逻辑)
-    # =========================================================================
-    end_time_to_scene_key_map = {}
-    candidate_strs = set()
-    for scene_key, times in scenes.items():
-        if isinstance(times, (list, tuple)) and len(times) >= 2:
-            start_str, end_str = times[0], times[1]
-            candidate_strs.add(start_str)
-            candidate_strs.add(end_str)
-
-            # 核心映射逻辑：使用场景的结束时间字符串作为键
-            # 这意味着任何以这个时间点结束的时间段，都归属于这个场景
-            end_time_to_scene_key_map[end_str] = scene_key
-
-    if not candidate_strs:
-        return []
-
-    # =========================================================================
-    # (此部分保持不变) 步骤 2: 找到所有“安全切点”并构建最终边界点
-    # =========================================================================
-    sorted_candidate_strs = sorted(list(candidate_strs), key=lambda s: time_to_ms(s))
-
-    speaker_intervals_for_conflict_check = []
-    for sp in speakers:
-        try:
-            s_ms = int(round(float(sp.get('start', 0.0)) * 1000))
-            e_ms = int(round(float(sp.get('end', 0.0)) * 1000))
-            speaker_intervals_for_conflict_check.append({'start': s_ms, 'end': e_ms})
-        except (ValueError, TypeError):
-            continue
-
-    safe_points = []
-    for t_str in sorted_candidate_strs:
-        try:
-            t_ms = time_to_ms(t_str)
-        except Exception:
-            continue
-        conflict = False
-        left = t_ms - margin_ms
-        right = t_ms + margin_ms
-        for interval in speaker_intervals_for_conflict_check:
-            if not (right < interval['start'] or left > interval['end']):
-                conflict = True
-                break
-        if not conflict:
-            safe_points.append({"time_str": t_str, "time_ms": t_ms})
-
-    if not sorted_candidate_strs:
-        return []
-    timeline_start_point = {"time_str": sorted_candidate_strs[0], "time_ms": time_to_ms(sorted_candidate_strs[0])}
-    timeline_end_point = {"time_str": sorted_candidate_strs[-1], "time_ms": time_to_ms(sorted_candidate_strs[-1])}
-
-    boundary_points = [timeline_start_point]
-    for sp in safe_points:
-        if timeline_start_point['time_ms'] < sp['time_ms'] < timeline_end_point['time_ms']:
-            boundary_points.append(sp)
-    boundary_points.append(timeline_end_point)
-
-    unique_points = {p['time_ms']: p for p in boundary_points}
-    boundary_points = sorted(unique_points.values(), key=lambda x: x['time_ms'])
-
-    if len(boundary_points) < 2:
-        return []
-
-    # =========================================================================
-    # 步骤 3: 生成时间段，并使用映射表直接查找 scene_key (您的逻辑)
-    # =========================================================================
-    segments = []
-    for i in range(len(boundary_points) - 1):
-        start_point = boundary_points[i]
-        end_point = boundary_points[i + 1]
-
-        segment_start_ms = start_point["time_ms"]
-        segment_end_ms = end_point["time_ms"]
-
-        if segment_start_ms >= segment_end_ms:
-            continue
-
-        # --- MODIFICATION START: 实施您指定的直接查找逻辑 ---
-        # 使用 segment 的 end_time_str 作为 key 来查找 scene_key
-        end_time_key = end_point["time_str"]
-        current_scene_key = end_time_to_scene_key_map.get(end_time_key, None)
-        # --- MODIFICATION END ---
-
-        speakers_in_segment = []
-        for speaker_element in speakers:
-            try:
-                s_ms = int(round(float(speaker_element.get('start', 0.0)) * 1000))
-                e_ms = int(round(float(speaker_element.get('end', 0.0)) * 1000))
-            except (ValueError, TypeError):
-                continue
-            if not (e_ms <= segment_start_ms or s_ms >= segment_end_ms):
-                speakers_in_segment.append(speaker_element)
-
-        speakers_in_segment.sort(key=lambda x: x.get('start', 0.0))
-
-        segments.append({
-            "scene_key": current_scene_key,
-            "start_time_str": start_point["time_str"],
-            "end_time_str": end_point["time_str"],
-            "start_time_ms": segment_start_ms,
-            "end_time_ms": segment_end_ms,
-            "speakers": speakers_in_segment
-        })
-
-    return segments
-
-
-def find_asr_indices_at_boundaries_old(scenes: dict, asr_results: list, window_ms: int = 50) -> dict:
-    """
-    为场景边界时间戳查找在指定时间窗口内的ASR结果索引。
-    ASR结果是一个列表的列表 (list[list[dict]])。
-
-    Args:
-        scenes (dict): 场景信息字典，键为场景名，值为[开始时间戳, 结束时间戳]。
-        asr_results (list[list[dict]]): ASR识别结果，这是一个嵌套列表。
-        window_ms (int): 在时间戳周围搜索的时间窗口半径（毫秒）。
-
-    Returns:
-        dict: 一个字典，键是场景边界的时间戳字符串，
-              值是对应的ASR结果索引元组 (子列表索引, 词语索引) 的列表。
-    """
-    boundary_asr_indices = collections.defaultdict(list)
-
-    # 1. 提取所有唯一的边界时间戳
-    unique_timestamps = set()
-    for start_time, end_time in scenes.values():
-        unique_timestamps.add(start_time)
-        unique_timestamps.add(end_time)
-    print(f'unique_timestamps{len(unique_timestamps)}')
-    # 2. 遍历每一个唯一的时间戳
-    for ts_str in unique_timestamps:
-        boundary_asr_indices[ts_str] = []
-        target_ms = time_to_ms(ts_str)
-        target_ms = target_ms - 1000 / 60
-        window_start_ms = target_ms - window_ms
-        window_end_ms = target_ms + window_ms
-
-        # 3. 遍历ASR结果的嵌套列表
-        # asr_segment_index 是外层列表的索引
-        # asr_segment 是内层列表（即一个完整的ASR识别结果）
-        for asr_segment_index, asr_segment in enumerate(asr_results):
-            # word_index 是内层列表的索引
-            # asr_item 是单个词的字典
-            for word_index, asr_item in enumerate(asr_segment):
-                asr_start_ms = asr_item['start']
-                asr_end_ms = asr_item['end']
-
-                # 4. 检查时间区间是否重叠
-                if asr_start_ms <= window_end_ms and window_start_ms <= asr_end_ms:
-                    # 记录复合索引 (外层列表索引, 内层词语索引)
-                    compound_index = (asr_segment_index, word_index)
-                    asr_item['compound_index'] = compound_index
-                    boundary_asr_indices[ts_str].append(asr_item)
-
-    return dict(boundary_asr_indices)
-
-
-def find_asr_at_boundaries_sorted_by_overlap(scenes: dict, asr_results: list, window_ms: int = 10) -> list:
-    """
-    为场景边界时间戳查找重叠的ASR结果，并按重叠时间总和升序排序。
-
-    新增功能:
-    1. 计算每个时间戳下，所有匹配词的重叠时间总和 (total_overlap_ms)。
-    2. 最终返回一个列表，该列表根据 'total_overlap_ms' 升序排序。
-
-    Args:
-        scenes (dict): 场景信息字典。
-        asr_results (list[list[dict]]): ASR识别结果。
-        window_ms (int): 搜索窗口半径（毫秒）。
-
-    Returns:
-        list: 一个已排序的列表，每个元素是一个元组 `(timestamp, result_info)`。
-              `result_info` 是一个字典，包含:
-              - 'found_words': 找到的ASR词语列表 (每个词都包含 'overlap_ms')。
-              - 'total_overlap_ms': 重叠时间的总和。
-    """
-    # 1. 提取所有唯一的边界时间戳
-    unique_timestamps = set()
-    for start_time, end_time in scenes.values():
-        unique_timestamps.add(start_time)
-        unique_timestamps.add(end_time)
-
-    # 临时存储结果，键是时间戳，值是包含词列表和总和的字典
-    temp_results = {}
-
-    # 2. 遍历时间戳，计算每个时间戳的匹配结果和重叠时间
-    for ts_str in unique_timestamps:
-        target_ms_original = time_to_ms(ts_str)
-        target_ms = target_ms_original - 1000 / 60
-        window_start_ms = target_ms - window_ms
-        window_end_ms = target_ms
-
-        found_items = []
-        total_overlap = 0
-
-        for asr_segment_index, asr_segment in enumerate(asr_results):
-            for word_index, asr_item in enumerate(asr_segment):
-                asr_start_ms = asr_item['start']
-                asr_end_ms = asr_item['end']
-
-                if asr_start_ms <= window_end_ms and window_start_ms <= asr_end_ms:
-                    overlap_start = max(asr_start_ms, window_start_ms)
-                    overlap_end = min(asr_end_ms, window_end_ms)
-                    overlap_duration = overlap_end - overlap_start
-
-                    # 只有当重叠时间 > 0 时才计算在内
-                    if overlap_duration > 0:
-                        result_item = asr_item.copy()
-                        result_item['compound_index'] = (asr_segment_index, word_index)
-                        result_item['overlap_ms'] = round(overlap_duration)
-
-                        found_items.append(result_item)
-                        total_overlap += result_item['overlap_ms']
-
-        # 如果找到了匹配的词，才记录结果
-        if found_items:
-            temp_results[ts_str] = {
-                'found_words': found_items,
-                'total_overlap_ms': total_overlap
-            }
-        else:
-            # 如果没有找到匹配的词，也记录一个空的结果
-            temp_results[ts_str] = {
-                'found_words': [],
-                'total_overlap_ms': 0
-            }
-
-    # 3. 新增功能：将字典转换为列表，并根据 'total_overlap_ms' 排序
-    # dict.items() 会得到 [(key1, value1), (key2, value2), ...]
-    sorted_result_list = sorted(
-        temp_results.items(),
-        key=lambda item: item[1]['total_overlap_ms']  # item[1]是值(dict)，我们根据这个dict里的'total_overlap_ms'排序
-    )
-
-    return sorted_result_list
-
-
-def get_detail_seg(video_path):
-    """
-    获取最详细的分割点
-    """
-    new_audio_file = video_path.replace('.mp4', '.wav')
-    extract_audio_from_video(video_path, new_audio_file)
-    OUTPUT_FILE = f'output/{new_audio_file.split('.')[0]}_final_asr.json'
-
-    output_file, ASR_FILES = gen_precise_asr(new_audio_file, OUTPUT_FILE)
-    scene_info = new_audio_file.replace('.mp4', '.json').replace('.wav', '.json')
-
-    scenes = read_json(scene_info)
-    asr_list = []
-    for ASR_FILE in ASR_FILES:
-        asr_list.append(read_json(ASR_FILE))
-
-    result = find_asr_at_boundaries_sorted_by_overlap(scenes, asr_list)
-    print(result)
-    return result
-
-
-def get_scene_word(scene_info, asr_list, need_detail=False):
-    # 按场景开始时间排序并准备容器
-    scenes = sorted(
-        [(name, time_to_ms(t[0]), time_to_ms(t[1])) for name, t in scene_info.items()],
-        key=lambda x: x[1]
-    )
-    if not scenes:
-        return {}
-
-    res_map = {name: [] for name, _, _ in scenes}
-
-    for w in asr_list:
-        ws, we = int(w['start']), int(w['end'])
-        placed = False
-
-        for i, (name, s_start, s_end) in enumerate(scenes):
-            # 完全在场景内
-            if ws >= s_start and we <= s_end:
-                res_map[name].append(w);
-                placed = True;
-                break
-            # 跨过当前场景结束 -> 放到下一个场景（无下一个则放当前）
-            if ws < s_end and we > s_end:
-                next_name = scenes[i + 1][0] if i + 1 < len(scenes) else name
-                res_map[next_name].append(w);
-                placed = True;
-                break
-            # 从前一场景延伸进来，end 落在当前场景内
-            if ws < s_start and we > s_start and we <= s_end:
-                res_map[name].append(w);
-                placed = True;
-                break
-
-        # 回退策略：放到首或尾场景
-        if not placed:
-            if we <= scenes[0][1]:
-                res_map[scenes[0][0]].append(w)
-            else:
-                res_map[scenes[-1][0]].append(w)
-
-    # 构造输出，增加 last_end_ms / last_end_time
-    out = {}
-    for name, s_start, s_end in scenes:
-        words = res_map[name]
-        text = "".join(x['word'] for x in words)
-        last_end_ms = max((int(x['end']) for x in words), default=None)
-        out[name] = {
-            "times": (s_start if callable(globals().get('ms_to_time')) else s_start,
-                      s_end if callable(globals().get('ms_to_time')) else s_end),
-            "text": text,
-            "last_end_ms": last_end_ms}
-        if need_detail:
-            out[name]["words"] = words
-
-    return out
-
-
-def reorganize_scene_asr(scene_map):
-    """
-    将类似
-      {'场景1': [ { 'times': (0,4683), 'text': '...' }, ... ], ...}
-    的数据重组织为
-      {'场景1': {'start_time': 0, 'end_time': 4683, 'end_t': 4683, 'asr_list': [...]}, ...}
-    """
-    out = {}
-    for scene, entries in scene_map.items():
-        starts = []
-        ends = []
-        texts = []
-
-        for e in entries or []:
-            # times 可能是 tuple/list，也可能是字符串或缺失，尽量转换为 int
-            times = e.get('times') if isinstance(e, dict) else None
-            if times and len(times) >= 2:
-                try:
-                    starts.append(int(times[0]))
-                    ends.append(int(times[1]))
-                except Exception:
-                    pass
-
-            # 文本字段可能叫 'text'，也可能别的名字，优先取 text
-            txt = None
-            if isinstance(e, dict):
-                txt = e.get('text') or e.get('asr') or e.get('sentence') or e.get('word')
-            if txt is None:
-                txt = ""
-            texts.append(txt)
-
-        start_time = min(starts) if starts else None
-        end_time = max(ends) if ends else None
-
-        out[scene] = {
-            "start_time": start_time,
-            "end_time": end_time,
-            "asr_list": texts
-        }
-
-    return out
-
-
-def split_video():
-    video_path = 'test1.mp4'
-    scene_info = video_path.replace('.mp4', '.json')
-    scenes = read_json(scene_info)
-    count = 0
-    for key, value in scenes.items():
-        count += 1
-        start_time = value[0]
-        end_time = value[1]
-        clip_video_ms(video_path, start_time, end_time, f'scenes/{count}.mp4')
-
-
-def reorganize_scene_asr_fun():
-    video_path = 'test1.mp4'
-    scene_info = video_path.replace('.mp4', '.json')
-    scenes = read_json(scene_info)
-    ASR_FILES, ASR_FILES = gen_precise_asr(video_path, '')
-    result_dict = {}
-    for ASR_FILE in ASR_FILES:
-        asr_list = read_json(ASR_FILE)
-        temp = get_scene_word(scenes, asr_list)
-        for key, value in temp.items():
-            value['ASR_FILE'] = ASR_FILE
-            if key not in result_dict:
-                result_dict[key] = []
-            result_dict[key].append(value)
-    print(result_dict)
-
-    sentence_info = reorganize_scene_asr(result_dict)
-    print(sentence_info)
 
 
 def fill_speaker_texts(
@@ -1009,9 +523,9 @@ def check_fix_speech_asr(fixed_speech_asr_info, speech_asr_info):
         if entry.get('speaker') == owner_speaker:
             entry['speaker'] = 'owner_speaker'
 
-
     print("[INFO] 修复后的说话人文本信息通过基本检查")
     return True
+
 
 def fix_speech_asr(speech_asr_info, video_path):
     """
@@ -1026,7 +540,7 @@ def fix_speech_asr(speech_asr_info, video_path):
     for attempt in range(1, max_retries + 1):
         try:
             model_name = "gemini-2.5-pro"
-            raw = get_llm_content_gemini_flash_video(prompt=full_prompt,video_path=video_path,model_name=model_name)
+            raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
 
             fix_speech_asr_info = string_to_object(raw)
             # 检测fix_speech_asr_info和speech_asr_info长度是否一致
@@ -1086,7 +600,6 @@ def gen_asr(video_path):
         fixed_speech_asr_info = fix_speech_asr(origin_sentence_info, video_path)
         save_json(fixed_speech_asr_output_file, fixed_speech_asr_info)
     print(f"纠正说话人文本耗时: {time.time() - start_time} 秒")
-
 
     fixed_speech_asr_info = read_json(fixed_speech_asr_output_file)
     fixed_speech_asr_with_sub_text_output_file = f'output/{base_name}/{base_name}_fixed_speech_asr_with_sub_text.json'
@@ -1158,9 +671,9 @@ def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True):
         return kept_sorted, pairs
 
     for i in range(n - 1):
-        key = f"场景{i+1}"
+        key = f"场景{i + 1}"
         start = filtered_sorted[i]
-        end = filtered_sorted[i+1]
+        end = filtered_sorted[i + 1]
         td = time_to_ms(end) - time_to_ms(start)
         pairs[key] = {
             'start': start,
@@ -1190,7 +703,8 @@ def get_scene(video_path):
             high_threshold=high_threshold,  # 初始高阈值
             min_scene_len=25,  # 最小场景长度（帧）
         )
-        print(f"阈值为 {high_threshold}场景信息字典已生成并打印。共 {len(scene_info_dict)} 个场景。 耗时: {time.time() - start_time} 秒\n")
+        print(
+            f"阈值为 {high_threshold}场景信息字典已生成并打印。共 {len(scene_info_dict)} 个场景。 耗时: {time.time() - start_time} 秒\n")
         # for key, value in scene_info_dict.items():
         #     timestamp = value[1]
         #     save_frames_around_timestamp(video_path, timestamp, 3, str(os.path.join(f'output/{basename}/scenes_{basename}_{high_threshold}', key)))
@@ -1211,371 +725,6 @@ def get_scene(video_path):
     return kept_sorted
 
 
-def process_scenes(text_results, scene_splits, inclusion_threshold=0.9, merge_threshold=0.2):
-    """
-    将文本识别结果根据场景切分进行组织，并根据重叠率合并场景。(基于关键洞察的最终修正版)
-
-    Args:
-        text_results (list): 文本识别结果列表。
-        scene_splits (list): 最小场景切分列表。
-        inclusion_threshold (float): 判断句子是否属于场景的重叠率阈值。
-        merge_threshold (float): 触发场景合并的最低重叠率阈值。
-
-    Returns:
-        list: 整理后的场景列表。
-    """
-    if not text_results or not scene_splits:
-        return []
-
-    # 1. 预处理场景切分列表
-    scenes = []
-    for i in range(len(scene_splits) - 1):
-        start_time = scene_splits[i][0]
-        end_time = scene_splits[i + 1][0]
-        scenes.append({'start': start_time, 'end': end_time})
-
-    last_scene_start = scene_splits[-1][0]
-    max_text_end = max(item['end'] for item in text_results) if text_results else last_scene_start
-    scenes.append({'start': last_scene_start, 'end': max(last_scene_start, max_text_end)})
-
-    # 2. 初始化指针和最终结果列表
-    final_scenes = []
-    text_cursor = 0
-    scene_cursor = 0
-
-    # 3. 遍历所有原始场景
-    while scene_cursor < len(scenes):
-        current_merged_scene = {
-            'scene_start': scenes[scene_cursor]['start'],
-            'scene_end': scenes[scene_cursor]['end'],
-            'content_list': []
-        }
-        merged_scene_count = 1
-
-        # 4. 为当前潜在的合并场景分配文本
-        while text_cursor < len(text_results):
-            sentence = text_results[text_cursor]
-
-            # 优化：句子完全在场景之后，且场景已有内容，则场景结束
-            if sentence['start'] >= current_merged_scene['scene_end'] and current_merged_scene['content_list']:
-                break
-
-            # 计算重叠率
-            sentence_duration = sentence['end'] - sentence['start']
-            overlap_start = max(sentence['start'], current_merged_scene['scene_start'])
-            overlap_end = min(sentence['end'], current_merged_scene['scene_end'])
-            overlap_duration = max(0, overlap_end - overlap_start)
-
-            overlap_ratio = 0.0
-            if sentence_duration > 0:
-                overlap_ratio = overlap_duration / sentence_duration
-            elif current_merged_scene['scene_start'] <= sentence['start'] < current_merged_scene['scene_end']:
-                overlap_ratio = 1.0
-
-            # 5. 基于新逻辑进行决策
-            can_merge_next = (scene_cursor + merged_scene_count) < len(scenes)
-
-            if overlap_ratio >= inclusion_threshold:
-                # 情况一: 高度重叠，直接接纳
-                current_merged_scene['content_list'].append(sentence)
-                text_cursor += 1
-
-            elif overlap_ratio > merge_threshold:
-                # 情况二: 中度重叠
-                is_merge_useful = sentence['end'] > current_merged_scene['scene_end']
-
-                if is_merge_useful and can_merge_next:
-                    # 合并有效且可行，执行合并，并用同个句子重新评估
-                    current_merged_scene['scene_end'] = scenes[scene_cursor + merged_scene_count]['end']
-                    merged_scene_count += 1
-                    # continue to re-evaluate the same sentence with the new scene boundaries
-                else:
-                    # 合并无效或不可行，拒绝该句子，结束当前场景
-                    if not current_merged_scene['content_list']:
-                        # 场景为空，不能拒绝第一个句子，强制接纳
-                        current_merged_scene['content_list'].append(sentence)
-                        text_cursor += 1
-                    else:
-                        break  # 结束为此场景分配文本
-
-            else:  # overlap_ratio <= merge_threshold
-                # 情况三: 低度重叠
-                if not current_merged_scene['content_list']:
-                    # 场景为空，不能丢弃，必须尝试合并
-                    if can_merge_next:
-                        current_merged_scene['scene_end'] = scenes[scene_cursor + merged_scene_count]['end']
-                        merged_scene_count += 1
-                        # continue to re-evaluate
-                    else:
-                        # 无法合并，强制接纳
-                        current_merged_scene['content_list'].append(sentence)
-                        text_cursor += 1
-                else:
-                    # 场景已有内容，明确不属于，结束当前场景
-                    break  # 结束为此场景分配文本
-
-        if current_merged_scene['content_list']:
-            final_scenes.append(current_merged_scene)
-
-        scene_cursor += merged_scene_count
-
-    return final_scenes
-
-
-def process_scenes_refactored(
-        text_results,
-        scene_splits,
-        inclusion_threshold=0.9,
-        merge_threshold=0.2,
-        max_scene_extension_duration=15.0,
-        max_merge_gap=5.0
-):
-    """
-    将文本识别结果根据场景切分进行组织，并根据重叠率动态合并场景。(重构增强版)
-
-    Args:
-        text_results (list): 文本识别结果列表。每个元素是包含 'start', 'end' 的字典。
-        scene_splits (list): 最小场景切分列表。每个元素是包含 [start_time] 的列表。
-        inclusion_threshold (float): 判断句子完全属于场景的重叠率阈值。
-        merge_threshold (float): 触发场景合并探索的最低重叠率阈值。
-        max_scene_extension_duration (float): 最后一个场景能被文本结果延长的最大时长，防止异常值。
-        max_merge_gap (float): 允许合并的两个相邻场景之间的最大时间间隔（秒）。如果间隙过大，则不合并。
-
-    Returns:
-        list: 整理后的场景列表，每个场景包含起始时间、结束时间和内容列表。
-    """
-    if not text_results or not scene_splits:
-        return []
-
-    # 1. 预处理场景切分列表，构建带有开始和结束时间的场景对象
-    scenes = []
-    for i in range(len(scene_splits) - 1):
-        start_time = scene_splits[i][0]
-        end_time = scene_splits[i + 1][0]
-        # 保证场景至少有零时长
-        if end_time > start_time:
-            scenes.append({'start': start_time, 'end': end_time})
-
-    # [改进点 1] 对最后一个场景的处理更加稳健
-    if scene_splits:
-        last_scene_start = scene_splits[-1][0]
-        max_text_end = max(item['end'] for item in text_results) if text_results else last_scene_start
-
-        # 限制最后一个场景的延长，防止异常文本导致场景过长
-        capped_end_time = last_scene_start + max_scene_extension_duration
-        final_end_time = max(last_scene_start, min(max_text_end, capped_end_time))
-        scenes.append({'start': last_scene_start, 'end': final_end_time})
-
-    if not scenes:
-        return []
-
-    # 2. 初始化指针和最终结果列表
-    final_scenes = []
-    text_cursor = 0
-    scene_cursor = 0
-
-    # 3. 遍历所有原始场景，动态合并
-    while scene_cursor < len(scenes):
-        # 初始化当前待处理的场景，它可能由多个原始场景合并而来
-        current_merged_scene = {
-            'scene_start': scenes[scene_cursor]['start'],
-            'scene_end': scenes[scene_cursor]['end'],
-            'content_list': []
-        }
-        merged_scene_count = 1
-
-        # 4. 为当前(可能合并的)场景分配文本
-        while text_cursor < len(text_results):
-            sentence = text_results[text_cursor]
-
-            # 优化：如果句子开始时间已经超过场景结束时间，且场景已有内容，则此场景结束
-            if sentence['start'] >= current_merged_scene['scene_end'] and current_merged_scene['content_list']:
-                break
-
-            # 计算句子与当前场景的重叠率
-            sentence_duration = sentence['end'] - sentence['start']
-            overlap_start = max(sentence['start'], current_merged_scene['scene_start'])
-            overlap_end = min(sentence['end'], current_merged_scene['scene_end'])
-            overlap_duration = max(0, overlap_end - overlap_start)
-
-            overlap_ratio = 0.0
-            if sentence_duration > 0:
-                overlap_ratio = overlap_duration / sentence_duration
-            # 处理零时长或瞬时文本，如果它在场景内，则视为完全重叠
-            elif current_merged_scene['scene_start'] <= sentence['start'] < current_merged_scene['scene_end']:
-                overlap_ratio = 1.0
-
-            # 5. 基于重叠率进行决策
-            can_merge_next = (scene_cursor + merged_scene_count) < len(scenes)
-
-            # [改进点 2] 检查与下一个场景的间隔是否过大，防止过度合并
-            is_gap_acceptable = True
-            if can_merge_next and max_merge_gap is not None:
-                next_scene_to_merge = scenes[scene_cursor + merged_scene_count]
-                gap_duration = next_scene_to_merge['start'] - current_merged_scene['scene_end']
-                if gap_duration > max_merge_gap:
-                    is_gap_acceptable = False
-
-            should_attempt_merge = can_merge_next and is_gap_acceptable
-
-            if overlap_ratio >= inclusion_threshold:
-                # 情况一: 高度重叠，直接接纳句子
-                current_merged_scene['content_list'].append(sentence)
-                text_cursor += 1
-
-            elif overlap_ratio > merge_threshold:
-                # 情况二: 中度重叠，可能是跨场景的句子，考虑合并
-                is_merge_beneficial = sentence['end'] > current_merged_scene['scene_end']
-                if is_merge_beneficial and should_attempt_merge:
-                    # 合并有效且可行，执行合并，并用同个句子重新评估新场景
-                    current_merged_scene['scene_end'] = scenes[scene_cursor + merged_scene_count]['end']
-                    merged_scene_count += 1
-                    # continue # 逻辑上是continue，此处通过不移动text_cursor实现
-                else:
-                    # 合并无效或不可行，结束当前场景
-                    if not current_merged_scene['content_list']:
-                        # 如果场景为空，不能拒绝第一个句子，强制接纳
-                        current_merged_scene['content_list'].append(sentence)
-                        text_cursor += 1
-                    else:
-                        break  # 场景已有内容，结束为此场景分配文本
-
-            else:  # overlap_ratio <= merge_threshold
-                # 情况三: 低度或无重叠
-                if not current_merged_scene['content_list']:
-                    # 场景为空，不能丢弃第一个遇到的句子，必须尝试通过合并来“拯救”它
-                    if should_attempt_merge:
-                        # 尝试合并，用同一个句子在新场景下重新评估
-                        current_merged_scene['scene_end'] = scenes[scene_cursor + merged_scene_count]['end']
-                        merged_scene_count += 1
-                        # continue # 逻辑上是continue
-                    else:
-                        # 无法合并（因为是最后一个场景或间隙太大），强制接纳
-                        current_merged_scene['content_list'].append(sentence)
-                        text_cursor += 1
-                else:
-                    # 场景已有内容，且新句子重叠率低，明确不属于，结束当前场景
-                    break
-
-        # 6. 保存处理完成的场景（如果有内容）
-        if current_merged_scene['content_list']:
-            final_scenes.append(current_merged_scene)
-
-        # 7. 移动场景游标到下一个未被合并的场景
-        scene_cursor += merged_scene_count
-
-    return final_scenes
-
-
-def process_scenes_simple(text_results, scene_splits, merge_tolerance_ms=100):
-    """
-    一个更稳健、分步实现的场景文本整理与合并函数 (V4 - 逻辑澄清与格式调整)。
-
-    核心逻辑：
-    1. 初步分配：
-       - 优先将文本分配给有实际重叠(>0)且重叠最大的场景。
-       - 如果文本与所有场景都无重叠，则将其分配给时间上最接近的场景。
-    2. 识别与合并：使用双向、带容差的判断条件，合并由文本内容连接起来的场景。
-    3. 格式化输出：调整最终字典的字段顺序。
-
-    Args:
-        text_results (list): 文本识别结果列表。
-        scene_splits (list): 最小场景切分列表。
-        merge_tolerance_ms (int): 合并容差（毫秒）。
-
-    Returns:
-        list: 整理后的场景列表，字段顺序为 (scene_start, scene_end, content_list)。
-    """
-    if not text_results or not scene_splits:
-        return []
-
-    # --- 步骤 0: 预处理，构建场景对象 ---
-    scenes = []
-    if len(scene_splits) > 1:
-        for i in range(len(scene_splits) - 1):
-            scenes.append({
-                'start': scene_splits[i][0],
-                'end': scene_splits[i + 1][0],
-                'content_list': []
-            })
-        last_scene_start = scene_splits[-1][0]
-        max_text_end = max(item['end'] for item in text_results) if text_results else last_scene_start
-        scenes.append({
-            'start': last_scene_start,
-            'end': max(last_scene_start, max_text_end),
-            'content_list': []
-        })
-
-    if not scenes:
-        return []
-
-    # --- 步骤 1: 修正后的初步分配逻辑 ---
-    for text in text_results:
-        best_scene_idx = -1
-        max_overlap = 0
-        for i, scene in enumerate(scenes):
-            overlap_start = max(text['start'], scene['start'])
-            overlap_end = min(text['end'], scene['end'])
-            overlap_duration = max(0, overlap_end - overlap_start)
-            if overlap_duration > max_overlap:
-                max_overlap = overlap_duration
-                best_scene_idx = i
-        if best_scene_idx == -1:
-            min_distance = float('inf')
-            for i, scene in enumerate(scenes):
-                distance = min(abs(scene['start'] - text['end']), abs(text['start'] - scene['end']))
-                if distance < min_distance:
-                    min_distance = distance
-                    best_scene_idx = i
-        if best_scene_idx != -1:
-            scenes[best_scene_idx]['content_list'].append(text)
-
-    # --- 步骤 2: 过滤空场景并对内容排序 ---
-    scenes_with_content = []
-    for scene in scenes:
-        if scene['content_list']:
-            scene['content_list'].sort(key=lambda x: x['start'])
-            scenes_with_content.append(scene)
-
-    if not scenes_with_content:
-        return []
-
-    # --- 步骤 3: 使用稳健的双向逻辑进行合并 ---
-    merged_scenes_unformatted = []
-    current_merged_scene = scenes_with_content[0].copy()
-    merge_tolerance = merge_tolerance_ms
-
-    for i in range(1, len(scenes_with_content)):
-        next_scene = scenes_with_content[i]
-
-        # 条件1: 当前场景的最后一个文本，是否“溢出”到了下一个场景
-        cond1 = current_merged_scene['content_list'][-1]['end'] > (next_scene['start'] + merge_tolerance)
-        # 条件2: 下一个场景的第一个文本，是否实际上开始于当前场景之内
-        cond2 = next_scene['content_list'][0]['start'] < (current_merged_scene['end'] - merge_tolerance)
-
-        if cond1 or cond2:
-            current_merged_scene['end'] = max(current_merged_scene['end'], next_scene['end'])
-            current_merged_scene['content_list'].extend(next_scene['content_list'])
-            current_merged_scene['content_list'].sort(key=lambda x: x['start'])
-        else:
-            merged_scenes_unformatted.append(current_merged_scene)
-            current_merged_scene = next_scene.copy()
-
-    merged_scenes_unformatted.append(current_merged_scene)
-
-    # --- [核心修正] 步骤 4: 格式化输出，确保字段顺序 ---
-    final_scenes = []
-    for scene in merged_scenes_unformatted:
-        formatted_scene = {
-            'scene_start': scene['start'],
-            'scene_end': scene['end'],
-            'content_list': scene['content_list']
-        }
-        final_scenes.append(formatted_scene)
-
-    return final_scenes
-
-
 def _contains_owner_speaker(scene, owner_speaker):
     """辅助函数：检查场景的 content_list 是否包含 owner_speaker 的文本。"""
     if not scene['content_list']:
@@ -1586,127 +735,96 @@ def _contains_owner_speaker(scene, owner_speaker):
     return False
 
 
-def process_scenes_advanced(
+def process_scenes_complete_fix(
         text_results,
         scene_splits,
         owner_speaker='owner_speaker',
-        merge_tolerance_ms=500,
-        keep_empty_scenes=False,
+        min_overlap_ms=500,
+        keep_empty_scenes=True,
         min_scene_duration_ms=10000
 ):
     """
-    一个高级的、分阶段的场景文本整理与合并函数 (V6)。
+    一个完整的、结合了“主动合并”与“短场景清理”的最终修复版函数 (V9)。
 
-    核心逻辑：
-    1. 初步分配：将文本分配到对应的场景中。
-    2. (可选) 过滤空场景：根据 `keep_empty_scenes` 参数决定是否移除无文本的场景。
-    3. 第一阶段合并：仅当 `owner_speaker` 的文本跨越场景边界时，才触发合并。
-    4. 第二阶段合并 (Short Scene Cleanup):
-       - 识别时长小于 `min_scene_duration_ms` 且不含 `owner_speaker` 的场景。
-       - 按照 “优先向上合并，其次向下合并” 的逻辑进行清理合并。
-    5. 格式化输出。
-
-    Args:
-        text_results (list): 文本识别结果列表。
-        scene_splits (list): 最小场景切分列表。
-        owner_speaker (str): 指定的核心说话人。
-        merge_tolerance_ms (int): 合并容差（毫秒）。
-        keep_empty_scenes (bool): 是否保留没有文本内容的场景，默认为 False。
-        min_scene_duration_ms (int): 第二阶段合并时，用于判断场景是否过短的阈值。
-
-    Returns:
-        list: 最终整理后的场景列表。
+    - 核心修复 1 (您的方案): 在文本分配阶段，如果 owner_speaker 的文本跨越多个场景，
+      则立即将这些场景合并。
+    - 核心修复 2 (功能恢复): 恢复了对短场景的清理合并逻辑，正确使用 min_scene_duration_ms。
     """
-    if not scene_splits:
-        return []
-
-    # --- 步骤 0: 预处理，构建场景对象 ---
-    # (此部分与之前版本相同)
+    # --- 步骤 0: 预处理 (无变化) ---
+    if not scene_splits: return []
     scenes = []
     if len(scene_splits) > 1:
         for i in range(len(scene_splits) - 1):
-            scenes.append({
-                'start': scene_splits[i][0],
-                'end': scene_splits[i + 1][0],
-                'content_list': []
-            })
+            scenes.append({'start': scene_splits[i][0], 'end': scene_splits[i + 1][0], 'content_list': []})
         last_scene_start = scene_splits[-1][0]
         max_text_end = max(item['end'] for item in text_results) if text_results else last_scene_start
-        scenes.append({
-            'start': last_scene_start,
-            'end': max(last_scene_start, max_text_end),
-            'content_list': []
-        })
-    else:  # 处理只有一个场景切分点的边缘情况
+        scenes.append({'start': last_scene_start, 'end': max(last_scene_start, max_text_end), 'content_list': []})
+    else:
         start_time = scene_splits[0][0] if scene_splits else 0
         max_text_end = max(item['end'] for item in text_results) if text_results else start_time
         scenes.append({'start': start_time, 'end': max_text_end, 'content_list': []})
+    if not scenes: return []
 
-    if not scenes:
-        return []
-
-    # --- 步骤 1: 初步分配文本 ---
-    # (此部分与之前版本相同)
-    for text in text_results:
-        best_scene_idx = -1
-        max_overlap = 0
+    # --- [核心修复] 步骤 1: 智能分配与主动合并 ---
+    text_queue = sorted(text_results, key=lambda x: x['start'])
+    for text in text_queue:
+        overlapping_indices = []
         for i, scene in enumerate(scenes):
             overlap_duration = max(0, min(text['end'], scene['end']) - max(text['start'], scene['start']))
-            if overlap_duration > max_overlap:
-                max_overlap = overlap_duration
-                best_scene_idx = i
-        if best_scene_idx == -1:
+            is_owner = text.get('speaker') == owner_speaker
+            min_req_overlap = min_overlap_ms if is_owner else 1
+            if overlap_duration >= min_req_overlap:
+                overlapping_indices.append(i)
+
+        if not overlapping_indices:
             min_distance, best_scene_idx = float('inf'), -1
             for i, scene in enumerate(scenes):
                 distance = min(abs(scene['start'] - text['end']), abs(text['start'] - scene['end']))
                 if distance < min_distance:
                     min_distance, best_scene_idx = distance, i
-        if best_scene_idx != -1:
-            scenes[best_scene_idx]['content_list'].append(text)
+            if best_scene_idx != -1:
+                scenes[best_scene_idx]['content_list'].append(text)
+            continue
 
-    # --- [核心修正 1] 步骤 2: 根据参数过滤空场景并排序 ---
-    processed_scenes = []
+        if len(overlapping_indices) == 1:
+            scenes[overlapping_indices[0]]['content_list'].append(text)
+            continue
+
+        if text.get('speaker') == owner_speaker and len(overlapping_indices) > 1:
+            first_idx = overlapping_indices[0]
+            for idx in sorted(overlapping_indices[1:], reverse=True):
+                scenes[first_idx]['start'] = min(scenes[first_idx]['start'], scenes[idx]['start'])
+                scenes[first_idx]['end'] = max(scenes[first_idx]['end'], scenes[idx]['end'])
+                scenes[first_idx]['content_list'].extend(scenes[idx]['content_list'])
+                scenes.pop(idx)
+            scenes[first_idx]['content_list'].append(text)
+        else:
+            best_scene_idx = -1
+            max_overlap = 0
+            for i in overlapping_indices:
+                scene = scenes[i]
+                overlap_duration = max(0, min(text['end'], scene['end']) - max(text['start'], scene['start']))
+                if overlap_duration > max_overlap:
+                    max_overlap = overlap_duration
+                    best_scene_idx = i
+            if best_scene_idx != -1:
+                scenes[best_scene_idx]['content_list'].append(text)
+
+    # --- 步骤 2: 中间处理 ---
+    # 排序 & 过滤空场景
     for scene in scenes:
-        if scene['content_list']:
-            scene['content_list'].sort(key=lambda x: x['start'])
-            processed_scenes.append(scene)
-        elif keep_empty_scenes:
-            processed_scenes.append(scene)
+        scene['content_list'].sort(key=lambda x: x['start'])
 
-    if not processed_scenes:
-        return []
-
-    # --- 步骤 3: 第一阶段合并 (Owner Speaker驱动) ---
-    if len(processed_scenes) > 1:
-        first_pass_merged = []
-        current_merged_scene = processed_scenes[0].copy()
-        for i in range(1, len(processed_scenes)):
-            next_scene = processed_scenes[i]
-
-            # 只有场景中有内容时，才进行合并判断
-            cond1, cond2 = False, False
-            if current_merged_scene['content_list'] and next_scene['content_list']:
-                last_text = current_merged_scene['content_list'][-1]
-                first_text = next_scene['content_list'][0]
-                # 条件1: 当前场景的最后一个 owner_speaker 文本 "溢出"
-                cond1 = (last_text.get('speaker') == owner_speaker and
-                         last_text['end'] > (next_scene['start'] + merge_tolerance_ms))
-                # 条件2: 下一个场景的第一个 owner_speaker 文本 "提前开始"
-                cond2 = (first_text.get('speaker') == owner_speaker and
-                         first_text['start'] < (current_merged_scene['end'] - merge_tolerance_ms))
-
-            if cond1 or cond2:
-                current_merged_scene['end'] = max(current_merged_scene['end'], next_scene['end'])
-                current_merged_scene['content_list'].extend(next_scene['content_list'])
-                current_merged_scene['content_list'].sort(key=lambda x: x['start'])
-            else:
-                first_pass_merged.append(current_merged_scene)
-                current_merged_scene = next_scene.copy()
-        first_pass_merged.append(current_merged_scene)
+    first_pass_merged = []
+    if not keep_empty_scenes:
+        for scene in scenes:
+            if scene['content_list']:
+                first_pass_merged.append(scene)
     else:
-        first_pass_merged = processed_scenes
+        first_pass_merged = scenes
 
-    # --- [核心新增] 步骤 4: 第二阶段合并 (Short Scene Cleanup) ---
+    # --- [功能恢复] 步骤 3: 第二阶段合并 (Short Scene Cleanup) ---
+    # 这里的代码逻辑与你最初版本中的步骤4完全相同，现在它作用于主动合并之后的结果
     if len(first_pass_merged) <= 1:
         final_scenes_unformatted = first_pass_merged
     else:
@@ -1714,8 +832,6 @@ def process_scenes_advanced(
         i = 0
         while i < len(first_pass_merged):
             current_scene = first_pass_merged[i]
-
-            # 判断当前场景是否是需要清理的短场景
             is_short = (current_scene['end'] - current_scene['start']) < min_scene_duration_ms
             has_owner = _contains_owner_speaker(current_scene, owner_speaker)
 
@@ -1724,44 +840,40 @@ def process_scenes_advanced(
                 i += 1
                 continue
 
-            # --- 执行合并逻辑 ---
-            # 1. 尝试向上合并
+            # 尝试向上合并
             can_merge_up = False
-            if final_scenes_unformatted:  # 确保有上一个场景可以合并
+            if final_scenes_unformatted:
                 prev_scene = final_scenes_unformatted[-1]
                 if not prev_scene['content_list'] or prev_scene['content_list'][-1].get('speaker') != owner_speaker:
                     can_merge_up = True
-
             if can_merge_up:
                 prev_scene['end'] = max(prev_scene['end'], current_scene['end'])
                 prev_scene['content_list'].extend(current_scene['content_list'])
                 prev_scene['content_list'].sort(key=lambda x: x['start'])
-                i += 1  # 当前场景已被合并，继续下一个
+                i += 1
                 continue
 
-            # 2. 尝试向下合并
+            # 尝试向下合并
             can_merge_down = False
-            if (i + 1) < len(first_pass_merged):  # 确保有下一个场景
+            if (i + 1) < len(first_pass_merged):
                 next_scene = first_pass_merged[i + 1]
                 if not next_scene['content_list'] or next_scene['content_list'][0].get('speaker') != owner_speaker:
                     can_merge_down = True
-
             if can_merge_down:
                 next_scene = first_pass_merged[i + 1]
-                # 创建一个新的合并场景，而不是直接修改 next_scene
                 merged_down_scene = current_scene.copy()
                 merged_down_scene['end'] = max(current_scene['end'], next_scene['end'])
                 merged_down_scene['content_list'].extend(next_scene['content_list'])
                 merged_down_scene['content_list'].sort(key=lambda x: x['start'])
                 final_scenes_unformatted.append(merged_down_scene)
-                i += 2  # 跳过当前和下一个场景
+                i += 2
                 continue
 
-            # 3. 无法合并，保持独立
+            # 无法合并，保持独立
             final_scenes_unformatted.append(current_scene)
             i += 1
 
-    # --- 步骤 5: 格式化输出 ---
+    # --- 步骤 4: 格式化输出 ---
     final_scenes = []
     for scene in final_scenes_unformatted:
         formatted_scene = {
@@ -1772,6 +884,7 @@ def process_scenes_advanced(
         final_scenes.append(formatted_scene)
 
     return final_scenes
+
 
 @timeit_print
 def get_scene_sub_text(video_path, sorted_scene_timestamp, fixed_speech_asr_with_sub_text):
@@ -1788,62 +901,11 @@ def get_scene_sub_text(video_path, sorted_scene_timestamp, fixed_speech_asr_with
             all_sub_text_list.append(sub_text)
     # 将all_sub_text_list按照end升序排序
     all_sub_text_list.sort(key=lambda x: x.get('end', 0))
-    scene_sub_text = process_scenes_advanced(all_sub_text_list, merged_timestamps)
+    scene_sub_text = process_scenes_complete_fix(all_sub_text_list, merged_timestamps)
     output_file_scene_sub_text = f'output/{base_name}/{base_name}_scene_sub_text.json'
     save_json(output_file_scene_sub_text, scene_sub_text)
     return scene_sub_text
 
-
-def extract_and_merge_by_speaker(scenes, target_speaker):
-    """
-    scenes: list of scenes, each scene 是 dict，包含 'scene_start','scene_end','content_list'
-    target_speaker: 要筛选的 speaker 字符串
-
-    返回: list，格式示例：
-    [
-      {
-        'scene_name': 'scene_1',
-        'scene_start': 0,
-        'scene_end': 5433,
-        'text': '拼接后的文本...',
-        'text_start': 130,
-        'text_end': 5490
-      },
-      ...
-    ]
-    """
-    result = []
-    out_idx = 1
-
-    for scene in scenes:
-        contents = scene.get('content_list', [])
-        # 筛选出目标说话人的片段
-        target_segments = [c for c in contents if c.get('speaker') == target_speaker]
-
-        if not target_segments:
-            continue
-
-        # 按 start 排序（以保证文本顺序与时间顺序一致）
-        target_segments.sort(key=lambda x: x.get('start', 0))
-
-        # 拼接文本（中文常见直接拼接，保留原始标点）
-        merged_text = ''.join([seg.get('text', '') for seg in target_segments])
-
-        text_start = min(seg.get('start', 0) for seg in target_segments)
-        text_end = max(seg.get('end', 0) for seg in target_segments)
-
-        result.append({
-            'scene_name': f'scene_{out_idx}',
-            'scene_start': scene.get('scene_start'),
-            'scene_end': scene.get('scene_end'),
-            'text': merged_text,
-            'text_start': text_start,
-            'text_end': text_end
-        })
-
-        out_idx += 1
-
-    return result
 
 def extract_and_merge_owner_other(scenes, target_speaker):
     """
@@ -1918,6 +980,7 @@ def extract_and_merge_owner_other(scenes, target_speaker):
 
     return result
 
+
 def check_new_video_script(new_video_script, scene_info):
     """
     生成的original_scene_number是否都在scene_info中
@@ -1929,6 +992,7 @@ def check_new_video_script(new_video_script, scene_info):
                 print(f"[ERROR] original_scene_number {scene['original_scene_number']} 不在 scene_info 中")
                 return False
     return True
+
 
 def gen_new_video_script_llm(scene_info, video_path):
     """
@@ -1943,7 +1007,7 @@ def gen_new_video_script_llm(scene_info, video_path):
     for attempt in range(1, max_retries + 1):
         try:
             model_name = "gemini-2.5-pro"
-            raw = get_llm_content_gemini_flash_video(prompt=full_prompt,video_path=video_path,model_name=model_name)
+            raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             new_video_script = string_to_object(raw)
             check_result = check_new_video_script(new_video_script, scene_info)
             if not check_result:
@@ -1959,6 +1023,7 @@ def gen_new_video_script_llm(scene_info, video_path):
                 return None  # 达到最大重试次数后返回 None
             traceback.print_exc()
 
+
 @timeit_print
 def gen_new_video_script(video_path, scene_sub_text, target_speaker='owner_speaker'):
     """
@@ -1973,7 +1038,6 @@ def gen_new_video_script(video_path, scene_sub_text, target_speaker='owner_speak
         new_video_script = read_json(output_file_final)
         scene_info = read_json(output_file_scene_info)
         return new_video_script, scene_info
-
 
     scene_info = extract_and_merge_owner_other(scene_sub_text_list, target_speaker)
     save_json(output_file_scene_info, scene_info)
@@ -2007,7 +1071,8 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
     new_scene_list = final_video_script['场景顺序与新文案']
     # new_scene_list = new_scene_list[:2]
     for fused_new_scene in new_scene_list:
-        print(f'处理新场景: new_{fused_new_scene["new_scene_number"]}_origin_{fused_new_scene["scene_number"]} 进度: {new_scene_list.index(fused_new_scene)+1}/{len(new_scene_list)}')
+        print(
+            f'处理新场景: new_{fused_new_scene["new_scene_number"]}_origin_{fused_new_scene["scene_number"]} 进度: {new_scene_list.index(fused_new_scene) + 1}/{len(new_scene_list)}')
         scene_start = fused_new_scene.get('scene_start')
         scene_end = fused_new_scene.get('scene_end')
 
@@ -2081,6 +1146,7 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
         return final_with_bgm_path
     return final_output_path
 
+
 @timeit_print
 def video_remake(video_path):
     fixed_speech_asr_with_sub_text = gen_asr(video_path)
@@ -2092,28 +1158,8 @@ def video_remake(video_path):
     new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text)
 
     final_video_path = gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info)
+    return final_video_path
 
 
 if __name__ == '__main__':
-    video_remake('test4.mp4')
-    #
-    # get_scene()
-    #
-    # get_scene_sub_text()
-    # #
-    #
-    # gen_new_video_script()
-
-    # gen_new_video_by_scene_and_script()
-
-    # reorganize_speech_asr_fun()
-    #
-    # gen_new_video()
-    # split_video()
-    # #
-    # # fun()
-    # #
-    # # video_path = 'test1.mp4'
-    # # get_detail_seg(video_path)
-    # # asr_and_scene('test2.mp4')
-    #
+    video_remake('test5.mp4')

@@ -104,54 +104,6 @@ def perform_speaker_diarization(input_audio_path: str, output_path):
         # 保持 exit()
         exit()
 
-
-    # ==================================================================
-    # 根据分析结果切割并合并同一个说话人的音频
-    # ==================================================================
-    print("\n开始加载原始音频并准备切片...")
-    try:
-        audio = AudioSegment.from_file(input_audio_path)
-    except FileNotFoundError:
-        print(f"错误：找不到音频文件 '{input_audio_path}'。请检查文件名和路径。")
-        # 保持 exit()
-        exit()
-    except Exception as e: # Catch other potential pydub errors
-        print(f"加载音频文件 '{input_audio_path}' 时出错: {e}")
-        # 保持 exit()
-        exit()
-
-
-    speaker_segments = {}
-    print("正在处理和合并每个说话人的音频片段...")
-    for seg in segments:
-        start_ms = seg["start"]
-        end_ms = seg["end"]
-        speaker = seg["speaker"]
-
-        # 确保切片不会超出音频的实际长度，并且 start_ms < end_ms
-        if end_ms > len(audio):
-            end_ms = len(audio)
-        if start_ms >= end_ms: # Skip invalid segments
-            continue
-
-        snippet = audio[start_ms:end_ms]
-        if speaker not in speaker_segments:
-            speaker_segments[speaker] = AudioSegment.empty()
-        speaker_segments[speaker] += snippet
-
-    # 原始代码中这部分被注释掉了，我将保持注释状态，遵循“不擅自修改代码”的指令。
-    # print(f"处理完成！正在将合并后的音频导出到 '{OUTPUT_DIR}' 文件夹...")
-    # for speaker, combined_segment in speaker_segments.items():
-    #     output_filename = f"{speaker.replace(' ', '_')}.wav"
-    #     output_path = os.path.join(OUTPUT_DIR, output_filename)
-    #     print(f"  -> 正在导出 {output_path}...")
-    #     combined_segment.export(output_path, format="wav")
-
-    print("\n所有说话人的音频已成功分离并合并（未导出为文件，因原始代码该部分被注释）！")
-    print(f"JSON 结果已保存到 {json_path}")
-    # print(f"每个说话人的合并音频片段已在内存中生成，并存储在 'speaker_segments' 字典中。")
-    # 原代码没有返回值，函数也不需要返回值。
-
 # --- 如何使用函数 ---
 if __name__ == "__main__":
     audio_file_to_process = "test.wav" # <<< 请在这里填写你的音频文件路径
