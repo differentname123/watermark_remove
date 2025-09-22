@@ -934,7 +934,8 @@ def get_scene_sub_text(video_path, sorted_scene_timestamp, owner_asr):
     # 将all_sub_text_list按照end升序排序
     owner_asr.sort(key=lambda x: x.get('end', 0))
     for asr in owner_asr:
-        asr['text'] = asr['final_text']
+        if 'text' not in asr or not asr['text'].strip():
+            asr['text'] = asr['final_text']
         asr['start'] = time_to_ms(asr.get('start', 0))
         asr['end'] = time_to_ms(asr.get('end', 0))
     scene_sub_text = process_scenes_complete_fix(owner_asr, merged_timestamps)
@@ -1036,13 +1037,13 @@ def gen_new_video_script_llm(scene_info, video_path):
     """
     retry_delay = 10
     max_retries = 3
-    prompt_file_path = '../../content_community/app/视频场景生成新视频.txt'
+    prompt_file_path = '../../content_community/app/视频生成详细的客观场景描述.txt'
     prompt = read_file_to_str(prompt_file_path)
     full_prompt = f'{prompt}\n{scene_info}'
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            model_name = "gemini-2.5-pro"
+            model_name = "gemini-2.5-flash"
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             new_video_script = string_to_object(raw)
             check_result = check_new_video_script(new_video_script, scene_info)
@@ -1070,10 +1071,10 @@ def gen_new_video_script(video_path, scene_sub_text, target_speaker='owner'):
     output_file_final = f'output/{base_name}/{base_name}_scene_format_new_script.json'
     output_file_scene_info = f'output/{base_name}/{base_name}_merge_speaker_scene_info.json'
 
-    if is_valid_target_file_simple(output_file_final):
-        new_video_script = read_json(output_file_final)
-        scene_info = read_json(output_file_scene_info)
-        return new_video_script, scene_info
+    # if is_valid_target_file_simple(output_file_final):
+    #     new_video_script = read_json(output_file_final)
+    #     scene_info = read_json(output_file_scene_info)
+    #     return new_video_script, scene_info
 
     scene_info = extract_and_merge_owner_other(scene_sub_text_list, target_speaker)
     save_json(output_file_scene_info, scene_info)
@@ -1198,4 +1199,4 @@ def video_remake(video_path):
 
 
 if __name__ == '__main__':
-    video_remake('test5.mp4')
+    video_remake('test2.mp4')

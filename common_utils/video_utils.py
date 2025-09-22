@@ -15,12 +15,14 @@ import shutil
 import subprocess
 import json
 import tempfile
+import time
 from pathlib import Path
 from typing import Union
 
 import ffmpeg
 from PIL import ImageFont
 from PIL import Image
+import uuid
 
 from common_utils.common_utils import time_to_ms
 
@@ -1537,36 +1539,59 @@ def probe_video_new(path):
     return w, h, fps, sar
 
 
-def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.mp4"):
+def _chunked(lst, n):
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+def _short_tempfile_name(temp_dir, prefix="ffmpeg_part_", suffix=".mp4"):
+    name = prefix + uuid.uuid4().hex[:8] + suffix
+    return os.path.join(temp_dir, name)
+
+def _safe_remove(path, retries=5, delay=0.5):
+    """尝试删除文件或目录，重试若干次；失败则抛出异常"""
+    last_exc = None
+    for attempt in range(1, retries + 1):
+        try:
+            if os.path.isdir(path) and not os.path.islink(path):
+                # 目录
+                shutil.rmtree(path)
+            else:
+                # 文件：先清除只读位
+                if os.path.exists(path):
+                    try:
+                        os.chmod(path, 0o666)
+                    except Exception:
+                        pass
+                    os.remove(path)
+            return
+        except FileNotFoundError:
+            return  # 已经不存在了，视作成功
+        except Exception as e:
+            last_exc = e
+            time.sleep(delay * attempt)  # 指数回退
+    # 多次尝试后仍未删除，抛出异常
+    raise RuntimeError(f"无法删除临时路径: {path}. 最后异常: {last_exc}")
+
+def _merge_chunk_ffmpeg(video_paths, output_path, probe_fn):
     """
-    将多个视频按第一个视频的参数拼接合并。
-    - 视频：统一到 bt709 + limited + yuv420p，避免 yuvj420p 引发的 swscale 报错。
-    - 音频：统一到 48kHz 立体声，避免 concat 因参数不一致而失败。
-    - 尽量少调整原有结构。
+    使用 filter_complex 将一小批 video_paths 合并为 output_path。
+    probe_fn 是你现有的 probe_video_new，接受路径返回 (w,h,fps,sar)
     """
     if not video_paths:
-        raise ValueError("视频路径列表不能为空")
+        raise ValueError("video_paths 不能为空")
     for p in video_paths:
         if not os.path.exists(p):
             raise FileNotFoundError(f"未找到文件: {p}")
 
-    # --- 新增：单视频情况直接复制 ---
+    # 单文件直接复制（避免重新编码）
     if len(video_paths) == 1:
-        print("[INFO] 只有一个输入视频，直接复制到输出文件")
-        cmd = [
-            "ffmpeg", "-y",
-            "-loglevel", "error",
-            "-i", video_paths[0],
-            "-c", "copy",
-            output_path
-        ]
-        print(" ".join(cmd))
+        cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", video_paths[0], "-c", "copy", output_path]
+        print("[INFO] 单文件直接复制:", " ".join(cmd))
         subprocess.run(cmd, check=True)
-        print(f"[SUCCESS] 复制完成，输出文件：{output_path}")
         return
 
-    # 你现有的探测函数，保持不变
-    ref_w, ref_h, ref_fps, ref_sar = probe_video_new(video_paths[0])
+    # 参考第一个视频参数
+    ref_w, ref_h, ref_fps, ref_sar = probe_fn(video_paths[0])
     print(f"[INFO] 参考视频参数: {ref_w}×{ref_h}, fps={ref_fps:.2f}, SAR={ref_sar}")
 
     inputs = []
@@ -1614,25 +1639,98 @@ def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.m
         "-filter_complex", filter_complex,
         "-map", "[outv]",
         "-map", "[outa]",
-        # 如果各段 fps 差异较大，可以考虑把 -r 移到每个分支里用 fps 滤镜统一；
-        # 这里保持你的原输出帧率限制不变
         "-r", f"{ref_fps:.2f}",
         "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-        # 确保编码端也用 yuv420p（避免回到 yuvj）
         "-pix_fmt", "yuv420p",
-        # 写出颜色元数据，和前面的固定保持一致
         "-colorspace", "bt709",
         "-color_primaries", "bt709",
         "-color_trc", "bt709",
-        "-color_range", "tv",  # limited range
+        "-color_range", "tv",
         "-c:a", "aac", "-b:a", "192k",
         output_path
     ]
 
-    print("[INFO] 开始执行合并命令:")
-    print(" ".join(cmd))
+    print("[INFO] 执行 ffmpeg 合并（小批次）:", " ".join(cmd))
     subprocess.run(cmd, check=True)
-    print(f"[SUCCESS] 合并完成，输出文件：{output_path}")
+    print(f"[SUCCESS] 小批次合并完成：{output_path}")
+
+def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.mp4",
+                        batch_size=20, temp_dir=None, probe_fn=None,
+                        cleanup_temp=True, cleanup_retries=5, cleanup_delay=0.5):
+    """
+    分批合并并保证临时文件被清理（若无法删除则抛出异常，避免遗漏）。
+    cleanup_retries / cleanup_delay 控制删除重试策略。
+    """
+    if probe_fn is None:
+        probe_fn = globals().get("probe_video_new")
+        if probe_fn is None:
+            raise RuntimeError("必须提供 probe_fn（如 probe_video_new） 或 确保全局有 probe_video_new 函数")
+
+    if not video_paths:
+        raise ValueError("视频路径列表不能为空")
+    for p in video_paths:
+        if not os.path.exists(p):
+            raise FileNotFoundError(f"未找到文件: {p}")
+
+    if len(video_paths) == 1:
+        cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", video_paths[0], "-c", "copy", output_path]
+        subprocess.run(cmd, check=True)
+        return
+
+    created_temp_dir = False
+    if temp_dir:
+        os.makedirs(temp_dir, exist_ok=True)
+        tmpdir = temp_dir
+    else:
+        tmpdir = tempfile.mkdtemp(prefix="ffmpeg_merge_")
+        created_temp_dir = True
+
+    temp_files = []  # 记录所有由本次调用创建的临时文件（绝对路径）
+
+    try:
+        if len(video_paths) <= batch_size:
+            _merge_chunk_ffmpeg(video_paths, output_path, probe_fn)
+            return
+
+        chunks = list(_chunked(video_paths, batch_size))
+        for i, chunk in enumerate(chunks):
+            tmp_out = _short_tempfile_name(tmpdir, prefix=f"batch{i}_")
+            # 记录：即便用户指定 temp_dir，也会删除我们创建的这些临时文件
+            temp_files.append(tmp_out)
+            _merge_chunk_ffmpeg(chunk, tmp_out, probe_fn)
+
+        # 递归合并临时文件（如果数量超出 batch_size 会继续分批）
+        merge_videos_ffmpeg(temp_files, output_path=output_path,
+                            batch_size=batch_size, temp_dir=tmpdir, probe_fn=probe_fn,
+                            cleanup_temp=False, cleanup_retries=cleanup_retries, cleanup_delay=cleanup_delay)
+
+    finally:
+        # ---------- 强化的清理逻辑 ----------
+        # 1) 始终尝试删除 temp_files 列表中记录的每个临时文件（这是我们创建的）
+        # 2) 如果本函数创建了 tmpdir（created_temp_dir），并且 cleanup_temp=True，则删除整个目录
+        # 3) 如果删除失败（重试后仍失败），抛出异常（避免静默遗漏）
+        errs = []
+        for p in temp_files:
+            try:
+                _safe_remove(p, retries=cleanup_retries, delay=cleanup_delay)
+            except Exception as e:
+                errs.append((p, str(e)))
+
+        if created_temp_dir and cleanup_temp:
+            try:
+                _safe_remove(tmpdir, retries=cleanup_retries, delay=cleanup_delay)
+            except Exception as e:
+                errs.append((tmpdir, str(e)))
+
+        if errs:
+            # 汇总错误并抛出，提醒调用方有未被删除的临时对象
+            msg_lines = ["清理临时文件/目录时出现错误："]
+            for p, e in errs:
+                msg_lines.append(f"  - {p} -> {e}")
+            # 将信息打印（方便 debug）并抛出异常
+            err_msg = "\n".join(msg_lines)
+            print(err_msg)
+            raise RuntimeError(err_msg)
 
 
 def re_edit_video_ffmpeg(video_path, time_segments, output_path="output_video_ffmpeg.mp4"):
