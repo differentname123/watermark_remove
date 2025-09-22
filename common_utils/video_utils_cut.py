@@ -515,7 +515,7 @@ def gen_video(text, output_path, origin_video_path, voice_name="zh-CN-YunjianNeu
         output_filename=str(audio_path),
         voice_name=voice_name,
         trim_silence=False,
-        # rate="+15%",
+        rate="+20%",
         # pitch='+10Hz',
     )
     video_duration = probe_duration(origin_video_path)
