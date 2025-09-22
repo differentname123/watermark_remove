@@ -1037,7 +1037,7 @@ def gen_new_video_script_llm(scene_info, video_path):
     """
     retry_delay = 10
     max_retries = 3
-    prompt_file_path = '../../content_community/app/视频生成详细的客观场景描述.txt'
+    prompt_file_path = '../../content_community/app/视频场景生成新视频.txt'
     prompt = read_file_to_str(prompt_file_path)
     full_prompt = f'{prompt}\n{scene_info}'
     raw = ""
@@ -1061,6 +1061,54 @@ def gen_new_video_script_llm(scene_info, video_path):
             traceback.print_exc()
 
 
+def check_logical_scene(logical_scene_info, scene_info):
+    """
+    生成的original_scene_number是否都在scene_info中
+    """
+
+    return True
+
+def gen_logical_scene_llm(scene_info, video_path):
+    """
+    生成新的视频方案
+    """
+    retry_delay = 10
+    max_retries = 3
+    prompt_file_path = '../../content_community/app/视频场景根据逻辑性的合并.txt'
+    format_scene_info = []
+    for scene in scene_info:
+        format_scene = {
+            'scene_number': scene.get('scene_number'),
+            'scene_start': scene.get('scene_start'),
+            'scene_end': scene.get('scene_end'),
+            'owner_text': scene.get('owner_text', ''),
+            'other_text': scene.get('other_text', '')
+        }
+        format_scene_info.append(format_scene)
+
+    prompt = read_file_to_str(prompt_file_path)
+    full_prompt = f'{prompt}\n{format_scene_info}'
+    raw = ""
+    for attempt in range(1, max_retries + 1):
+        try:
+            model_name = "gemini-2.5-flash"
+            raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
+            logical_scene_info = string_to_object(raw)
+            check_result = check_logical_scene(logical_scene_info, format_scene_info)
+            if not check_result:
+                raise ValueError("生成的视频脚本检查未通过")
+            return logical_scene_info
+        except Exception as e:
+            print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
+            if attempt < max_retries:
+                print(f"[INFO] 正在重试... (等待 {retry_delay} 秒)")
+                time.sleep(retry_delay)  # 等待一段时间后再重试
+            else:
+                print("[ERROR] 达到最大重试次数，失败.")
+                return None  # 达到最大重试次数后返回 None
+            traceback.print_exc()
+
+
 @timeit_print
 def gen_new_video_script(video_path, scene_sub_text, target_speaker='owner'):
     """
@@ -1070,6 +1118,7 @@ def gen_new_video_script(video_path, scene_sub_text, target_speaker='owner'):
     scene_sub_text_list = scene_sub_text
     output_file_final = f'output/{base_name}/{base_name}_scene_format_new_script.json'
     output_file_scene_info = f'output/{base_name}/{base_name}_merge_speaker_scene_info.json'
+    output_file_logical_scene_info = f'output/{base_name}/{base_name}_logical_scene_info.json'
 
     # if is_valid_target_file_simple(output_file_final):
     #     new_video_script = read_json(output_file_final)
@@ -1079,7 +1128,15 @@ def gen_new_video_script(video_path, scene_sub_text, target_speaker='owner'):
     scene_info = extract_and_merge_owner_other(scene_sub_text_list, target_speaker)
     save_json(output_file_scene_info, scene_info)
 
-    new_video_script = gen_new_video_script_llm(scene_info, video_path=video_path)
+    if is_valid_target_file_simple(output_file_logical_scene_info):
+        logical_scene_info = read_json(output_file_logical_scene_info)
+    else:
+        logical_scene_info = gen_logical_scene_llm(scene_info, video_path=video_path)
+        save_json(output_file_logical_scene_info, logical_scene_info)
+
+
+
+    new_video_script = gen_new_video_script_llm(logical_scene_info, video_path=video_path)
     save_json(output_file_final, new_video_script)
 
     return new_video_script, scene_info
@@ -1199,4 +1256,4 @@ def video_remake(video_path):
 
 
 if __name__ == '__main__':
-    video_remake('test2.mp4')
+    video_remake('test3.mp4')

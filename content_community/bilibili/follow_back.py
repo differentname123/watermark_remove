@@ -271,7 +271,14 @@ def main_task():
         need_add_count = max(0, more_count - len(non_mutual_followings))
         print(f"当前粉丝数: {followers_total_count}, 需要额外添加的非互关用户数: {need_add_count}")
         if need_add_count > 0:
-            additional_to_add = set(list(followings_set)[:need_add_count])
+            # 计算最大能添加的数量，必须保证剩下至少 50 个
+            max_add_count = max(0, len(followings_set) - 50)
+
+            # 实际需要添加的数量不能超过 max_add_count
+            safe_add_count = min(need_add_count, max_add_count)
+
+            additional_to_add = set(list(followings_set)[:safe_add_count])
+
             non_mutual_followings.update(additional_to_add)
             logging.info(f"为了达到清理目标，额外添加了 {len(additional_to_add)} 位非互关用户进行清理。")
 
