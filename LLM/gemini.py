@@ -4,7 +4,7 @@ import base64
 import traceback
 
 # 假设 common_utils 是您本地的模块
-from common_utils.common_utils import get_config
+from common_utils.common_utils import get_config, read_json
 from PIL import Image
 import functools
 import json
@@ -98,71 +98,20 @@ class ApiKeyManager:
             print(f"[INFO] 密钥 '{key_name}' 使用次数已更新为: {stats[key_name]}")
 
 
-# 获取 API 密钥
-API_KEY_BASE = get_config("gemini_api_key")
-API_KEY_JIE = get_config("gemini_api_key_jie")
-API_KEY_GE = get_config("gemini_api_key_ge")
-API_KEY_NA = get_config("gemini_api_key_na")
-API_KEY_CHU = get_config("gemini_api_key_chu")
-API_KEY_RU = get_config("gemini_api_key_ru")
-API_KEY_chu1 = get_config("gemini_api_key_chu1")
-API_KEY_chu2 = get_config("gemini_api_key_chu2")
-# API_KEY_chu3 = get_config("gemini_api_key_chu3")
-API_KEY_chu4 = get_config("gemini_api_key_chu4")
-API_KEY_chu5 = get_config("gemini_api_key_chu5")
-# API_KEY_chu6 = get_config("gemini_api_key_chu6")
-API_KEY_chu7 = get_config("gemini_api_key_chu7")
-API_KEY_chu8 = get_config("gemini_api_key_chu8")
-API_KEY_chu9 = get_config("gemini_api_key_chu9")
-API_KEY_chu10 = get_config("gemini_api_key_chu10")
-API_KEY_chu11 = get_config("gemini_api_key_chu11")
-API_KEY_chu12 = get_config("gemini_api_key_chu12")
-API_KEY_chu13 = get_config("gemini_api_key_chu13")
-API_KEY_chu14 = get_config("gemini_api_key_chu14")
-API_KEY_chu15 = get_config("gemini_api_key_chu15")
-API_KEY_chu16 = get_config("gemini_api_key_chu16")
-API_KEY_chu17 = get_config("gemini_api_key_chu17")
-API_KEY_chu18 = get_config("gemini_api_key_chu18")
-API_KEY_chu19 = get_config("gemini_api_key_chu19")
-API_KEY_chu20 = get_config("gemini_api_key_chu20")
-API_KEY_chu21 = get_config("gemini_api_key_chu21")
-API_KEY_chu22 = get_config("gemini_api_key_chu22")
+def build_api_key_map():
+    google_config = read_json('config_google.json')
+    detail_info_list = google_config.get('detail_info_list', [])
+    api_key_map = {}
+    for detail_info in detail_info_list:
+        nick_name = detail_info.get('nick_name')
+        gemini_api_key_list = detail_info.get('gemini_api_key_list', [])
+        for index, api_key_info in enumerate(gemini_api_key_list):
+            key = f'{nick_name}_{index}' if index > 0 else nick_name
+            api_key_map[key] = api_key_info['api_key']
 
+    return api_key_map
 
-
-
-API_KEY_MAP = {
-    'base':API_KEY_BASE,
-    'jie':API_KEY_JIE,
-    'ge':API_KEY_GE,
-    'na':API_KEY_NA,
-    'chu':API_KEY_CHU,
-    'ru':API_KEY_RU,
-    'chu1':API_KEY_chu1,
-    'chu2': API_KEY_chu2,
-    # 'chu3': API_KEY_chu3,
-    # 'chu4': API_KEY_chu4,
-    'chu5': API_KEY_chu5,
-    # 'chu6': API_KEY_chu6,
-    'chu7': API_KEY_chu7,
-    'chu8': API_KEY_chu8,
-    'chu9': API_KEY_chu9,
-    'chu10': API_KEY_chu10,
-    'chu11': API_KEY_chu11,
-    'chu12': API_KEY_chu12,
-    'chu13': API_KEY_chu13,
-    'chu14': API_KEY_chu14,
-    'chu15': API_KEY_chu15,
-    'chu16': API_KEY_chu16,
-    'chu17': API_KEY_chu17,
-    'chu18': API_KEY_chu18,
-    'chu19': API_KEY_chu19,
-    'chu20': API_KEY_chu20,
-    'chu21': API_KEY_chu21,
-    'chu22': API_KEY_chu22,
-
-}
-
+API_KEY_MAP = build_api_key_map()
 # 创建一个全局的 Key Manager 实例
 # 所有的函数都将通过这个实例来获取密钥和记录成功
 api_key_manager = ApiKeyManager(API_KEY_MAP)
@@ -448,7 +397,44 @@ def analyze_images_gemini(prompt='每张图片的内容是什么', image_paths=[
     return f"所有 API Key 均尝试失败。最后一次错误 (来自密钥 '{key_name}'): {last_error}"
 
 
+@with_proxy
+def valid_all_api_keys():
+    """
+    测试所有 API Key 的有效性。
+    """
+    failed_key_list = []
+    success_key_list = []
+    ordered_keys = api_key_manager.get_ordered_keys()
+    results = {}
+    for key_name in ordered_keys:
+        api_key = API_KEY_MAP.get(key_name)
+        if not api_key:
+            results[key_name] = "无效（未配置）"
+            continue
+        try:
+            print(f"[TEST] 正在测试名为 '{key_name}' 的 API Key...")
+            client = genai.Client(api_key=api_key)
+            contents = [types.Content(role="user", parts=[types.Part.from_text(text="你好")])]
+            config = types.GenerateContentConfig(response_mime_type="text/plain")
+            response = client.models.generate_content(model="gemini-2.5-flash", contents=contents, config=config)
+            results[key_name] = "有效"
+            print(f"[SUCCESS] Key '{key_name}' 有效，模型响应: {response.text[:30]}...")
+            success_key_list.append(key_name)
+        except Exception as e:
+            results[key_name] = f"无效（{e.__class__.__name__}: {e})"
+            print(f"[FAIL] Key '{key_name}' 无效: {e}")
+            failed_key_list.append(key_name)
+    print("\n=== API Key 测试结果 ===")
+    for k, v in results.items():
+        print(f"- {k}: {v}")
+
+    print(f"\n总计: {len(ordered_keys)} 个 Key, 成功: {len(success_key_list)}, 失败: {len(failed_key_list)}")
+    print("失败的 Key 列表:", failed_key_list)
+    print("成功的 Key 列表:", success_key_list)
+
 if __name__ == "__main__":
+    # valid_all_api_keys()
+
     print("\n" + "=" * 20 + " 开始测试 " + "=" * 20)
 
     print("[TEST] 正在测试 get_llm_content (这将触发第一次动态排序)")
