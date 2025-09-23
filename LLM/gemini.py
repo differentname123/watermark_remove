@@ -2,6 +2,7 @@ import os
 import time
 import base64
 import traceback
+from pathlib import Path
 
 # 假设 common_utils 是您本地的模块
 from common_utils.common_utils import get_config, read_json
@@ -99,7 +100,8 @@ class ApiKeyManager:
 
 
 def build_api_key_map():
-    google_config = read_json('config_google.json')
+    google_config = read_json(str(Path(__file__).resolve().parent / 'config_google.json'))
+
     detail_info_list = google_config.get('detail_info_list', [])
     api_key_map = {}
     for detail_info in detail_info_list:

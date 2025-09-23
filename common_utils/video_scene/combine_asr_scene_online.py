@@ -933,16 +933,92 @@ def get_scene_sub_text(video_path, sorted_scene_timestamp, owner_asr):
     merged_timestamps = sorted_scene_timestamp
     # 将all_sub_text_list按照end升序排序
     owner_asr.sort(key=lambda x: x.get('end', 0))
+    is_have_owner = False
     for asr in owner_asr:
+        speaker = asr.get('speaker', '')
+        if speaker != 'owner':
+            asr['speaker'] = 'other'
+        else:
+            is_have_owner = True
         if 'text' not in asr or not asr['text'].strip():
             asr['text'] = asr['final_text']
         asr['start'] = time_to_ms(asr.get('start', 0))
         asr['end'] = time_to_ms(asr.get('end', 0))
-    scene_sub_text = process_scenes_complete_fix(owner_asr, merged_timestamps)
+    owner_speaker = 'owner' if is_have_owner else 'other'
+    min_scene_duration_ms = 10000 if is_have_owner else 1000
+    scene_sub_text = process_scenes_complete_fix(owner_asr, merged_timestamps, owner_speaker=owner_speaker, min_scene_duration_ms=min_scene_duration_ms)
     output_file_scene_sub_text = f'output/{base_name}/{base_name}_scene_sub_text.json'
     save_json(output_file_scene_sub_text, scene_sub_text)
     return scene_sub_text
 
+
+def merge_short_blank_segments(processed_scenes, min_duration=1000):
+    """
+    合并连续的、总时长小于 min_duration 的空白段落。
+    实际上，这里的逻辑是：将所有连续的空白段落合并成一个，
+    然后检查这个合并后的总时长，如果小于 min_duration，则丢弃它。
+
+    processed_scenes: 经过 extract_and_merge_owner_other 处理后的列表。
+    min_duration: 空白段落需要保留的最小毫秒时长。
+    """
+    if not processed_scenes:
+        return []
+
+    merged_result = []
+    # 只用于累积连续的【短】空白场景
+    short_blanks_accumulator = []
+
+    def flush_short_blanks():
+        """处理累积的短空白段落的辅助函数"""
+        nonlocal short_blanks_accumulator, merged_result
+        if not short_blanks_accumulator:
+            return
+
+        # 将所有累积的短空白段合并成一个
+        start_time = short_blanks_accumulator[0]['scene_start']
+        end_time = short_blanks_accumulator[-1]['scene_end']
+
+        # 检查这个合并后的总时长是否达标
+        if (end_time - start_time) >= min_duration:
+            merged_scene = {
+                'scene_number': 'temp',  # 稍后统一重新编号
+                'scene_start': start_time,
+                'scene_end': end_time,
+                'owner_text': '',
+                'owner_text_start': None,
+                'owner_text_end': None,
+                'other_text': '',
+                'other_text_start': None,
+                'other_text_end': None
+            }
+            merged_result.append(merged_scene)
+
+        # 清空累积器，为下一批做准备
+        short_blanks_accumulator = []
+
+    # --- 主循环 ---
+    for scene in processed_scenes:
+        is_blank = not scene.get('owner_text') and not scene.get('other_text')
+        duration = scene['scene_end'] - scene['scene_start']
+
+        if is_blank and duration < min_duration:
+            # 1. 如果是【短】空白段，则加入累积器
+            short_blanks_accumulator.append(scene)
+        else:
+            # 2. 如果是【内容段】或【长空白段】，则它是一个边界
+            #    首先，处理掉之前累积的所有短空白段
+            flush_short_blanks()
+            #    然后，将这个边界段落自身加入结果
+            merged_result.append(scene)
+
+    # 循环结束后，别忘了处理可能遗留在累积器中的最后一批短空白段
+    flush_short_blanks()
+
+    # 最后，重新编号，确保 scene_number 是连续的
+    for i, scene in enumerate(merged_result, 1):
+        scene['scene_number'] = str(i)
+
+    return merged_result
 
 def extract_and_merge_owner_other(scenes, target_speaker):
     """
@@ -972,6 +1048,18 @@ def extract_and_merge_owner_other(scenes, target_speaker):
         contents = scene.get('content_list', [])
         # 如果场景没有内容就跳过（可根据需要改成保留空条目）
         if not contents:
+            result.append({
+                'scene_number': f'{idx}',
+                'scene_start': scene.get('scene_start'),
+                'scene_end': scene.get('scene_end'),
+                'owner_text': '',
+                'owner_text_start': None,
+                'owner_text_end': None,
+                'other_text': '',
+                'other_text_start': None,
+                'other_text_end': None
+            })
+            idx += 1
             continue
 
         # 分出 owner 和 other
@@ -1014,8 +1102,8 @@ def extract_and_merge_owner_other(scenes, target_speaker):
         })
 
         idx += 1
-
-    return result
+    new_result = merge_short_blank_segments(result, min_duration=2000)
+    return new_result
 
 
 def check_new_video_script(new_video_script, scene_info):
