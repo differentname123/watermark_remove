@@ -799,11 +799,13 @@ def process_scenes_complete_fix(
             scenes.append({'start': scene_splits[i][0], 'end': scene_splits[i + 1][0], 'content_list': []})
         last_scene_start = scene_splits[-1][0]
         max_text_end = max(item['end'] for item in text_results) if text_results else last_scene_start
-        scenes.append({'start': last_scene_start, 'end': max(last_scene_start, max_text_end), 'content_list': []})
+        if last_scene_start < max_text_end:
+            scenes.append({'start': last_scene_start, 'end': max(last_scene_start, max_text_end), 'content_list': []})
     else:
         start_time = scene_splits[0][0] if scene_splits else 0
         max_text_end = max(item['end'] for item in text_results) if text_results else start_time
-        scenes.append({'start': start_time, 'end': max_text_end, 'content_list': []})
+        if start_time < max_text_end:
+            scenes.append({'start': start_time, 'end': max_text_end, 'content_list': []})
     if not scenes: return []
 
     # --- [核心修复] 步骤 1: 智能分配与主动合并 ---
@@ -979,17 +981,17 @@ def merge_short_blank_segments(processed_scenes, min_duration=1000):
         end_time = short_blanks_accumulator[-1]['scene_end']
 
         # 检查这个合并后的总时长是否达标
-        if (end_time - start_time) >= min_duration:
+        if (end_time - start_time) > 0:
             merged_scene = {
                 'scene_number': 'temp',  # 稍后统一重新编号
                 'scene_start': start_time,
                 'scene_end': end_time,
-                'owner_text': '',
-                'owner_text_start': None,
-                'owner_text_end': None,
-                'other_text': '',
-                'other_text_start': None,
-                'other_text_end': None
+                'narration_script': '',
+                'narration_script_start': None,
+                'narration_script_end': None,
+                'original_script': '',
+                'original_script_start': None,
+                'original_script_end': None
             }
             merged_result.append(merged_scene)
 
@@ -998,7 +1000,7 @@ def merge_short_blank_segments(processed_scenes, min_duration=1000):
 
     # --- 主循环 ---
     for scene in processed_scenes:
-        is_blank = not scene.get('owner_text') and not scene.get('other_text')
+        is_blank = not scene.get('narration_script') and not scene.get('original_script')
         duration = scene['scene_end'] - scene['scene_start']
 
         if is_blank and duration < min_duration:
@@ -1052,12 +1054,12 @@ def extract_and_merge_owner_other(scenes, target_speaker):
                 'scene_number': f'{idx}',
                 'scene_start': scene.get('scene_start'),
                 'scene_end': scene.get('scene_end'),
-                'owner_text': '',
-                'owner_text_start': None,
-                'owner_text_end': None,
-                'other_text': '',
-                'other_text_start': None,
-                'other_text_end': None
+                'narration_script': '',
+                'narration_script_start': None,
+                'narration_script_end': None,
+                'original_script': '',
+                'original_script_start': None,
+                'original_script_end': None
             })
             idx += 1
             continue
@@ -1093,12 +1095,12 @@ def extract_and_merge_owner_other(scenes, target_speaker):
             'scene_number': f'{idx}',
             'scene_start': scene.get('scene_start'),
             'scene_end': scene.get('scene_end'),
-            'owner_text': owner_text,
-            'owner_text_start': owner_start,
-            'owner_text_end': owner_end,
-            'other_text': other_text,
-            'other_text_start': other_start,
-            'other_text_end': other_end
+            'narration_script': owner_text,
+            'narration_script_start': owner_start,
+            'narration_script_end': owner_end,
+            'original_script': other_text,
+            'original_script_start': other_start,
+            'original_script_end': other_end
         })
 
         idx += 1
@@ -1169,8 +1171,8 @@ def gen_logical_scene_llm(scene_info, video_path):
             'scene_number': scene.get('scene_number'),
             'scene_start': scene.get('scene_start'),
             'scene_end': scene.get('scene_end'),
-            'owner_text': scene.get('owner_text', ''),
-            'other_text': scene.get('other_text', '')
+            'narration_script': scene.get('narration_script', ''),
+            'original_script': scene.get('original_script', '')
         }
         format_scene_info.append(format_scene)
 
@@ -1179,7 +1181,7 @@ def gen_logical_scene_llm(scene_info, video_path):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            model_name = "gemini-2.5-flash"
+            model_name = "gemini-2.5-pro"
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             logical_scene_info = string_to_object(raw)
             check_result = check_logical_scene(logical_scene_info, format_scene_info)
@@ -1195,6 +1197,63 @@ def gen_logical_scene_llm(scene_info, video_path):
                 print("[ERROR] 达到最大重试次数，失败.")
                 return None  # 达到最大重试次数后返回 None
             traceback.print_exc()
+
+def gen_final_scene_info(logical_scene_info, origin_scene_info):
+    """
+    通过逻辑性的场景划分和原始的场景信息，生成最终的场景信息
+    """
+    final_scene_info = []
+    new_scene_list = logical_scene_info.get('new_scene_info', [])
+    for logical_scene in new_scene_list:
+        temp_dict = {}
+        narration_script_list = []
+        original_script_list = []
+        scene_start = 10000000
+        scene_end = 0
+
+        origin_scene_number_list = logical_scene.get('origin_scene_number_list', [])
+        # 将origin_scene_number_list元素变成int类型并且升序
+        origin_scene_number_list = sorted([int(num) for num in origin_scene_number_list if str(num).isdigit()])
+        for origin_scene_number in origin_scene_number_list:
+            target_origin_scene = None
+            for origin_scene in origin_scene_info:
+                if str(origin_scene['scene_number']) == str(origin_scene_number):
+                    target_origin_scene = origin_scene
+                    break
+            if not target_origin_scene:
+                print(f"[ERROR] 逻辑场景中的原始场景编号 {origin_scene_number} 不存在于原始场景信息中")
+                continue
+            scene_start = min(scene_start, int(target_origin_scene.get('scene_start', scene_start)))
+            scene_end = max(scene_end, int(target_origin_scene.get('scene_end', scene_end)))
+            narration_script = target_origin_scene.get('narration_script', '').strip()
+            if narration_script:
+                narration_script_list.append({
+                    'origin_scene_number': origin_scene_number,
+                    'narration_script_start': target_origin_scene.get('narration_script_start'),
+                    'narration_script_end': target_origin_scene.get('narration_script_end'),
+                    'narration_script': narration_script
+                })
+
+            original_script = target_origin_scene.get('original_script', '').strip()
+            if original_script:
+                original_script_list.append({
+                    'origin_scene_number': origin_scene_number,
+                    'original_script_start': target_origin_scene.get('original_script_start'),
+                    'original_script_end': target_origin_scene.get('original_script_end'),
+                    'original_script': original_script
+                })
+
+        temp_dict['scene_number'] = logical_scene.get('new_scene_number', '')
+        temp_dict['scene_start'] = scene_start if scene_start != 10000000 else 0
+        temp_dict['scene_end'] = scene_end
+        temp_dict['narration_script_list'] = narration_script_list
+        temp_dict['original_script_list'] = original_script_list
+        temp_dict['visual_description'] = logical_scene.get('visual_description', '')
+        temp_dict['reason'] = logical_scene.get('reason', '')
+        final_scene_info.append(temp_dict)
+
+
+    return final_scene_info
 
 
 @timeit_print
@@ -1223,8 +1282,9 @@ def gen_new_video_script(video_path, scene_sub_text, target_speaker='owner'):
         save_json(output_file_logical_scene_info, logical_scene_info)
 
 
+    final_scene_info = gen_final_scene_info(logical_scene_info, scene_info)
 
-    new_video_script = gen_new_video_script_llm(logical_scene_info, video_path=video_path)
+    new_video_script = gen_new_video_script_llm(final_scene_info, video_path=video_path)
     save_json(output_file_final, new_video_script)
 
     return new_video_script, scene_info
@@ -1344,4 +1404,4 @@ def video_remake(video_path):
 
 
 if __name__ == '__main__':
-    video_remake('test3.mp4')
+    video_remake('test5.mp4')
