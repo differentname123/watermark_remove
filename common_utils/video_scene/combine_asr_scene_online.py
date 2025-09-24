@@ -529,13 +529,40 @@ def check_fix_speech_asr(fixed_speech_asr_info, speech_asr_info):
     print("[INFO] 修复后的说话人文本信息通过基本检查")
     return True
 
-def check_owner_asr(owner_asr_info, speaker_info):
+def check_owner_asr(owner_asr_info, video_duration):
     """
-    检查生成的asr文本是否正确，第一是验证每个时间是否合理（1.最长跨度不能够超过20s 2.时长的合理性（也就是最快和最慢的语速就能够知道文本对应的时长是否合理） 3.owner语音和本地speaker说话人日志的差异不能够太大）
+        检查生成的asr文本是否正确，第一是验证每个时间是否合理（1.最长跨度不能够超过20s 2.时长的合理性（也就是最快和最慢的语速就能够知道文本对应的时长是否合理） 3.owner语音和本地speaker说话人日志的差异不能够太大）
+
+    :param owner_asr_info: 包含 ASR 信息的字典列表
+    :return: 错误信息列表，若没有错误则返回空列表
     """
+    max_time = 0
+    for i in range(len(owner_asr_info)):
+        start_time = time_to_ms(owner_asr_info[i]["start"])
+        end_time = time_to_ms(owner_asr_info[i]["end"])
+        max_time = max(max_time, end_time)
+        duration = end_time - start_time
+
+        # 1. 最大跨度不能超过 20s
+        if duration > 20000:
+            print(f"[ERROR] 片段 {i} 跨度过长: {duration} ms")
+            return False
+
+        # 2. 检查时长合理性：使用最快和最慢语速来估算时长范围
+        word_count = len(owner_asr_info[i]["final_text"].strip())
+        min_duration = (word_count / 1000) * 60 * 1000  # 最快语速 (150词/分钟)
+        max_duration = (word_count / 50) * 60 * 1000  # 最慢语速 (50词/分钟)
+
+        if not (min_duration <= duration <= max_duration):
+            print(f"[ERROR] 片段 {i} 时长不合理: {duration} ms, 预计范围: [{min_duration} ms, {max_duration} ms] 文案为:{owner_asr_info[i]["final_text"]}")
+            return False
+    if max_time > video_duration + 1000:
+        print(f"[ERROR] 最大结束时间 {max_time} ms 超过视频总时长 {video_duration} ms")
+        return False
+
     return True
 
-def gen_owner_asr_by_llm(video_path, speaker_info):
+def gen_owner_asr_by_llm(video_path):
     """
     通过大模型生成asr文本，附带主人识
     """
@@ -547,13 +574,14 @@ def gen_owner_asr_by_llm(video_path, speaker_info):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
+            print(f"[INFO] 生成asr信息 (尝试 {attempt}/{max_retries})")
             model_name = "gemini-2.5-pro"
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
-
+            video_duration = probe_duration(video_path)
+            video_duration_ms = int(video_duration * 1000)
             owner_asr_info = string_to_object(raw)
-            # 检测fix_speech_asr_info和speech_asr_info长度是否一致
-            if check_owner_asr(owner_asr_info, speaker_info) is False:
-                raise ValueError(f"[ERROR] 生成的视频信息与原始不匹配，尝试重新生成 (尝试 {attempt}/{max_retries})")
+            if check_owner_asr(owner_asr_info, video_duration_ms) is False:
+                raise ValueError(f"[ERROR] 生成生成asr文本异常，尝试重新生成 (尝试 {attempt}/{max_retries})")
             return owner_asr_info
         except Exception as e:
             print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
@@ -634,16 +662,8 @@ def gen_asr(video_path):
     base_name = os.path.basename(video_path).split('.')[0]
     speech_asr_output_file = f'output/{base_name}/{base_name}_speech_asr_with_owner.json'
 
-    processed_audio_path = gen_audio_path(video_path)
-    base_name = os.path.basename(processed_audio_path).split('.')[0]
-    output_dir = os.path.dirname(speech_asr_output_file)
-
-    speaker_file_path = os.path.join(output_dir, f"{base_name}_speaker.json")
-    # return ASR_FILES, ASR_FILES
-    speaker_file_path = perform_speaker_diarization(processed_audio_path, output_path=speaker_file_path)
-    speaker_info = read_json(speaker_file_path)
     if not is_valid_target_file_simple(speech_asr_output_file):
-        owner_asr_info = gen_owner_asr_by_llm(video_path, speaker_info)
+        owner_asr_info = gen_owner_asr_by_llm(video_path)
         save_json(speech_asr_output_file, owner_asr_info)
     print(f"生成精准asr与说话人信息文件耗时: {time.time() - start_time} 秒")
     owner_asr_info = read_json(speech_asr_output_file)
@@ -754,7 +774,7 @@ def get_scene(video_path):
         all_scene_info_dict[high_threshold] = scene_info_dict
     kept_sorted, pairs = merge_scene_timestamps(all_scene_info_dict, min_count=3)
 
-    print(f"\n合并后的场景数量为: {len(kept_sorted)}")
+    print(f"场景识别合并完成:场景数量为: {len(kept_sorted)}")
     # 将kept_sorted保存到文件
     save_json(f'output/{basename}/scenes_fused_{basename}/merged_timestamps.json', kept_sorted)
 
@@ -951,6 +971,7 @@ def get_scene_sub_text(video_path, sorted_scene_timestamp, owner_asr):
     scene_sub_text = process_scenes_complete_fix(owner_asr, merged_timestamps, owner_speaker=owner_speaker, min_scene_duration_ms=min_scene_duration_ms)
     output_file_scene_sub_text = f'output/{base_name}/{base_name}_scene_sub_text.json'
     save_json(output_file_scene_sub_text, scene_sub_text)
+    print(f"场景划分完成:数量{len(scene_sub_text)} owner_speaker:{owner_speaker} min_scene_duration_ms:{min_scene_duration_ms}")
     return scene_sub_text
 
 
@@ -1133,6 +1154,7 @@ def gen_new_video_script_llm(scene_info, video_path):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
+            print(f"[INFO] 正在生成新的视频脚本 (尝试 {attempt}/{max_retries})")
             model_name = "gemini-2.5-pro"
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             new_video_script = string_to_object(raw)
@@ -1182,6 +1204,7 @@ def gen_logical_scene_llm(scene_info, video_path):
     for attempt in range(1, max_retries + 1):
         try:
             model_name = "gemini-2.5-pro"
+            print(f"[INFO] 正在生成逻辑性场景划分 (尝试 {attempt}/{max_retries})")
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             logical_scene_info = string_to_object(raw)
             check_result = check_logical_scene(logical_scene_info, format_scene_info)
@@ -1280,6 +1303,7 @@ def gen_new_video_script(video_path, scene_sub_text, target_speaker='owner'):
     else:
         logical_scene_info = gen_logical_scene_llm(scene_info, video_path=video_path)
         save_json(output_file_logical_scene_info, logical_scene_info)
+    print(f"场景逻辑合并完成:数量{len(logical_scene_info.get("new_scene_info"))} 删除的子场景数量:{len(logical_scene_info.get("deleted_scene"))}\n")
 
 
     final_scene_info = gen_final_scene_info(logical_scene_info, scene_info)
@@ -1485,4 +1509,4 @@ def video_remake(video_path):
 
 
 if __name__ == '__main__':
-    video_remake('test2.mp4')
+    video_remake('test6.mp4')
