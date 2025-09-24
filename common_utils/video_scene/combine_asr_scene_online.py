@@ -1133,7 +1133,7 @@ def gen_new_video_script_llm(scene_info, video_path):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            model_name = "gemini-2.5-pro"
+            model_name = "gemini-2.5-flash"
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             new_video_script = string_to_object(raw)
             check_result = check_new_video_script(new_video_script, scene_info)
@@ -1404,4 +1404,4 @@ def video_remake(video_path):
 
 
 if __name__ == '__main__':
-    video_remake('test3.mp4')
+    video_remake('test4.mp4')

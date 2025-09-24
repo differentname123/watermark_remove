@@ -24,6 +24,19 @@ from google.genai import types
 
 
 # === 修改开始：引入健壮的、支持并发的 ApiKeyManager ===
+def build_api_key_map():
+    google_config = read_json(str(Path(__file__).resolve().parent / 'config_google.json'))
+
+    detail_info_list = google_config.get('detail_info_list', [])
+    api_key_map = {}
+    for detail_info in detail_info_list:
+        nick_name = detail_info.get('nick_name')
+        gemini_api_key_list = detail_info.get('gemini_api_key_list', [])
+        for index, api_key_info in enumerate(gemini_api_key_list):
+            key = f'{nick_name}_{index}' if index > 0 else nick_name
+            api_key_map[key] = api_key_info['api_key']
+
+    return api_key_map
 
 class ApiKeyManager:
     """
@@ -99,19 +112,7 @@ class ApiKeyManager:
             print(f"[INFO] 密钥 '{key_name}' 使用次数已更新为: {stats[key_name]}")
 
 
-def build_api_key_map():
-    google_config = read_json(str(Path(__file__).resolve().parent / 'config_google.json'))
 
-    detail_info_list = google_config.get('detail_info_list', [])
-    api_key_map = {}
-    for detail_info in detail_info_list:
-        nick_name = detail_info.get('nick_name')
-        gemini_api_key_list = detail_info.get('gemini_api_key_list', [])
-        for index, api_key_info in enumerate(gemini_api_key_list):
-            key = f'{nick_name}_{index}' if index > 0 else nick_name
-            api_key_map[key] = api_key_info['api_key']
-
-    return api_key_map
 
 API_KEY_MAP = build_api_key_map()
 # 创建一个全局的 Key Manager 实例
