@@ -1292,7 +1292,7 @@ def gen_new_video_script(video_path, scene_sub_text, target_speaker='owner'):
 
 def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
     """
-    生成新视频的文本脚本
+    生成新视频的文本脚 本
     """
     max_diff = 500
     base_name = os.path.basename(video_path).split('.')[0]
