@@ -1263,7 +1263,7 @@ def gen_new_video_script(video_path, scene_sub_text, target_speaker='owner'):
     """
     base_name = os.path.basename(video_path).split('.')[0]
     scene_sub_text_list = scene_sub_text
-    output_file_final = f'output/{base_name}/{base_name}_scene_format_new_script.json'
+    output_file_final = f'output/{base_name}/{base_name}_new_script.json'
     output_file_scene_info = f'output/{base_name}/{base_name}_merge_speaker_scene_info.json'
     output_file_logical_scene_info = f'output/{base_name}/{base_name}_logical_scene_info.json'
 
@@ -1404,4 +1404,4 @@ def video_remake(video_path):
 
 
 if __name__ == '__main__':
-    video_remake('test4.mp4')
+    video_remake('test2.mp4')
