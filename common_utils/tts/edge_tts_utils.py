@@ -188,7 +188,7 @@ def generate_audio_and_get_duration_sync(
             # 确保输出目录存在
             output_path.parent.mkdir(parents=True, exist_ok=True)
             success = process_audio_with_loudnorm(str(trimmed_wav), str(output_path), target_loudness)
-            print(_get_volume_info(output_path), text)
+            print(f'音频生成完成：{_get_volume_info(output_path)}  {text}')
 
             if success:
                 # 重新加载最终文件以获取准确时长

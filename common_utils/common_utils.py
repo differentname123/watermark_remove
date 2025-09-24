@@ -50,7 +50,7 @@ def timeit_print(func):
             finally:
                 elapsed = time.perf_counter() - start
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"{func.__name__} 运行耗时：{elapsed:.3f} 秒 — 当前时间：{now}")
+                print(f"{func.__name__} 运行耗时：{elapsed:.3f} 秒 — 当前时间：{now}\n")
         return sync_wrapper
 
 def find_key_values(data, target_key) -> list:

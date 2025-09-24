@@ -258,7 +258,7 @@ def redub_video_with_ffmpeg(video_path: str,
             end_time_str = segment['endTime']
             audio_path = segment['outputPath']
 
-            print(f"\n--- 正在处理片段 {segment_id} ---")
+            # print(f"\n--- 正在处理片段 {segment_id} ---")
             if not os.path.exists(audio_path):
                 print(f"警告: 音频文件未找到 {audio_path}，跳过此片段。")
                 continue
@@ -276,11 +276,8 @@ def redub_video_with_ffmpeg(video_path: str,
             if new_audio_duration > original_duration and original_duration > 0:
                 speed_multiplier = new_audio_duration / original_duration
 
-            print(f"原片段时长: {original_duration:.3f}s, 新音频时长: {new_audio_duration:.3f}s")
-            if speed_multiplier != 1.0:
-                print(f"视频速度调整为: {1 / speed_multiplier:.3f}x (setpts 乘数: {speed_multiplier:.6f})")
-            else:
-                print("视频速度不调整。")
+            print(f"进行音频匹配画面：原片段时长: {original_duration:.3f}s, 新音频时长: {new_audio_duration:.3f}s 视频速度调整为: {1/speed_multiplier:.3f}x")
+
 
             # ---------- 构建滤镜与映射 ----------
             # 统一：视频 setpts；音频统一到立体声，并在必要时混音，禁用 amix 归一化，混音后限幅防削波。

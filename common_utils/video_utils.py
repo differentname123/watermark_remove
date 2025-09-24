@@ -961,7 +961,7 @@ def add_subtitles_to_video(
     try:
         # print("正在为视频添加字幕和矩形背景...")
         subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
-        print(f"成功！已将带字幕的视频保存至: {output_path}")
+        print(f"字幕添加成功: 已将带字幕的视频保存至: {output_path}")
     except FileNotFoundError:
         print("[错误] ffmpeg 未安装或未在系统 PATH 中。请先安装 ffmpeg。")
         raise
@@ -2556,7 +2556,7 @@ def clip_video_ms(
             text=True,
             encoding='utf-8'
         )
-        success_message = f"视频精确截取成功！已保存至: {output_path} 截取时长: {float(end_formatted) - float(start_formatted)}"
+        success_message = f"视频截取完成：已保存至: {output_path} 截取时长: {float(end_formatted) - float(start_formatted)} 时间段为 {start_formatted} - {end_formatted}"
         print(success_message)
         # ffmpeg 正常运行时会将大量信息输出到 stderr
         return True, result.stderr or success_message
