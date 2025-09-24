@@ -650,7 +650,7 @@ def follower_worker(csrf_token):
 
 
 if __name__ == '__main__':
-    if False:
+    if True:
         # 清楚DISCOVERED_VIDEOS_FILE.json中的数据
         if os.path.exists(CONFIG['DISCOVERED_VIDEOS_FILE']):
             os.remove(CONFIG['DISCOVERED_VIDEOS_FILE'])

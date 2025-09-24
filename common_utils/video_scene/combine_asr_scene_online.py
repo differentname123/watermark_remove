@@ -1133,7 +1133,7 @@ def gen_new_video_script_llm(scene_info, video_path):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            model_name = "gemini-2.5-flash"
+            model_name = "gemini-2.5-pro"
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             new_video_script = string_to_object(raw)
             check_result = check_new_video_script(new_video_script, scene_info)
@@ -1228,7 +1228,7 @@ def gen_final_scene_info(logical_scene_info, origin_scene_info):
             narration_script = target_origin_scene.get('narration_script', '').strip()
             if narration_script:
                 narration_script_list.append({
-                    'origin_scene_number': origin_scene_number,
+                    'source_clip_id': origin_scene_number,
                     'narration_script_start': target_origin_scene.get('narration_script_start'),
                     'narration_script_end': target_origin_scene.get('narration_script_end'),
                     'narration_script': narration_script
@@ -1237,7 +1237,7 @@ def gen_final_scene_info(logical_scene_info, origin_scene_info):
             original_script = target_origin_scene.get('original_script', '').strip()
             if original_script:
                 original_script_list.append({
-                    'origin_scene_number': origin_scene_number,
+                    'source_clip_id': origin_scene_number,
                     'original_script_start': target_origin_scene.get('original_script_start'),
                     'original_script_end': target_origin_scene.get('original_script_end'),
                     'original_script': original_script
@@ -1404,4 +1404,4 @@ def video_remake(video_path):
 
 
 if __name__ == '__main__':
-    video_remake('test5.mp4')
+    video_remake('test3.mp4')
