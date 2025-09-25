@@ -25,6 +25,7 @@ from common_utils.ASR.speech_brain_utils import perform_speaker_diarization
 from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time, read_file_to_str, string_to_object, \
     timeit_print, is_valid_target_file_simple
 from common_utils.image_utils import save_frames_around_timestamp
+from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box_target_number
 from common_utils.split_audio import separate_with_cli
 from common_utils.split_scenes import find_and_split_scenes, split_scenes_json
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
@@ -38,6 +39,7 @@ import re
 from copy import deepcopy
 
 from common_utils.video_utils_cut import gen_video
+from content_community.app.remake_video import adjust_subtitle_box, cover_subtitle
 
 # ==============================================================================
 # 1. 辅助常量与函数 (Helpers & Constants)
@@ -1391,7 +1393,7 @@ def generate_scene_segments(scene_start, scene_end, narration_script_list):
 
 
 def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, scene_start, scene_end, base_name,
-                                  max_diff, need_merge_video_file, name_key):
+                                  max_diff, need_merge_video_file, name_key, subtitle_box):
     def _to_int(v):
         try:
             return int(float(v))
@@ -1447,7 +1449,7 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
                         audio_path = gen_audio_path(video_path).replace("vocals.wav", "no_vocals.wav")
                         segment_output_scene_background_file = segment_output_scene_file.replace('.mp4', '_with_background.mp4')
                         replace_video_audio(segment_output_scene_file,seg_start, seg_end, audio_path, segment_output_scene_background_file)
-                        gen_video(new_owner_text, output_path, segment_output_scene_background_file, keep_original_audio=True)
+                        gen_video(new_owner_text, output_path, segment_output_scene_background_file, keep_original_audio=True, fixed_rect=subtitle_box)
 
                 need_merge_video_file.append(output_path)
     else:
@@ -1459,7 +1461,7 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
     return need_merge_video_file
 
 @timeit_print
-def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
+def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box):
     """
     生成新视频的文本脚本
     """
@@ -1495,7 +1497,7 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
             count += 1
             name_key_full = f"{name_key}_part{count}"
             new_narration_script = split_scene.get('new_narration_script', '').strip()
-            process_video_with_owner_text(video_path, new_narration_script, split_scene, split_scene['scene_start'], split_scene['scene_end'], base_name, max_diff, need_merge_video_file, name_key_full)
+            process_video_with_owner_text(video_path, new_narration_script, split_scene, split_scene['scene_start'], split_scene['scene_end'], base_name, max_diff, need_merge_video_file, name_key_full, subtitle_box)
 
 
     final_output_path = f'output/{base_name}/{base_name}_remake.mp4'
@@ -1509,6 +1511,95 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
     return final_output_path
 
 
+def merge_intervals(intervals):
+    """
+    合并相邻或重叠的时间段
+
+    Args:
+        intervals: 时间段列表，每个元素为 (start, end) 的元组
+
+    Returns:
+        合并后的时间段列表
+    """
+    # 处理空列表的情况
+    if not intervals:
+        return []
+
+    # 按开始时间排序
+    sorted_intervals = sorted(intervals, key=lambda x: x[0])
+
+    # 初始化结果列表，第一个时间段作为起点
+    merged = [sorted_intervals[0]]
+
+    # 遍历剩余的时间段
+    for current in sorted_intervals[1:]:
+        # 获取当前合并结果中的最后一个时间段
+        last = merged[-1]
+
+        # 如果当前时间段与最后一个时间段相邻或重叠
+        # 相邻的条件是：current[0] <= last[1]
+        # （因为如果 current[0] == last[1]，它们是连续的，应该合并）
+        if current[0] <= last[1]:
+            # 合并时间段，结束时间取两者中的最大值
+            merged[-1] = (last[0], max(last[1], current[1]))
+        else:
+            # 不相邻，直接添加到结果中
+            merged.append(current)
+
+    return merged
+
+
+@timeit_print
+def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list):
+    """
+    找到字幕区域并且遮挡字幕
+    """
+    time_ranges = []
+    base_name = os.path.basename(video_path).split('.')[0]
+    output_dir = f'output/{base_name}/subtitle'
+
+
+    duration_list = []
+    for scene_info in merged_scene_info_list:
+        narration_script = scene_info.get('narration_script', '').strip()
+        if not narration_script:
+            continue
+        scene_start = scene_info.get('scene_start')
+        scene_end = scene_info.get('scene_end')
+        narration_script_start = scene_info.get('narration_script_start')
+        narration_script_end = scene_info.get('narration_script_end')
+        narration_script_start -= 500
+        narration_script_end += 500
+
+        final_narration_script_start = max(scene_start, narration_script_start)
+        final_narration_script_end = min(scene_end, narration_script_end)
+        duration_list.append((final_narration_script_start, final_narration_script_end))
+    merge_intervals_list = merge_intervals(duration_list)
+    merged_timerange_list = []
+
+    for start, end in merge_intervals_list:
+        merged_timerange_list.append(
+            {
+                "startTime": ms_to_time(start),
+                "endTime": ms_to_time(end)
+            }
+        )
+        time_ranges.append((start / 1000, end / 1000))
+    final_box_path = f'output/{base_name}/subtitle/{base_name}_final_subtitle_box.json'
+    if not is_valid_target_file_simple(final_box_path):
+        final_box = find_overall_subtitle_box_target_number(video_path, merged_timerange_list, output_dir=output_dir)
+        save_json(final_box_path, final_box)
+    final_box = read_json(final_box_path)
+    top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(video_path, final_box)
+
+    cover_video_path = f'output/{base_name}/{base_name}_covered.mp4'
+    if is_valid_target_file_simple(cover_video_path):
+        print(f"已存在遮挡字幕的视频: {cover_video_path}")
+        return cover_video_path, [top_left, bottom_right]
+    cover_subtitle(video_path, cover_video_path, top_left, bottom_right, time_ranges=time_ranges)
+    return cover_video_path, [top_left, bottom_right]
+
+
 @timeit_print
 def video_remake(video_path):
     fixed_speech_asr_with_sub_text = gen_asr(video_path)
@@ -1519,9 +1610,11 @@ def video_remake(video_path):
 
     new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text)
 
-    final_video_path = gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info)
+    video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info)
+
+    final_video_path = gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box)
     return final_video_path
 
 
 if __name__ == '__main__':
-    video_remake('test5.mp4')
+    video_remake('test4.mp4')

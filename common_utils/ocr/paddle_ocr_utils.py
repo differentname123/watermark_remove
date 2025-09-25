@@ -432,7 +432,8 @@ import numpy as np
 def find_overall_subtitle_box_target_number(
     video_path: str,
     merged_timerange_list: list[dict],
-    num_samples: int = 20
+    num_samples: int = 20,
+    output_dir = 'temp_dir'
 ):
     """
     主函数，找到包围视频字幕的最小框，并将框绘制到所有抽帧图片上。
@@ -443,7 +444,6 @@ def find_overall_subtitle_box_target_number(
     :param num_samples: 希望抽取的帧数
     :return: 最终包围框顶点列表 [[x1, y1], ..., [x4, y4]] 或 None
     """
-    output_dir = 'temp_dir'
 
     # --- 准备工作：创建或清空输出目录 ---
     if os.path.exists(output_dir):

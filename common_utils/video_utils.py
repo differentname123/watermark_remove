@@ -691,21 +691,19 @@ def _process_and_split_subtitles(
 
 
 def cover_video_area_simple(
-        video_path: str,
-        output_path: str,
-        top_left: tuple[int, int],
-        bottom_right: tuple[int, int],
-        color: str = "black@1.0"
+    video_path: str,
+    output_path: str,
+    top_left,
+    bottom_right,
+    time_ranges = None,
+    color: str = "black@1.0"
 ):
-    """
-    用 drawbox 滤镜在指定区域做纯色遮挡——极简、无坑版。
-    color: 'RRGGBB@alpha' 格式，alpha 范围 0.0~1.0。
-    """
     x1, y1 = top_left
     x2, y2 = bottom_right
     w, h = x2 - x1, y2 - y1
 
-    vf = f"drawbox=x={x1}:y={y1}:w={w}:h={h}:color={color}:t=fill"
+    enable_expr = _build_enable_expr(time_ranges)
+    vf = f"drawbox=x={x1}:y={y1}:w={w}:h={h}:color={color}:t=fill{enable_expr}"
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", video_path,
@@ -713,24 +711,43 @@ def cover_video_area_simple(
         "-c:a", "copy",
         output_path
     ]
-    print(f"[INFO] Running: {' '.join(shlex.quote(c) for c in cmd)}")
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
-        raise RuntimeError(f"FFmpeg failed (code {proc.returncode}):\n{proc.stderr}")
+        raise RuntimeError(f"FFmpeg failed:\n{proc.stderr}")
     print(f"[SUCCESS] Output saved to {output_path}")
+
+
+def _build_enable_expr(time_ranges) -> str:
+    """
+    构建 FFmpeg 的 enable 表达式，支持多个时间段。
+    返回格式: ":enable='between(t,s1,e1)+between(t,s2,e2)+...'"
+    如果 time_ranges 为 None 或空，则返回空字符串（全程生效）
+    """
+    if not time_ranges:
+        return ""
+
+    conditions = []
+    for start, end in time_ranges:
+        # 确保 start <= end
+        if start >= end:
+            continue  # 跳过无效区间
+        conditions.append(f"between(t,{start},{end})")
+
+    if not conditions:
+        return ""  # 没有有效区间，全程不遮挡？但通常不会这样用
+
+    expr = "+".join(conditions)
+    return f":enable='{expr}'"
 
 
 def cover_video_area_blur(
         video_path: str,
         output_path: str,
-        top_left: tuple[int, int],
-        bottom_right: tuple[int, int],
+        top_left,
+        bottom_right,
+        time_ranges = None,
         blur_strength: int = 20
 ):
-    """
-    在指定区域应用模糊遮挡 - 最终修正版。
-    修复了上一版本中因笔误导致的 "Unknown pixel format" 错误。
-    """
     x1, y1 = top_left
     x2, y2 = bottom_right
     w, h = x2 - x1, y2 - y1
@@ -740,27 +757,20 @@ def cover_video_area_blur(
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_f:
             temp_patch_file = temp_f.name
 
-        print(f"[INFO] Pass 1: Creating blurred patch at {temp_patch_file}")
-
-        # --- 第一阶段: 创建模糊补丁视频 (正确且不变) ---
+        # 第一阶段：生成全程模糊补丁（必须全程，因为 overlay 要求对齐）
         vf_pass1 = f"crop={w}:{h}:{x1}:{y1},boxblur={blur_strength}"
         cmd_pass1 = [
             "ffmpeg", "-y", "-loglevel", "error", "-i", video_path,
             "-vf", vf_pass1, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an",
             temp_patch_file
         ]
-
-        print(f"[INFO] Running Pass 1: {' '.join(shlex.quote(c) for c in cmd_pass1)}")
         proc_pass1 = subprocess.run(cmd_pass1, capture_output=True, text=True, check=False)
         if proc_pass1.returncode != 0:
-            raise RuntimeError(f"FFmpeg Pass 1 failed (code {proc_pass1.returncode}):\n{proc_pass1.stderr}")
+            raise RuntimeError(f"FFmpeg Pass 1 failed:\n{proc_pass1.stderr}")
 
-        print(f"[INFO] Pass 2: Overlaying patch onto original video.")
-
-        # --- 第二阶段: 叠加补丁 (修正笔误) ---
-        # 1. overlay 滤镜中的 :format=yuv420 保持不变，这是绕过核心问题的关键
-        # 2. 输出参数中的 -pix_fmt 改回正确的 yuv420p
-        vf_pass2 = f"[0:v][1:v]overlay={x1}:{y1}:format=yuv420"
+        # 第二阶段：叠加补丁，仅在指定多时间段内生效
+        enable_expr = _build_enable_expr(time_ranges)
+        vf_pass2 = f"[0:v][1:v]overlay={x1}:{y1}:format=yuv420{enable_expr}"
         cmd_pass2 = [
             "ffmpeg", "-y", "-loglevel", "error",
             "-i", video_path,
@@ -768,21 +778,17 @@ def cover_video_area_blur(
             "-filter_complex", vf_pass2,
             "-c:a", "copy",
             "-c:v", "libx264",
-            # [核心修正] 将错误的 "yuv4s20p" 改回正确的 "yuv420p"
             "-pix_fmt", "yuv420p",
             output_path
         ]
-
-        print(f"[INFO] Running Pass 2: {' '.join(shlex.quote(c) for c in cmd_pass2)}")
         proc_pass2 = subprocess.run(cmd_pass2, capture_output=True, text=True, check=False)
         if proc_pass2.returncode != 0:
-            raise RuntimeError(f"FFmpeg Pass 2 failed (code {proc_pass2.returncode}):\n{proc_pass2.stderr}")
+            raise RuntimeError(f"FFmpeg Pass 2 failed:\n{proc_pass2.stderr}")
 
         print(f"[SUCCESS] Output saved to {output_path}")
 
     finally:
         if temp_patch_file and os.path.exists(temp_patch_file):
-            print(f"[INFO] Cleaning up temporary file: {temp_patch_file}")
             os.remove(temp_patch_file)
 
 
@@ -830,8 +836,17 @@ def add_subtitles_to_video(
             raise ValueError("无法获取视频尺寸，无法自动计算矩形区域。请手动提供 'fixed_rect' 参数。") from e
     else:
         # 2. 加载字体用于计算文本宽度
+        # 注意：如果 fixed_rect 提供了，font_size 可能会被覆盖，但仍需字体对象用于分割
+        effective_font_size = font_size
+        if fixed_rect is not None:
+            top_left, bottom_right = fixed_rect
+            rect_height = bottom_right[1] - top_left[1]
+            effective_font_size = int(rect_height * 0.8)
+            # 确保字体大小至少为 1
+            effective_font_size = max(1, effective_font_size)
+
         try:
-            font = ImageFont.truetype(font_path, font_size)
+            font = ImageFont.truetype(font_path, effective_font_size)
         except IOError:
             raise FileNotFoundError(f"无法加载字体文件，请检查路径和文件格式: {font_path}")
 
@@ -865,8 +880,8 @@ def add_subtitles_to_video(
                 # print(f"计算出的最大字幕尺寸: {max_text_w:.0f}x{max_text_h:.0f}px")
 
                 # 为矩形添加一些内边距（padding）
-                padding_x = font_size  # 水平方向使用一个字体大小作为边距
-                padding_y = font_size // 2  # 垂直方向使用半个字体大小作为边距
+                padding_x = effective_font_size  # 水平方向使用一个字体大小作为边距
+                padding_y = effective_font_size // 2  # 垂直方向使用半个字体大小作为边距
 
                 rect_w = max_text_w + padding_x
                 rect_h = max_text_h + padding_y
@@ -875,8 +890,6 @@ def add_subtitles_to_video(
                 # 水平居中
                 rect_x1 = (video_width - rect_w) / 2
                 # 垂直位置与字幕文本对齐
-                # 字幕文本的y位置是 y=h-text_h-bottom_margin
-                # 所以矩形的y1也应基于此计算
                 rect_y1 = video_height - bottom_margin - max_text_h - (padding_y / 2)
 
                 rect_x2 = rect_x1 + rect_w
@@ -897,6 +910,13 @@ def add_subtitles_to_video(
     x2, y2 = fixed_rect[1]
     rect_w = x2 - x1
     rect_h = y2 - y1
+
+    # 如果 fixed_rect 被提供，重新计算 font_size 用于 drawtext（与上面一致）
+    if fixed_rect is not None:
+        effective_font_size = int(rect_h * 0.8)
+        effective_font_size = max(1, effective_font_size)
+    else:
+        effective_font_size = font_size
 
     filters = []
     # 只有当矩形有实际大小时才添加绘制指令
@@ -920,15 +940,24 @@ def add_subtitles_to_video(
         end_time = _parse_subtitle_time(sub['endTime'])
         text = _escape_ffmpeg_text(sub['optimizedText'])
 
+        if fixed_rect is not None:
+            # 文字在 fixed_rect 内水平垂直居中
+            text_x_expr = f"x=({x1}+{x2})/2 - text_w/2"
+            text_y_expr = f"y=({y1}+{y2})/2 - text_h/2"
+        else:
+            # 原有逻辑：居中 + 底部偏移
+            text_x_expr = "x=(w-text_w)/2"
+            text_y_expr = f"y=h-text_h-{bottom_margin}"
+
         # 2) 再画字幕文字
         drawtext = (
             f"drawtext="
             f"fontfile='{formatted_font_path}':"
             f"text='{text}':"
-            f"fontsize={font_size}:"
+            f"fontsize={effective_font_size}:"
             f"fontcolor={font_color}:"
-            f"x=(w-text_w)/2:"
-            f"y=h-text_h-{bottom_margin}:"
+            f"{text_x_expr}:"
+            f"{text_y_expr}:"
             f"box=0:"
             f"enable='between(t,{start_time},{end_time})'"
         )
