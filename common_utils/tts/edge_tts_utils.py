@@ -211,20 +211,25 @@ if __name__ == "__main__":
     print("🚀 演示使用专业响度归一化 (`loudnorm`) 生成高质量语音。\n")
 
     text_list = [
-        "原来卢远才是恋综格局最大的女人啊，看到柯爱林崩溃大哭，卢远第一时间冲出去安慰她。",
+        "为什么刘子晗的公园约会,双蛋糕是王炸,让我们好感逆转。",
     ]
+    pitch_list = ['+0Hz', '+10Hz', '+20Hz', '+30Hz', '+40Hz', '+50Hz']
+    rate_list = ['+0%', '+10%', '+20%', '+30%', '+40%']
+    for  pitch in pitch_list:
+        for rate in rate_list:
+            for i, text in enumerate(text_list):
+                output_file = f"tts_output/pitch{pitch}_rate{rate}_{i + 1}.mp3"
+                print(f"--- 正在生成第 {i + 1}/{len(text_list)} 个文件: {output_file} ---")
 
-    for i, text in enumerate(text_list):
-        output_file = f"output_processed_{i + 1}.mp3"
-        print(f"--- 正在生成第 {i + 1}/{len(text_list)} 个文件: {output_file} ---")
-
-        duration = generate_audio_and_get_duration_sync(
-            text=text,
-            output_filename=output_file,
-            voice_name="zh-CN-XiaoxiaoNeural",  # 可以换成你喜欢的语音
-            trim_silence=True,
-            target_loudness=-14  # 这是关键参数，可以调整，-14更响，-18更轻
-        )
+                duration = generate_audio_and_get_duration_sync(
+                    text=text,
+                    output_filename=output_file,
+                    voice_name="zh-CN-XiaoxiaoNeural",  # 可以换成你喜欢的语音
+                    trim_silence=True,
+                    target_loudness=-14,  # 这是关键参数，可以调整，-14更响，-18更轻
+                    pitch=pitch,
+                    rate=rate,
+                )
 
         if duration:
             print(f"🎉 文件 '{output_file}' 生成成功，时长: {duration:.2f} 秒。\n")

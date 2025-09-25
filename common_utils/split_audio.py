@@ -208,7 +208,7 @@ def process_media_by_volume(original_media_path: str, processed_audio_path: str)
 
 
 if __name__ == "__main__":
-    process_media_by_volume("test4_no_vocals.wav", "denoised_no_vocals.wav")
+    process_media_by_volume("test10_no_vocals.wav", "denoised_no_vocals.wav")
 
     # --- 示例1: 调用原有的音轨分离函数 ---
     # print("--- 开始音轨分离 ---")

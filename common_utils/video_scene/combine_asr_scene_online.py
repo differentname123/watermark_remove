@@ -570,7 +570,7 @@ def gen_owner_asr_by_llm(video_path):
     """
     retry_delay = 10
     max_retries = 3
-    prompt_file_path = '../../content_community/app/视频分解素材_直接进行asr转录与owner识别.txt'
+    prompt_file_path = '../../content_community/app/视频分解素材_直接进行asr转录与owner识别严格.txt'
     prompt = read_file_to_str(prompt_file_path)
     full_prompt = f'{prompt}'
     raw = ""
@@ -1402,7 +1402,7 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
 
     if new_owner_text:
         s = _to_int(fused_new_scene.get('narration_script_start')) or int(scene_start)
-        s = s - 500
+        s = s - 100
         e = _to_int(fused_new_scene.get('narration_script_end')) + 500
 
         if e is None:
@@ -1446,13 +1446,13 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
                 if sub_count == 2:
                     output_path = segment_output_scene_file.replace('.mp4', '_with_text.mp4')
                     if not is_valid_target_file_simple(output_path):
-                        audio_path = gen_audio_path(video_path).replace("vocals.wav", "no_vocals.wav")
-                        pure_audio_path = gen_audio_path(video_path).replace(".wav", "_pure.wav")
-                        if not is_valid_target_file_simple(pure_audio_path):
-                            process_media_by_volume(audio_path, pure_audio_path)
-                        segment_output_scene_background_file = segment_output_scene_file.replace('.mp4', '_with_background.mp4')
-                        replace_video_audio(segment_output_scene_file,seg_start, seg_end, audio_path, segment_output_scene_background_file)
-                        gen_video(new_owner_text, output_path, segment_output_scene_background_file, keep_original_audio=True, fixed_rect=subtitle_box)
+                        # audio_path = gen_audio_path(video_path).replace("vocals.wav", "no_vocals.wav")
+                        # pure_audio_path = gen_audio_path(video_path).replace(".wav", "_pure.wav")
+                        # if not is_valid_target_file_simple(pure_audio_path):
+                        #     process_media_by_volume(audio_path, pure_audio_path)
+                        # segment_output_scene_background_file = segment_output_scene_file.replace('.mp4', '_with_background.mp4')
+                        # replace_video_audio(segment_output_scene_file,seg_start, seg_end, audio_path, segment_output_scene_background_file)
+                        gen_video(new_owner_text, output_path, segment_output_scene_file, keep_original_audio=False, fixed_rect=subtitle_box)
 
                 need_merge_video_file.append(output_path)
     else:
@@ -1464,12 +1464,11 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
     return need_merge_video_file
 
 @timeit_print
-def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box):
+def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box, base_name):
     """
     生成新视频的文本脚本
     """
     max_diff = 500
-    base_name = os.path.basename(video_path).split('.')[0]
     new_video_script.sort(key=lambda x: x.get('方案整体评分', 0), reverse=True)
     new_video_script_result = new_video_script
     final_video_script = new_video_script_result[0]
@@ -1607,6 +1606,8 @@ def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list):
 
 @timeit_print
 def video_remake(video_path):
+    basename = os.path.basename(video_path).split('.')[0]
+
     fixed_speech_asr_with_sub_text = gen_asr(video_path)
 
     sorted_scene_timestamp = get_scene(video_path)
@@ -1617,9 +1618,9 @@ def video_remake(video_path):
 
     video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info)
 
-    final_video_path = gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box)
+    final_video_path = gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box, basename)
     return final_video_path
 
 
 if __name__ == '__main__':
-    video_remake('test9.mp4')
+    video_remake('test10.mp4')
