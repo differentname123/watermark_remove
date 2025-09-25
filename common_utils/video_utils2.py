@@ -3,6 +3,8 @@ import json
 import os
 import shutil
 
+from common_utils.split_audio import get_average_volume
+
 
 # --- 您提供的原始函数，稍作修改以提高健壮性 ---
 def probe_video(path):
@@ -67,7 +69,7 @@ def _probe_has_audio(path):
     return "audio" in result.stdout
 
 
-def add_bgm_to_video(video_path: str, bgm_path: str, output_path: str, volume_percentage: int = 20):
+def add_bgm_to_video(video_path: str, bgm_path: str, output_path: str, volume_percentage: int = 20, auto_compute=False):
     """
     为视频添加背景音乐(BGM)。
 
@@ -104,6 +106,16 @@ def add_bgm_to_video(video_path: str, bgm_path: str, output_path: str, volume_pe
         raise FileNotFoundError(f"BGM 文件未找到: {bgm_path}")
     if not 0 <= volume_percentage <= 100:
         raise ValueError("音量百分比必须在 0 到 100 之间。")
+
+    if auto_compute:
+        bgm_volume = get_average_volume(bgm_path)
+        video_volume = get_average_volume(video_path)
+        volume_percentage = bgm_volume / video_volume * 100
+        volume_percentage *= 0.8
+        if volume_percentage > 100:
+            volume_percentage = 100
+
+        print(f"自动计算的 BGM 音量百分比: {volume_percentage:.2f}% bgm平均音量: {bgm_volume:.2f}dBFS, 视频平均音量: {video_volume:.2f}dBFS")
 
     # 2. 构建 ffmpeg 命令
     # 将百分比转换为 ffmpeg 的音量因子（例如 20 -> 0.2）

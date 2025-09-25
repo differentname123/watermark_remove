@@ -159,9 +159,9 @@ def _time_str_to_seconds(time_str: str) -> float:
 #     print(f"成功！最终视频已保存至: {output_path}")
 #     return output_path
 
-def replace_video_audio(video_path, start_ms, end_ms, audio_path, output_path):
+def replace_video_audio(video_path, start_ms, end_ms, audio_path, output_path, audio_volume=0.5):
     """
-    将指定音频片段替换到视频中
+    将指定音频片段替换到视频中，并可调节音量大小
 
     Args:
         video_path (str): 输入视频文件路径
@@ -169,7 +169,11 @@ def replace_video_audio(video_path, start_ms, end_ms, audio_path, output_path):
         end_ms (int): 音频结束时间（毫秒）
         audio_path (str): 输入音频文件路径
         output_path (str): 输出文件路径
+        audio_volume (float): 音频音量比例，1.0 为原始音量，默认 0.5（50%）
     """
+    if audio_volume < 0:
+        raise ValueError("audio_volume must be non-negative (e.g., 0.5 for 50%)")
+
     # 验证输入文件存在
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video file not found: {video_path}")
@@ -204,21 +208,31 @@ def replace_video_audio(video_path, start_ms, end_ms, audio_path, output_path):
             subprocess.run(audio_extract_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except subprocess.CalledProcessError:
             # 如果直接复制失败（比如格式不支持），使用重新编码
-            audio_extract_cmd[-2] = 'pcm_s16le'  # 使用WAV格式
-            audio_extract_cmd[-1] = temp_audio_path
+            audio_extract_cmd = [
+                'ffmpeg',
+                '-y',
+                '-ss', str(start_sec),
+                '-i', audio_path,
+                '-t', str(duration_sec),
+                '-acodec', 'pcm_s16le',  # 显式指定编码器
+                '-f', 'wav',
+                '-avoid_negative_ts', 'make_zero',
+                temp_audio_path
+            ]
             subprocess.run(audio_extract_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        # 第二步：将裁剪后的音频与原视频合并（替换音频）
+        # 第二步：将裁剪后的音频与原视频合并（替换音频），并应用音量调整
         merge_cmd = [
             'ffmpeg',
             '-y',
             '-i', video_path,
             '-i', temp_audio_path,
-            '-c:v', 'copy',  # 视频流直接复制
-            '-c:a', 'aac',  # 音频重新编码为AAC
-            '-map', '0:v:0',  # 使用第一个输入的视频流
-            '-map', '1:a:0',  # 使用第二个输入的音频流
-            '-shortest',  # 以较短的流为准
+            '-c:v', 'copy',               # 视频流直接复制
+            '-c:a', 'aac',                # 音频重新编码为AAC
+            '-af', f'volume={audio_volume}',  # 应用音量滤镜
+            '-map', '0:v:0',              # 使用第一个输入的视频流
+            '-map', '1:a:0',              # 使用第二个输入的音频流
+            '-shortest',                  # 以较短的流为准
             output_path
         ]
 
@@ -228,7 +242,6 @@ def replace_video_audio(video_path, start_ms, end_ms, audio_path, output_path):
         # 清理临时文件
         if os.path.exists(temp_audio_path):
             os.unlink(temp_audio_path)
-
 
 def redub_video_with_ffmpeg(video_path: str,
                             segments_info: list,

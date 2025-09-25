@@ -499,7 +499,7 @@ def gen_ending_video(text, output_path, origin_ending_video_path):
         os.remove(with_audio_path)
     return str(output_path.resolve())
 
-def gen_video(text, output_path, origin_video_path, voice_name="zh-CN-YunjianNeural",keep_original_audio=False, fixed_rect=None):
+def gen_video(text, output_path, origin_video_path, voice_name="zh-CN-XiaoxiaoNeural",keep_original_audio=False, fixed_rect=None):
     """
     生成结尾视频（测试用），结尾语为txt
     """
@@ -515,7 +515,7 @@ def gen_video(text, output_path, origin_video_path, voice_name="zh-CN-YunjianNeu
         output_filename=str(audio_path),
         voice_name=voice_name,
         trim_silence=False,
-        rate="+20%",
+        rate="+40%",
         # pitch='+10Hz',
     )
     video_duration = probe_duration(origin_video_path)

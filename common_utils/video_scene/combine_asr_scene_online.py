@@ -26,7 +26,7 @@ from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_ti
     timeit_print, is_valid_target_file_simple
 from common_utils.image_utils import save_frames_around_timestamp
 from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box_target_number
-from common_utils.split_audio import separate_with_cli
+from common_utils.split_audio import separate_with_cli, process_media_by_volume
 from common_utils.split_scenes import find_and_split_scenes, split_scenes_json
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
 from common_utils.video_utils import extract_audio_from_video, clip_video_ms, merge_videos_ffmpeg, probe_duration, \
@@ -1447,6 +1447,9 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
                     output_path = segment_output_scene_file.replace('.mp4', '_with_text.mp4')
                     if not is_valid_target_file_simple(output_path):
                         audio_path = gen_audio_path(video_path).replace("vocals.wav", "no_vocals.wav")
+                        pure_audio_path = gen_audio_path(video_path).replace(".wav", "_pure.wav")
+                        if not is_valid_target_file_simple(pure_audio_path):
+                            process_media_by_volume(audio_path, pure_audio_path)
                         segment_output_scene_background_file = segment_output_scene_file.replace('.mp4', '_with_background.mp4')
                         replace_video_audio(segment_output_scene_file,seg_start, seg_end, audio_path, segment_output_scene_background_file)
                         gen_video(new_owner_text, output_path, segment_output_scene_background_file, keep_original_audio=True, fixed_rect=subtitle_box)
@@ -1502,11 +1505,11 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, 
 
     final_output_path = f'output/{base_name}/{base_name}_remake.mp4'
     merge_videos_ffmpeg(need_merge_video_file, output_path=final_output_path)
-    bgm_path = r"W:\project\python_project\watermark_remove\content_community\app\bgm_audio" + os.sep + '4f7ed367245a6ba525d07f21d4790a25.wav'
+    bgm_path = r"W:\project\python_project\watermark_remove\content_community\app\bgm_audio" + os.sep + 'no_vocals.wav'
     if bgm_path and os.path.exists(bgm_path):
         # print(f"正在为视频添加背景音乐: {bgm_path}")
         final_with_bgm_path = final_output_path.replace('.mp4', '_with_bgm.mp4')
-        add_bgm_to_video(final_output_path, bgm_path, str(final_with_bgm_path), volume_percentage=50)
+        add_bgm_to_video(final_output_path, bgm_path, str(final_with_bgm_path), auto_compute=True)
         return final_with_bgm_path
     return final_output_path
 
@@ -1576,6 +1579,8 @@ def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list):
         duration_list.append((final_narration_script_start, final_narration_script_end))
     merge_intervals_list = merge_intervals(duration_list)
     merged_timerange_list = []
+    if not merge_intervals_list:
+        return video_path, None
 
     for start, end in merge_intervals_list:
         merged_timerange_list.append(
@@ -1617,4 +1622,4 @@ def video_remake(video_path):
 
 
 if __name__ == '__main__':
-    video_remake('test4.mp4')
+    video_remake('test9.mp4')
