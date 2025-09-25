@@ -159,6 +159,76 @@ def _time_str_to_seconds(time_str: str) -> float:
 #     print(f"成功！最终视频已保存至: {output_path}")
 #     return output_path
 
+def replace_video_audio(video_path, start_ms, end_ms, audio_path, output_path):
+    """
+    将指定音频片段替换到视频中
+
+    Args:
+        video_path (str): 输入视频文件路径
+        start_ms (int): 音频开始时间（毫秒）
+        end_ms (int): 音频结束时间（毫秒）
+        audio_path (str): 输入音频文件路径
+        output_path (str): 输出文件路径
+    """
+    # 验证输入文件存在
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"Video file not found: {video_path}")
+    if not os.path.exists(audio_path):
+        raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+    # 转换毫秒为秒（ffmpeg使用秒为单位）
+    start_sec = start_ms / 1000.0
+    duration_sec = (end_ms - start_ms) / 1000.0
+
+    if duration_sec <= 0:
+        raise ValueError("End time must be greater than start time")
+
+    # 创建临时文件用于存储裁剪后的音频
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio:
+        temp_audio_path = temp_audio.name
+
+    try:
+        # 第一步：从音频文件中提取指定时间段的音频片段
+        audio_extract_cmd = [
+            'ffmpeg',
+            '-y',  # 覆盖输出文件
+            '-ss', str(start_sec),
+            '-i', audio_path,
+            '-t', str(duration_sec),
+            '-c', 'copy',  # 尝试直接复制以提高效率
+            '-avoid_negative_ts', 'make_zero',
+            temp_audio_path
+        ]
+
+        try:
+            subprocess.run(audio_extract_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            # 如果直接复制失败（比如格式不支持），使用重新编码
+            audio_extract_cmd[-2] = 'pcm_s16le'  # 使用WAV格式
+            audio_extract_cmd[-1] = temp_audio_path
+            subprocess.run(audio_extract_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        # 第二步：将裁剪后的音频与原视频合并（替换音频）
+        merge_cmd = [
+            'ffmpeg',
+            '-y',
+            '-i', video_path,
+            '-i', temp_audio_path,
+            '-c:v', 'copy',  # 视频流直接复制
+            '-c:a', 'aac',  # 音频重新编码为AAC
+            '-map', '0:v:0',  # 使用第一个输入的视频流
+            '-map', '1:a:0',  # 使用第二个输入的音频流
+            '-shortest',  # 以较短的流为准
+            output_path
+        ]
+
+        subprocess.run(merge_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    finally:
+        # 清理临时文件
+        if os.path.exists(temp_audio_path):
+            os.unlink(temp_audio_path)
+
 
 def redub_video_with_ffmpeg(video_path: str,
                             segments_info: list,
@@ -205,7 +275,6 @@ def redub_video_with_ffmpeg(video_path: str,
         通过 ffprobe 判断是否存在音频流。
         """
         if not shutil.which("ffprobe"):
-            # 若无 ffprobe，则保守假定有音频，避免误删音轨流程
             return True
         try:
             cmd = [
@@ -238,6 +307,28 @@ def redub_video_with_ffmpeg(video_path: str,
         except Exception:
             return 0.0
 
+    def build_atempo_filter(tempo: float) -> str:
+        """
+        构建安全的 atempo 滤镜链，支持任意正 tempo 值。
+        FFmpeg 的 atempo 范围是 [0.5, 2.0]，超出需链式组合。
+        """
+        if abs(tempo - 1.0) < 1e-6:
+            return "anull"
+        filters = []
+        t = tempo
+        # 处理小于 0.5 的情况
+        while t < 0.5:
+            filters.append("atempo=0.5")
+            t *= 2.0
+        # 处理大于 2.0 的情况
+        while t > 2.0:
+            filters.append("atempo=2.0")
+            t /= 2.0
+        # 剩余部分
+        if abs(t - 1.0) > 1e-6:
+            filters.append(f"atempo={t:.6f}")
+        return ",".join(filters)
+
     # ---------- 依赖与输入检查 ----------
     if not shutil.which("ffmpeg"):
         raise FileNotFoundError("FFmpeg not found. Please install FFmpeg and ensure it is in your system's PATH.")
@@ -251,14 +342,12 @@ def redub_video_with_ffmpeg(video_path: str,
         temp_files_list = []
         concat_file_path = os.path.join(temp_dir, "file_list.txt")
 
-        # print(f"开始处理视频片段... (保留原始音频混合: {keep_original_audio})")
         for i, segment in enumerate(segments_info):
             segment_id = segment.get('id', i + 1)
             start_time_str = segment['startTime']
             end_time_str = segment['endTime']
             audio_path = segment['outputPath']
 
-            # print(f"\n--- 正在处理片段 {segment_id} ---")
             if not os.path.exists(audio_path):
                 print(f"警告: 音频文件未找到 {audio_path}，跳过此片段。")
                 continue
@@ -266,7 +355,6 @@ def redub_video_with_ffmpeg(video_path: str,
             original_duration = max(0.000001, _time_str_to_seconds(end_time_str) - _time_str_to_seconds(start_time_str))
             new_audio_duration = float(segment.get('trimmedDuration') or 0.0)
             if new_audio_duration <= 0.0:
-                # 兜底：从文件本身探测时长
                 new_audio_duration = _probe_duration_seconds(audio_path) or original_duration
 
             temp_output_path = os.path.join(temp_dir, f"temp_segment_{segment_id}.mp4")
@@ -278,30 +366,28 @@ def redub_video_with_ffmpeg(video_path: str,
 
             print(f"进行音频匹配画面：原片段时长: {original_duration:.3f}s, 新音频时长: {new_audio_duration:.3f}s 视频速度调整为: {1/speed_multiplier:.3f}x")
 
-
             # ---------- 构建滤镜与映射 ----------
-            # 统一：视频 setpts；音频统一到立体声，并在必要时混音，禁用 amix 归一化，混音后限幅防削波。
             if keep_original_audio and source_has_audio:
-                print("模式: 混合新旧音频（不归一化，不降音量）")
+                # 需要混合原始音频和新音频
+                audio_tempo = 1.0 / speed_multiplier
+                atempo_filter = build_atempo_filter(audio_tempo)
                 filter_complex = (
                     f"[0:v]setpts={speed_multiplier:.6f}*PTS[v];"
-                    f"[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo[a0];"
+                    f"[0:a]{atempo_filter},aformat=sample_fmts=fltp:channel_layouts=stereo[a0];"
                     f"[1:a]aformat=sample_fmts=fltp:channel_layouts=stereo[a1];"
                     f"[a0][a1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.97[a]"
                 )
                 map_args = ["-map", "[v]", "-map", "[a]"]
+                print("模式: 混合新旧音频（原始音频已同步变速）")
             else:
-                # 无论是替换模式，还是源视频无音轨时的混合模式，都直接使用新音频
-                if keep_original_audio and not source_has_audio:
-                    print("模式: 源视频无音轨，使用新音频替换。")
-                else:
-                    # print("模式: 替换原始音频")
-                    pass
+                # 替换模式：直接使用新音频
                 filter_complex = (
                     f"[0:v]setpts={speed_multiplier:.6f}*PTS[v];"
                     f"[1:a]aformat=sample_fmts=fltp:channel_layouts=stereo,alimiter=limit=0.97[a]"
                 )
                 map_args = ["-map", "[v]", "-map", "[a]"]
+                if keep_original_audio and not source_has_audio:
+                    print("模式: 源视频无音轨，使用新音频替换。")
 
             base_cmd = [
                 "ffmpeg", "-y", "-loglevel", "error",
@@ -310,7 +396,6 @@ def redub_video_with_ffmpeg(video_path: str,
                 "-filter_complex", filter_complex,
             ]
 
-            # 统一音频为 48kHz 立体声；为保障兼容性，视频重编码，音频 AAC 编码
             encoding_cmd = [
                 "-c:v", "libx264", "-preset", "veryfast",
                 "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
@@ -338,8 +423,6 @@ def redub_video_with_ffmpeg(video_path: str,
             return ""
 
         # ---------- 拼接片段 ----------
-        # print("\n所有片段处理完毕，正在拼接成最终视频...")
-        concat_file_path = os.path.join(temp_dir, "file_list.txt")
         with open(concat_file_path, 'w', encoding='utf-8') as f:
             for file_path in temp_files_list:
                 safe_path = file_path.replace('\\', '/')
@@ -364,7 +447,6 @@ def redub_video_with_ffmpeg(video_path: str,
             print(f"FFmpeg Stderr:\n{e.stderr}")
             raise
 
-    # print(f"成功！最终视频已保存至: {output_path}")
     return output_path
 
 segments_data =[

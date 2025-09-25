@@ -499,7 +499,7 @@ def gen_ending_video(text, output_path, origin_ending_video_path):
         os.remove(with_audio_path)
     return str(output_path.resolve())
 
-def gen_video(text, output_path, origin_video_path, voice_name="zh-CN-YunjianNeural"):
+def gen_video(text, output_path, origin_video_path, voice_name="zh-CN-YunjianNeural",keep_original_audio=False):
     """
     生成结尾视频（测试用），结尾语为txt
     """
@@ -526,7 +526,7 @@ def gen_video(text, output_path, origin_video_path, voice_name="zh-CN-YunjianNeu
         'trimmedDuration': duration,
     }]
     with_audio_path = output_path.with_name(output_path.stem + "_with_audio.mp4")
-    redub_video_with_ffmpeg(video_path=origin_video_path, segments_info=segments_info, output_path=str(with_audio_path))
+    redub_video_with_ffmpeg(video_path=origin_video_path, segments_info=segments_info, output_path=str(with_audio_path),keep_original_audio=keep_original_audio)
 
     # 4. 添加字幕
     subtitle_data = [{

@@ -30,7 +30,7 @@ from common_utils.split_scenes import find_and_split_scenes, split_scenes_json
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
 from common_utils.video_utils import extract_audio_from_video, clip_video_ms, merge_videos_ffmpeg, probe_duration, \
     add_subtitles_to_video
-from common_utils.video_utils1 import redub_video_with_ffmpeg
+from common_utils.video_utils1 import redub_video_with_ffmpeg, replace_video_audio
 from common_utils.video_utils2 import add_bgm_to_video
 
 import string
@@ -1444,7 +1444,10 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
                 if sub_count == 2:
                     output_path = segment_output_scene_file.replace('.mp4', '_with_text.mp4')
                     if not is_valid_target_file_simple(output_path):
-                        gen_video(new_owner_text, output_path, segment_output_scene_file)
+                        audio_path = gen_audio_path(video_path).replace("vocals.wav", "no_vocals.wav")
+                        segment_output_scene_background_file = segment_output_scene_file.replace('.mp4', '_with_background.mp4')
+                        replace_video_audio(segment_output_scene_file,seg_start, seg_end, audio_path, segment_output_scene_background_file)
+                        gen_video(new_owner_text, output_path, segment_output_scene_background_file, keep_original_audio=True)
 
                 need_merge_video_file.append(output_path)
     else:
@@ -1477,7 +1480,7 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
     print(f'完成场景信息合并')
 
     new_scene_list = final_video_script['场景顺序与新文案']
-    # new_scene_list = new_scene_list[:2]
+    # new_scene_list = new_scene_list[:1]
     for fused_new_scene in new_scene_list:
         scene_start = fused_new_scene.get('scene_start')
         scene_end = fused_new_scene.get('scene_end')
@@ -1508,8 +1511,6 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
 
 @timeit_print
 def video_remake(video_path):
-    gen_audio_path(video_path)
-
     fixed_speech_asr_with_sub_text = gen_asr(video_path)
 
     sorted_scene_timestamp = get_scene(video_path)
@@ -1523,4 +1524,4 @@ def video_remake(video_path):
 
 
 if __name__ == '__main__':
-    video_remake('test4.mp4')
+    video_remake('test5.mp4')
