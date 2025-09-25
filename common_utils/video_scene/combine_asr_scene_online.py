@@ -548,14 +548,14 @@ def check_owner_asr(owner_asr_info, video_duration):
             print(f"[ERROR] 片段 {i} 跨度过长: {duration} ms")
             return False
 
-        # 2. 检查时长合理性：使用最快和最慢语速来估算时长范围
-        word_count = len(owner_asr_info[i]["final_text"].strip())
-        min_duration = (word_count / 1000) * 60 * 1000  # 最快语速 (150词/分钟)
-        max_duration = (word_count / 50) * 60 * 1000  # 最慢语速 (50词/分钟)
-
-        if not (min_duration <= duration <= max_duration):
-            print(f"[ERROR] 片段 {i} 时长不合理: {duration} ms, 预计范围: [{min_duration} ms, {max_duration} ms] 文案为:{owner_asr_info[i]["final_text"]}")
-            return False
+        # # 2. 检查时长合理性：使用最快和最慢语速来估算时长范围
+        # word_count = len(owner_asr_info[i]["final_text"].strip())
+        # min_duration = (word_count / 1000) * 60 * 1000  # 最快语速 (150词/分钟)
+        # max_duration = (word_count / 50) * 60 * 1000  # 最慢语速 (50词/分钟)
+        #
+        # if not (min_duration <= duration <= max_duration):
+        #     print(f"[ERROR] 片段 {i} 时长不合理: {duration} ms, 预计范围: [{min_duration} ms, {max_duration} ms] 文案为:{owner_asr_info[i]["final_text"]}")
+        #     return False
     if max_time > video_duration + 1000:
         print(f"[ERROR] 最大结束时间 {max_time} ms 超过视频总时长 {video_duration} ms")
         return False
@@ -832,11 +832,21 @@ def process_scenes_complete_fix(
     text_queue = sorted(text_results, key=lambda x: x['start'])
     for text in text_queue:
         overlapping_indices = []
+        is_owner = text.get('speaker') == owner_speaker
         for i, scene in enumerate(scenes):
             overlap_duration = max(0, min(text['end'], scene['end']) - max(text['start'], scene['start']))
-            is_owner = text.get('speaker') == owner_speaker
-            min_req_overlap = min_overlap_ms if is_owner else 1
-            if overlap_duration >= min_req_overlap:
+            scene_duration = scene['end'] - scene['start']
+
+            # 非 owner 仍用宽松策略（只要沾边）
+            if not is_owner:
+                if overlap_duration >= 1:
+                    overlapping_indices.append(i)
+                continue
+
+            # === owner 的重叠判断：双条件任一满足即算重叠 ===
+            cond1 = overlap_duration >= min_overlap_ms
+            cond2 = scene_duration > 0 and (overlap_duration / scene_duration) >= 0.5
+            if cond1 or cond2:
                 overlapping_indices.append(i)
 
         if not overlapping_indices:
@@ -1390,7 +1400,8 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
 
     if new_owner_text:
         s = _to_int(fused_new_scene.get('narration_script_start')) or int(scene_start)
-        e = _to_int(fused_new_scene.get('narration_script_end'))
+        s = s - 500
+        e = _to_int(fused_new_scene.get('narration_script_end')) + 500
 
         if e is None:
             MS_PER_CHAR = 200
@@ -1474,6 +1485,7 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
 
         new_narration_script_list = fused_new_scene.get('new_narration_script_list', [])
         split_scene_list = generate_scene_segments(scene_start, scene_end, new_narration_script_list)
+        # split_scene_list = [{'new_narration_script': '', 'scene_end': scene_end, 'scene_start': scene_start}]
         print(f'\n处理新场景:{name_key} 分割后的场景数量{len(split_scene_list)} 进度: {new_scene_list.index(fused_new_scene) + 1}/{len(new_scene_list)}')
         count = 0
         for split_scene in split_scene_list:
@@ -1496,6 +1508,8 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info):
 
 @timeit_print
 def video_remake(video_path):
+    gen_audio_path(video_path)
+
     fixed_speech_asr_with_sub_text = gen_asr(video_path)
 
     sorted_scene_timestamp = get_scene(video_path)
@@ -1509,4 +1523,4 @@ def video_remake(video_path):
 
 
 if __name__ == '__main__':
-    video_remake('test6.mp4')
+    video_remake('test4.mp4')
