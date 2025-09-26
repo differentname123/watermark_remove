@@ -1564,7 +1564,7 @@ def init_config():
         '3546970725550911': 'yiyi',
         '3546981674781282': 'qiqixiao',
         '3546970887031023': 'yang',
-        # '3546957842746100': 'ruruxiao',
+        '3546982836603594': 'ruruxiao',
         '391225237': 'xiaodan',
         '3546967068117356': 'xiaoxue',
 
@@ -1693,7 +1693,7 @@ def read_file_to_str(filepath: Union[str, Path],
         return f.read()
 
 
-def is_valid_target_file_simple(path, min_size_bytes: int = 1) -> bool:
+def is_valid_target_file_simple(path, min_size_bytes: int = 10) -> bool:
     """
     极简判断：文件存在且大小 >= min_size_bytes。
     默认 min_size_bytes=1 （即大小必须大于 0 字节）。

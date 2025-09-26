@@ -10,17 +10,17 @@ from content_community.bilibili.BiliVideoCommenter import load_processed_set
 
 # 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-need_clear = True
+need_clear = False
 
-total_cookie = get_config("ruru_bilibili_total_cookie")
+total_cookie = get_config("xiaoxue_bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 # 每次操作（关注或取消关注）之间的延迟范围（秒）
-MIN_OPERATION_DELAY_SEC = 20
-MAX_OPERATION_DELAY_SEC = 45
+MIN_OPERATION_DELAY_SEC = 120
+MAX_OPERATION_DELAY_SEC = 150
 
 # 获取列表时每页的数量 (最大50)
 PAGE_SIZE = 50
@@ -378,7 +378,7 @@ def main_task():
                 break
 
             delay = random.uniform(MIN_OPERATION_DELAY_SEC, MAX_OPERATION_DELAY_SEC)
-            delay = delay / 2
+            delay = delay
             logging.info(f"等待 {delay:.2f} 秒...")
             time.sleep(delay)
         # 删除followers_fids_set和processed_fids_set中失败的 FID

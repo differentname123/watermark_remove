@@ -750,7 +750,7 @@ def auto_upload():
         config = config_map.get(userName, config_map['base'])
         recent_videos = [v for v in user_videos if v.get('created') and v['created'] >= today_start]
         print(f"🔍 处理 {key} (用户: {userName}) 今日已上传 {len(recent_videos)} 个视频，时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
-        if len(recent_videos) >= 19:
+        if len(recent_videos) >= 30:
             print(f"⚠️ 跳过 {userName} 用户上传：今日已上传 {len(recent_videos)} 个视频，达到上限。")
             continue
         video_path_list = []

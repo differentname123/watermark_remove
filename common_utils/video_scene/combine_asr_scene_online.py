@@ -656,13 +656,12 @@ def fix_owner_speaker(video_path, fixed_speech_asr_info):
             traceback.print_exc()
 
 @timeit_print
-def gen_asr(video_path):
+def gen_asr(video_path, base_name):
     """
     生成修复后的asr以及句子时间段
     """
     start_time = time.time()
-    base_name = os.path.basename(video_path).split('.')[0]
-    speech_asr_output_file = f'output/{base_name}/{base_name}_speech_asr_with_owner.json'
+    speech_asr_output_file = f'output/{base_name}/speech_asr_with_owner.json'
 
     if not is_valid_target_file_simple(speech_asr_output_file):
         owner_asr_info = gen_owner_asr_by_llm(video_path)
@@ -748,13 +747,12 @@ def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True):
 
 
 @timeit_print
-def get_scene(video_path):
-    basename = os.path.basename(video_path).split('.')[0]
+def get_scene(video_path, basename):
 
     all_scene_info_dict = {}
     for high_threshold in [30, 40, 50, 60, 70]:
         start_time = time.time()
-        scene_info_file = f'output/{basename}/scenes_{basename}_{high_threshold}/scene_info.json'
+        scene_info_file = f'output/{basename}/scenes_{high_threshold}/scene_info.json'
         if is_valid_target_file_simple(scene_info_file):
             # print(f"场景信息文件已存在，跳过处理: {scene_info_file}")
             all_scene_info_dict[high_threshold] = read_json(scene_info_file)
@@ -778,7 +776,7 @@ def get_scene(video_path):
 
     print(f"场景识别合并完成:场景数量为: {len(kept_sorted)}")
     # 将kept_sorted保存到文件
-    save_json(f'output/{basename}/scenes_fused_{basename}/merged_timestamps.json', kept_sorted)
+    save_json(f'output/{basename}/scenes_fused/merged_timestamps.json', kept_sorted)
 
     # for key, value in pairs.items():
     #     timestamp = value[1]
@@ -962,8 +960,7 @@ def process_scenes_complete_fix(
 
 
 @timeit_print
-def get_scene_sub_text(video_path, sorted_scene_timestamp, owner_asr):
-    base_name = os.path.basename(video_path).split('.')[0]
+def get_scene_sub_text(sorted_scene_timestamp, owner_asr, base_name):
     merged_timestamps = sorted_scene_timestamp
     # 将all_sub_text_list按照end升序排序
     owner_asr.sort(key=lambda x: x.get('end', 0))
@@ -981,7 +978,7 @@ def get_scene_sub_text(video_path, sorted_scene_timestamp, owner_asr):
     owner_speaker = 'owner' if is_have_owner else 'other'
     min_scene_duration_ms = 10000 if is_have_owner else 1000
     scene_sub_text = process_scenes_complete_fix(owner_asr, merged_timestamps, owner_speaker=owner_speaker, min_scene_duration_ms=min_scene_duration_ms)
-    output_file_scene_sub_text = f'output/{base_name}/{base_name}_scene_sub_text.json'
+    output_file_scene_sub_text = f'output/{base_name}/scene_sub_text.json'
     save_json(output_file_scene_sub_text, scene_sub_text)
     print(f"场景划分完成:数量{len(scene_sub_text)} owner_speaker:{owner_speaker} min_scene_duration_ms:{min_scene_duration_ms}")
     return scene_sub_text
@@ -1158,9 +1155,14 @@ def gen_new_video_script_llm(scene_info, video_path):
     """
     生成新的视频方案
     """
+    for temp in scene_info:
+        # 去掉scene_start和scene_end字段
+        temp.pop('scene_start', None)
+        temp.pop('scene_end', None)
+
     retry_delay = 10
     max_retries = 3
-    prompt_file_path = '../../content_community/app/视频场景生成新视频.txt'
+    prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本.txt'
     prompt = read_file_to_str(prompt_file_path)
     full_prompt = f'{prompt}\n{scene_info}'
     raw = ""
@@ -1168,7 +1170,9 @@ def gen_new_video_script_llm(scene_info, video_path):
         try:
             print(f"[INFO] 正在生成新的视频脚本 (尝试 {attempt}/{max_retries})")
             model_name = "gemini-2.5-pro"
-            raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
+            # raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
+            raw = get_llm_content(prompt=full_prompt, model_name=model_name)
+
             new_video_script = string_to_object(raw)
             check_result = check_new_video_script(new_video_script, scene_info)
             if not check_result:
@@ -1198,7 +1202,7 @@ def gen_logical_scene_llm(scene_info, video_path):
     """
     retry_delay = 10
     max_retries = 3
-    prompt_file_path = '../../content_community/app/视频场景根据逻辑性的合并.txt'
+    prompt_file_path = '../../content_community/app/视频场景根据逻辑性的合并增强版本.txt'
     format_scene_info = []
     for scene in scene_info:
         format_scene = {
@@ -1264,8 +1268,8 @@ def gen_final_scene_info(logical_scene_info, origin_scene_info):
             if narration_script:
                 narration_script_list.append({
                     'source_clip_id': origin_scene_number,
-                    'narration_script_start': target_origin_scene.get('narration_script_start'),
-                    'narration_script_end': target_origin_scene.get('narration_script_end'),
+                    # 'narration_script_start': target_origin_scene.get('narration_script_start'),
+                    # 'narration_script_end': target_origin_scene.get('narration_script_end'),
                     'narration_script': narration_script
                 })
 
@@ -1273,8 +1277,8 @@ def gen_final_scene_info(logical_scene_info, origin_scene_info):
             if original_script:
                 original_script_list.append({
                     'source_clip_id': origin_scene_number,
-                    'original_script_start': target_origin_scene.get('original_script_start'),
-                    'original_script_end': target_origin_scene.get('original_script_end'),
+                    # 'original_script_start': target_origin_scene.get('original_script_start'),
+                    # 'original_script_end': target_origin_scene.get('original_script_end'),
                     'original_script': original_script
                 })
 
@@ -1284,7 +1288,8 @@ def gen_final_scene_info(logical_scene_info, origin_scene_info):
         temp_dict['narration_script_list'] = narration_script_list
         temp_dict['original_script_list'] = original_script_list
         temp_dict['visual_description'] = logical_scene.get('visual_description', '')
-        temp_dict['reason'] = logical_scene.get('reason', '')
+        # temp_dict['reason'] = logical_scene.get('reason', '')
+        temp_dict['scene_potential'] = logical_scene.get('scene_potential', '')
         final_scene_info.append(temp_dict)
 
 
@@ -1292,15 +1297,15 @@ def gen_final_scene_info(logical_scene_info, origin_scene_info):
 
 
 @timeit_print
-def gen_new_video_script(video_path, scene_sub_text, target_speaker='owner'):
+def gen_new_video_script(video_path, scene_sub_text, base_name, target_speaker='owner'):
     """
     生成新视频的文本脚本
     """
-    base_name = os.path.basename(video_path).split('.')[0]
     scene_sub_text_list = scene_sub_text
-    output_file_final = f'output/{base_name}/{base_name}_new_script.json'
-    output_file_scene_info = f'output/{base_name}/{base_name}_merge_speaker_scene_info.json'
-    output_file_logical_scene_info = f'output/{base_name}/{base_name}_logical_scene_info.json'
+    output_file_final = f'output/{base_name}/new_script.json'
+    output_file_scene_info = f'output/{base_name}/merge_speaker_scene_info.json'
+    output_file_logical_scene_info = f'output/{base_name}/logical_scene_info.json'
+    final_scene_info_path = f'output/{base_name}/final_scene_info.json'
 
     if is_valid_target_file_simple(output_file_final):
         new_video_script = read_json(output_file_final)
@@ -1319,6 +1324,7 @@ def gen_new_video_script(video_path, scene_sub_text, target_speaker='owner'):
 
 
     final_scene_info = gen_final_scene_info(logical_scene_info, scene_info)
+    save_json(final_scene_info_path, final_scene_info)
 
     new_video_script = gen_new_video_script_llm(final_scene_info, video_path=video_path)
     save_json(output_file_final, new_video_script)
@@ -1472,9 +1478,18 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, 
     new_video_script.sort(key=lambda x: x.get('方案整体评分', 0), reverse=True)
     new_video_script_result = new_video_script
     final_video_script = new_video_script_result[0]
+    final_scene_info_path = f'output/{base_name}/final_scene_info.json'
+    final_scene_info = read_json(final_scene_info_path)
 
     need_merge_video_file = []
     for new_scene in final_video_script['场景顺序与新文案']:
+        original_scene_number = new_scene.get('original_scene_number')
+        for final_scene in final_scene_info:
+            final_scene_number = final_scene.get('scene_number')
+            if str(final_scene_number) == str(original_scene_number):
+                new_scene.update(final_scene)
+                break
+
         new_narration_script_list = new_scene.get('new_narration_script_list', [])
         for new_narration_script in new_narration_script_list:
             original_scene_number = new_narration_script['source_clip_id']
@@ -1502,7 +1517,7 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, 
             process_video_with_owner_text(video_path, new_narration_script, split_scene, split_scene['scene_start'], split_scene['scene_end'], base_name, max_diff, need_merge_video_file, name_key_full, subtitle_box)
 
 
-    final_output_path = f'output/{base_name}/{base_name}_remake.mp4'
+    final_output_path = f'output/{base_name}/remake.mp4'
     merge_videos_ffmpeg(need_merge_video_file, output_path=final_output_path)
     bgm_path = r"W:\project\python_project\watermark_remove\content_community\app\bgm_audio" + os.sep + 'no_vocals.wav'
     if bgm_path and os.path.exists(bgm_path):
@@ -1552,12 +1567,11 @@ def merge_intervals(intervals):
 
 
 @timeit_print
-def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list):
+def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list, base_name):
     """
     找到字幕区域并且遮挡字幕
     """
     time_ranges = []
-    base_name = os.path.basename(video_path).split('.')[0]
     output_dir = f'output/{base_name}/subtitle'
 
 
@@ -1589,38 +1603,55 @@ def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list):
             }
         )
         time_ranges.append((start / 1000, end / 1000))
-    final_box_path = f'output/{base_name}/subtitle/{base_name}_final_subtitle_box.json'
+    final_box_path = f'output/{base_name}/subtitle/final_subtitle_box.json'
     if not is_valid_target_file_simple(final_box_path):
         final_box = find_overall_subtitle_box_target_number(video_path, merged_timerange_list, output_dir=output_dir)
         save_json(final_box_path, final_box)
     final_box = read_json(final_box_path)
     top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(video_path, final_box)
 
-    cover_video_path = f'output/{base_name}/{base_name}_covered.mp4'
+    cover_video_path = f'output/{base_name}/subtitle_covered.mp4'
     if is_valid_target_file_simple(cover_video_path):
         print(f"已存在遮挡字幕的视频: {cover_video_path}")
         return cover_video_path, [top_left, bottom_right]
     cover_subtitle(video_path, cover_video_path, top_left, bottom_right, time_ranges=time_ranges)
     return cover_video_path, [top_left, bottom_right]
 
+def test_all():
+    video_dir = 'test_video'
+    video_list = []
+    for root, dirs, files in os.walk(video_dir):
+        for file in files:
+            if file.endswith('.mp4') or file.endswith('.mov') or file.endswith('.mkv'):
+                video_list.append(os.path.join(root, file))
+    print(f"找到 {len(video_list)} 个视频文件")
+
+    for video in video_list:
+        print(f"\n处理视频: {video}")
+        try:
+            video_remake(video)
+        except Exception as e:
+            print(f"[ERROR] 处理视频 {video} 时出错: {e}")
+            traceback.print_exc()
+
 
 @timeit_print
 def video_remake(video_path):
-    basename = os.path.basename(video_path).split('.')[0]
+    basename = os.path.basename(video_path).split('.mp4')[0]
 
-    fixed_speech_asr_with_sub_text = gen_asr(video_path)
+    fixed_speech_asr_with_sub_text = gen_asr(video_path, basename)
 
-    sorted_scene_timestamp = get_scene(video_path)
+    sorted_scene_timestamp = get_scene(video_path, basename)
 
-    scene_sub_text = get_scene_sub_text(video_path, sorted_scene_timestamp, fixed_speech_asr_with_sub_text)
+    scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, basename)
 
-    new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text)
+    new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, basename)
 
-    video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info)
+    video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
 
     final_video_path = gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box, basename)
     return final_video_path
 
-
 if __name__ == '__main__':
-    video_remake('test10.mp4')
+    video_remake('test14.mp4')
+    # test_all()
