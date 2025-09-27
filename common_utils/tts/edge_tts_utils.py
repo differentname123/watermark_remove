@@ -211,29 +211,38 @@ if __name__ == "__main__":
     print("🚀 演示使用专业响度归一化 (`loudnorm`) 生成高质量语音。\n")
 
     text_list = [
-        "为什么刘子晗的公园约会,双蛋糕是王炸,让我们好感逆转。",
+        # "2024年4月14日，上海的天气十分晴朗，许多市民选择在世纪公园散步，享受这难得的春光。",
+        # "你答应过我的，为什么现在又变了？……我真不知道该怎么面对这一切。",
+        "请别担心，放慢脚步，用心感受每一个瞬间，你会发现，真正的美好其实就在身边。",
     ]
-    pitch_list = ['+0Hz', '+10Hz', '+20Hz', '+30Hz', '+40Hz', '+50Hz']
-    rate_list = ['+0%', '+10%', '+20%', '+30%', '+40%']
-    for  pitch in pitch_list:
-        for rate in rate_list:
-            for i, text in enumerate(text_list):
-                output_file = f"tts_output/pitch{pitch}_rate{rate}_{i + 1}.mp3"
-                print(f"--- 正在生成第 {i + 1}/{len(text_list)} 个文件: {output_file} ---")
+    pitch_list = ['+0Hz', '+10Hz', '+20Hz', '+30Hz', '+40Hz', '+50Hz', '+60Hz', '+70Hz']
+    rate_list = ['+0%', '+10%', '+20%', '+30%', '+40%', '+50%', '+60%']
+    voice_name_list = [
+            "zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural","zh-CN-YunjianNeural"
+        ]
+    for voice_name in voice_name_list:
+        for pitch in pitch_list:
+            for rate in rate_list:
+                for i, text in enumerate(text_list):
+                    output_file = f"tts_output/说话人{voice_name.split('-')[-1].replace('Neural','')}_音调{pitch}_语速{rate}_句子{i + 1}.mp3"
+                    print(f"--- 正在生成第 {i + 1}/{len(text_list)} 个文件: {output_file} ---")
+                    if os.path.exists(output_file):
+                        print(f"⚠️ 文件已存在，跳过: {output_file}\n")
+                        continue
 
-                duration = generate_audio_and_get_duration_sync(
-                    text=text,
-                    output_filename=output_file,
-                    voice_name="zh-CN-XiaoxiaoNeural",  # 可以换成你喜欢的语音
-                    trim_silence=True,
-                    target_loudness=-14,  # 这是关键参数，可以调整，-14更响，-18更轻
-                    pitch=pitch,
-                    rate=rate,
-                )
+                    duration = generate_audio_and_get_duration_sync(
+                        text=text,
+                        output_filename=output_file,
+                        voice_name=voice_name,  # 可以换成你喜欢的语音
+                        trim_silence=True,
+                        target_loudness=-14,  # 这是关键参数，可以调整，-14更响，-18更轻
+                        pitch=pitch,
+                        rate=rate,
+                    )
 
-        if duration:
-            print(f"🎉 文件 '{output_file}' 生成成功，时长: {duration:.2f} 秒。\n")
-        else:
-            print(f"🔥 文件 '{output_file}' 生成失败。\n")
+            if duration:
+                print(f"🎉 文件 '{output_file}' 生成成功，时长: {duration:.2f} 秒。\n")
+            else:
+                print(f"🔥 文件 '{output_file}' 生成失败。\n")
 
     print("所有文件生成完毕。请试听 `output_processed_*.mp3` 文件，对比效果。")

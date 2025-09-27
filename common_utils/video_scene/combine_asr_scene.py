@@ -1636,22 +1636,41 @@ def test_all():
 
 
 @timeit_print
-def video_remake(video_path):
+def video_remake(video_path, no_owner=False):
     basename = os.path.basename(video_path).split('.mp4')[0]
 
     fixed_speech_asr_with_sub_text = gen_asr(video_path, basename)
+    if no_owner:
+        for item in fixed_speech_asr_with_sub_text:
+            item['speaker'] = 'other'
 
     sorted_scene_timestamp = get_scene(video_path, basename)
 
     scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, basename)
 
     new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, basename)
-
-    video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
-
-    final_video_path = gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box, basename)
-    return final_video_path
+    #
+    # video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
+    #
+    # final_video_path = gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box, basename)
+    # return final_video_path
 
 if __name__ == '__main__':
-    video_remake('test5.mp4')
+    # video_remake('test14.mp4')
     # test_all()
+
+    UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志
+    upload_log = read_json(UPLOAD_LOG_FILE)
+    for key, item in upload_log.items():
+        video_path = item.get('video_path')
+        video_name = item.get('video_name')
+        if not video_path or not os.path.exists(video_path):
+            print(f"[WARN] 视频路径无效或不存在: {video_path}")
+            continue
+        try:
+            print(f"\n处理视频: {video_path}")
+            video_remake(video_path)
+        except Exception as e:
+            print(f"[ERROR] 处理视频 {video_path} 时出错: {e}")
+            traceback.print_exc()
+

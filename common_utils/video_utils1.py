@@ -159,7 +159,7 @@ def _time_str_to_seconds(time_str: str) -> float:
 #     print(f"成功！最终视频已保存至: {output_path}")
 #     return output_path
 
-def replace_video_audio(video_path, start_ms, end_ms, audio_path, output_path, audio_volume=0.5):
+def replace_video_audio(video_path, start_ms, end_ms, audio_path, output_path, audio_volume=1):
     """
     将指定音频片段替换到视频中，并可调节音量大小
 

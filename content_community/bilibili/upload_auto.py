@@ -43,7 +43,7 @@ video_recommend_user_list = ['nana']
 # 定义需要处理的账号名及其对应的config_map键名（区分大小写）
 accounts = {
     'tao': 'tao',
-    # 'ruru': 'ruru',
+    'ruru': 'ruru',
     'nana': 'nana',
     'jie': 'jie',
     'qiqi': 'qiqi',

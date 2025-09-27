@@ -2561,25 +2561,24 @@ def clip_video_ms(
         print(e)
         return False, str(e)
 
-    # 构建 ffmpeg 命令
-    # -i [输入文件] 放在 -ss 之前，进行精确截取
-    # 不使用 -c copy，强制 ffmpeg 进行重新编码
-    command = (
-        f"ffmpeg -i {shlex.quote(input_path)} "
-        f"-ss {shlex.quote(start_formatted)} "
-        f"-to {shlex.quote(end_formatted)} "
-        f"-y {shlex.quote(output_path)}"
-    )
+    # 【修改部分】构建 ffmpeg 命令列表，以避免 shell 解析特殊字符（如'#'）
+    command = [
+        'ffmpeg',
+        '-i', input_path,
+        '-ss', start_formatted,
+        '-to', end_formatted,
+        '-y', output_path
+    ]
 
     # print("模式: 精确重编码 (速度较慢)")
-    # print(f"正在执行命令: {command}")
+    # print(f"正在执行命令: {' '.join(command)}") # 如果需要调试，可以用这种方式打印
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        # 执行命令并等待完成
+        # 【修改部分】执行命令并等待完成，移除 shell=True
         result = subprocess.run(
             command,
-            shell=True,
+            # shell=True,  <-- 已移除
             check=True,
             capture_output=True,
             text=True,
