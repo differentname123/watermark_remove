@@ -43,33 +43,33 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 video_recommend_user_list = ['nana']
 # 定义需要处理的账号名及其对应的config_map键名（区分大小写）
 accounts = {
-    'tao': 'tao',
-    'ruru': 'ruru',
-    'nana': 'nana',
-    'jie': 'jie',
-    'qiqi': 'qiqi',
+    # 'tao': 'tao',
+    # 'ruru': 'ruru',
+    # 'nana': 'nana',
+    # 'jie': 'jie',
+    # 'qiqi': 'qiqi',
     'mama': 'mama',
-    'hong': 'hong',
-    # 'su': 'su',
-    'yan': 'yan',
-    'xue': 'xue',
-    'cai': 'cai',
-    'jun': 'jun',
-    'xiaosu': 'xiaosu',
-    'chabian': 'chabian',
-    'lin': 'lin',
-    'jj': 'jj',
-    'hao': 'hao',
-    # 'xiaohao': 'xiaohao',
-    'dan': 'dan',
-    'ning': 'ning',
-    'dahao': 'dahao',
-    'yang': 'yang',
-    'ruruxiao': 'ruruxiao',
-    'qiqixiao': 'qiqixiao',
-    'yiyi': 'yiyi',
-    'xiaodan': 'xiaodan',
-    'xiaoxue': 'xiaoxue',
+    # 'hong': 'hong',
+    # # 'su': 'su',
+    # 'yan': 'yan',
+    # 'xue': 'xue',
+    # 'cai': 'cai',
+    # 'jun': 'jun',
+    # 'xiaosu': 'xiaosu',
+    # 'chabian': 'chabian',
+    # 'lin': 'lin',
+    # 'jj': 'jj',
+    # 'hao': 'hao',
+    # # 'xiaohao': 'xiaohao',
+    # 'dan': 'dan',
+    # 'ning': 'ning',
+    # 'dahao': 'dahao',
+    # 'yang': 'yang',
+    # 'ruruxiao': 'ruruxiao',
+    # 'qiqixiao': 'qiqixiao',
+    # 'yiyi': 'yiyi',
+    # 'xiaodan': 'xiaodan',
+    # 'xiaoxue': 'xiaoxue',
 
 }
 
@@ -441,16 +441,11 @@ def _preprocess_media_steps(
 
     # --------- 重制视频分支（原脚本里始终 False） ---------
     # 保留原来判断（即：永远不会执行），以确保逻辑一致
-    if generation_options.get('is_original', False) and userName == 'yang':
+    if generation_options.get('remake_video', False) or userName == 'mama':
         t0 = time.time()
-        has_author_voice = generation_options.get('has_author_voice', True)
-        # 反转has_author_voice
-        no_owner = not has_author_voice
-        creative_guidance = generation_options.get('creative_guidance', '')
-        print(f"🔄 重制视频 {video_path}... userName: {userName} 是否不包含作者语音{no_owner} 创作指导：{creative_guidance}")
+        print(f"🔄 重制视频 {video_path}... userName: {userName}")
         try:
-
-            final_video_path, final_video_script = video_remake(video_path, no_owner)
+            final_video_path, final_video_script = video_remake(video_path)
             if final_video_path and os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0:
                 print(f"✅ 重制视频成功，保存为 {final_video_path}")
                 video_path = final_video_path

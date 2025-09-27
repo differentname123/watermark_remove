@@ -11,6 +11,7 @@
 import collections
 import copy
 import os
+import random
 import time
 import traceback
 from typing import List, Dict, Any, Optional
@@ -1407,8 +1408,12 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
             return None
 
     if new_owner_text:
+        original_script = fused_new_scene.get('original_script', '')
+        offset = 100
+        if not original_script:
+            offset = 500
         s = _to_int(fused_new_scene.get('narration_script_start')) or int(scene_start)
-        s = s - 100
+        s = s - offset
         e = _to_int(fused_new_scene.get('narration_script_end')) + 500
 
         if e is None:
@@ -1473,6 +1478,22 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
 
     return need_merge_video_file
 
+
+def get_bgm_path():
+    bgm_dir = r"W:\project\python_project\watermark_remove\content_community\app\bgm_audio"
+
+    # 获取所有文件
+    bgm_files = [f for f in os.listdir(bgm_dir) if f.lower().endswith(('.wav'))]
+
+    if not bgm_files:
+        raise FileNotFoundError(f"未在 {bgm_dir} 目录下找到任何音频文件！")
+
+    # 随机选择一个文件
+    bgm_path = os.path.join(bgm_dir, random.choice(bgm_files))
+
+    print(f"随机选择的BGM: {bgm_path}")
+    return bgm_path
+
 @timeit_print
 def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box, base_name):
     """
@@ -1503,7 +1524,7 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, 
     print(f'完成场景信息合并')
 
     new_scene_list = final_video_script['场景顺序与新文案']
-    # new_scene_list = new_scene_list[:1]
+    # new_scene_list = new_scene_list[7:]
     for fused_new_scene in new_scene_list:
         scene_start = fused_new_scene.get('scene_start')
         scene_end = fused_new_scene.get('scene_end')
@@ -1523,13 +1544,13 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, 
 
     final_output_path = f'output/{base_name}/remake.mp4'
     merge_videos_ffmpeg(need_merge_video_file, output_path=final_output_path)
-    bgm_path = r"W:\project\python_project\watermark_remove\content_community\app\bgm_audio" + os.sep + 'no_vocals.wav'
+    bgm_path = get_bgm_path()
     if bgm_path and os.path.exists(bgm_path):
         # print(f"正在为视频添加背景音乐: {bgm_path}")
         final_with_bgm_path = final_output_path.replace('.mp4', '_with_bgm.mp4')
         add_bgm_to_video(final_output_path, bgm_path, str(final_with_bgm_path), auto_compute=True)
-        return final_with_bgm_path
-    return final_output_path
+        return final_with_bgm_path, final_video_script
+    return final_output_path, final_video_script
 
 
 def merge_intervals(intervals):
@@ -1641,26 +1662,47 @@ def test_all():
 
 @timeit_print
 def video_remake(video_path, no_owner=False):
-    basename = os.path.basename(video_path).split('.mp4')[0]
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            basename = os.path.basename(video_path).split('.mp4')[0]
 
-    fixed_speech_asr_with_sub_text = gen_asr(video_path, basename)
-    if no_owner:
-        for item in fixed_speech_asr_with_sub_text:
-            item['speaker'] = 'other'
+            fixed_speech_asr_with_sub_text = gen_asr(video_path, basename)
+            if no_owner:
+                for item in fixed_speech_asr_with_sub_text:
+                    item['speaker'] = 'other'
 
-    sorted_scene_timestamp = get_scene(video_path, basename)
+            sorted_scene_timestamp = get_scene(video_path, basename)
 
-    scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, basename)
+            scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, basename)
 
-    new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, basename)
+            new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, basename)
 
-    video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
+            video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
 
-    final_video_path = gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box, basename)
-    return final_video_path
+            final_video_path, final_video_script = gen_new_video_by_scene_and_script(
+                video_path, new_video_script, scene_info, subtitle_box, basename
+            )
+
+            # 成功则返回结果
+            return final_video_path, final_video_script
+
+        except Exception as e:
+            last_exc = e
+            print(f"[video_remake] Attempt {attempt} failed for '{video_path}': {e}")
+            traceback.print_exc()
+
+            if attempt == max_attempts:
+                # 最后一次仍失败，重新抛出异常
+                print(f"[video_remake] All {max_attempts} attempts failed for '{video_path}'.")
+                return None, None
+            else:
+                # 否则继续下一次重试（不阻塞，立即重试；如需间隔可在此处添加 time.sleep）
+                print(f"[video_remake] Retrying ({attempt + 1}/{max_attempts})...")
+
 
 if __name__ == '__main__':
-    video_remake('test16.mp4')
+    video_remake('test19.mp4')
     # test_all()
     #
     # UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志

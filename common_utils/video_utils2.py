@@ -111,7 +111,7 @@ def add_bgm_to_video(video_path: str, bgm_path: str, output_path: str, volume_pe
         bgm_volume = get_average_volume(bgm_path)
         video_volume = get_average_volume(video_path)
         volume_percentage = bgm_volume / video_volume * 100
-        volume_percentage *= 0.5
+        volume_percentage *= 0.4
         if volume_percentage > 100:
             volume_percentage = 100
 
