@@ -1693,7 +1693,7 @@ def read_file_to_str(filepath: Union[str, Path],
         return f.read()
 
 
-def is_valid_target_file_simple(path, min_size_bytes: int = 10) -> bool:
+def is_valid_target_file_simple(path, min_size_bytes: int = 0) -> bool:
     """
     极简判断：文件存在且大小 >= min_size_bytes。
     默认 min_size_bytes=1 （即大小必须大于 0 字节）。

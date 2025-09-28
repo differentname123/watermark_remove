@@ -441,7 +441,7 @@ def _preprocess_media_steps(
 
     # --------- 重制视频分支（原脚本里始终 False） ---------
     # 保留原来判断（即：永远不会执行），以确保逻辑一致
-    if generation_options.get('is_original', False) and userName == 'yang':
+    if generation_options.get('isOriginal', False):
         t0 = time.time()
         has_author_voice = generation_options.get('has_author_voice', True)
         # 反转has_author_voice

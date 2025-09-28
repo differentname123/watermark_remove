@@ -10,9 +10,9 @@ from content_community.bilibili.BiliVideoCommenter import load_processed_set
 
 # 日志配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-need_clear = False
+need_clear = True
 
-total_cookie = get_config("xiaoxue_bilibili_total_cookie")
+total_cookie = get_config("yang_bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为
@@ -370,7 +370,7 @@ def main_task():
             if modify_relation(fid, 1):  # 1 代表关注
                 successful_follows += 1
             else:
-                time.sleep(1200)
+                time.sleep(3600)
                 failed_follows += 1
                 failed_set.add(fid)  # 将失败的 FID 添加到集合中
             if successful_follows > 5000:

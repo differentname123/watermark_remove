@@ -585,6 +585,17 @@ def gen_owner_asr_by_llm(video_path):
             owner_asr_info = string_to_object(raw)
             if check_owner_asr(owner_asr_info, video_duration_ms) is False:
                 raise ValueError(f"[ERROR] 生成生成asr文本异常，尝试重新生成 (尝试 {attempt}/{max_retries})")
+
+            if owner_asr_info == []:
+                owner_asr_info = [
+                    {
+                        "start": "00:00.000",
+                        "end": ms_to_time(video_duration_ms),
+                        "speaker": "other",
+                        "final_text": ""
+                    }]
+                print("[WARN] 生成的asr文本为空，使用默认值")
+
             return owner_asr_info
         except Exception as e:
             print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
@@ -1479,20 +1490,81 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
     return need_merge_video_file
 
 
-def get_bgm_path():
+def get_bgm_path(tags):
+    """
+    根据标签匹配数量对BGM进行排序，并选择一个合适的BGM路径。
+
+    Args:
+        tags (dict): 输入的标签字典，例如 {'style': ['清新'], 'mood': ['愉快']}
+
+    Returns:
+        str: 选中的BGM文件路径。
+    """
+    all_tags = []
+    for key, value in tags.items():
+        all_tags.extend(value)
+    # 使用集合以便快速计算交集
+    all_tags_set = set(all_tags)
+
     bgm_dir = r"W:\project\python_project\watermark_remove\content_community\app\bgm_audio"
+    bgm_info_list = read_json(r"W:\project\python_project\watermark_remove\content_community\app\bgm_info.json")
 
-    # 获取所有文件
-    bgm_files = [f for f in os.listdir(bgm_dir) if f.lower().endswith(('.wav'))]
+    bgm_info_map = {}
+    for bgm_info in bgm_info_list:
+        bgm_name = bgm_info.get('bgm_name', '未知').split('.')[0]
+        bgm_tags_dict = bgm_info.get('selected_tags', {})
+        bgm_all_tags = []
+        for key, bgm_tag_list in bgm_tags_dict.items():
+            bgm_all_tags.extend(bgm_tag_list)
+        bgm_info_map[bgm_name] = bgm_all_tags
 
-    if not bgm_files:
-        raise FileNotFoundError(f"未在 {bgm_dir} 目录下找到任何音频文件！")
+    # 获取所有有效的BGM文件
+    bgm_files = [f for f in os.listdir(bgm_dir) if f.lower().endswith('.wav')]
+    bgm_file_names = [os.path.splitext(f)[0] for f in bgm_files]
 
-    # 随机选择一个文件
-    bgm_path = os.path.join(bgm_dir, random.choice(bgm_files))
+    bgm_with_match_count = []
+    for bgm_file_name in bgm_file_names:
+        bgm_tags = bgm_info_map.get(bgm_file_name, [])
+        if not bgm_tags:
+            continue
 
-    print(f"随机选择的BGM: {bgm_path}")
-    return bgm_path
+        # 计算交集，获取匹配的标签数量
+        match_count = len(all_tags_set.intersection(set(bgm_tags)))
+
+        if match_count > 0:
+            bgm_path = os.path.join(bgm_dir, f"{bgm_file_name}.wav")
+            bgm_with_match_count.append({'path': bgm_path, 'match_count': match_count})
+
+    if not bgm_with_match_count:
+        # 如果没有任何匹配的BGM，可以采取备用策略，例如随机选择一个BGM
+        print(f"在 {bgm_dir} 目录下未找到任何与给定标签匹配的音频文件，将随机选择一个文件。")
+        if not bgm_files:
+            raise FileNotFoundError(f"在 {bgm_dir} 目录下找不到任何音频文件！")
+        return os.path.join(bgm_dir, random.choice(bgm_files))
+
+    # 根据匹配数量进行降序排序
+    bgm_with_match_count.sort(key=lambda x: x['match_count'], reverse=True)
+
+    # --- 选择策略 ---
+    # 策略1：直接选择匹配度最高的BGM
+    # best_bgm = bgm_with_match_count[0]
+
+    # 策略2：在匹配度最高的几个BGM中随机选择一个（例如前3个）
+    top_n = 3
+    top_choices = bgm_with_match_count[:top_n]
+    if not top_choices:
+        # 理论上，如果bgm_with_match_count不为空，这里就不会为空
+        raise ValueError("未能确定顶部的BGM选项。")
+
+    selected_bgm = random.choice(top_choices)
+
+    # print(f"候选BGM数量: {len(bgm_with_match_count)}")
+    # print("根据匹配度排序的BGM列表:")
+    # for item in bgm_with_match_count:
+    #     print(f"  - 路径: {item['path']}, 匹配标签数: {item['match_count']}")
+
+    print(f"\n最终选择的BGM: {selected_bgm['path']} (匹配数: {selected_bgm['match_count']})")
+    return selected_bgm['path']
 
 @timeit_print
 def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box, base_name):
@@ -1544,7 +1616,8 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, 
 
     final_output_path = f'output/{base_name}/remake.mp4'
     merge_videos_ffmpeg(need_merge_video_file, output_path=final_output_path)
-    bgm_path = get_bgm_path()
+    tags = final_video_script.get('tags', [])
+    bgm_path = get_bgm_path(tags)
     if bgm_path and os.path.exists(bgm_path):
         # print(f"正在为视频添加背景音乐: {bgm_path}")
         final_with_bgm_path = final_output_path.replace('.mp4', '_with_bgm.mp4')
@@ -1702,7 +1775,7 @@ def video_remake(video_path, no_owner=False):
 
 
 if __name__ == '__main__':
-    video_remake('test19.mp4')
+    video_remake('7554759964426849563.mp4')
     # test_all()
     #
     # UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志
