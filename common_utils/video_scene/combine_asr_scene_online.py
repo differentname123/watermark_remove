@@ -547,8 +547,8 @@ def check_owner_asr(owner_asr_info, video_duration):
         duration = end_time - start_time
 
         # 1. 最大跨度不能超过 20s
-        if duration > 20000:
-            print(f"[ERROR] 片段 {i} 跨度过长: {duration} ms")
+        if len(owner_asr_info[i]['final_text']) > 100 and owner_asr_info[i]['speaker'] == 'owner':
+            print(f"[ERROR] 片段 {i} 跨度过长: {duration} ms 文案为:{owner_asr_info[i]['final_text']}")
             return False
 
         # # 2. 检查时长合理性：使用最快和最慢语速来估算时长范围
@@ -1156,14 +1156,50 @@ def extract_and_merge_owner_other(scenes, target_speaker):
 
 def check_new_video_script(new_video_script, scene_info):
     """
-    生成的original_scene_number是否都在scene_info中
+    检测 new_video_script 的有效性，确保：
+    1. 每个场景的 original_scene_number 都能在 scene_info 中找到。
+    2. 找到的原始场景中 'narration_script_list' 的 source_clip_id 集合
+       必须与 new_script 场景中 'new_narration_script_list' 的 source_clip_id 集合完全一致。
     """
-    scene_numbers = {str(scene['scene_number']) for scene in scene_info}
-    for detail_new_video_script in new_video_script:
-        for scene in detail_new_video_script.get('场景顺序与新文案', []):
-            if str(scene['original_scene_number']) not in scene_numbers:
-                print(f"[ERROR] original_scene_number {scene['original_scene_number']} 不在 scene_info 中")
+    # 创建一个从 scene_number 到整个场景对象的映射，便于快速查找
+    scene_info_map = {scene['scene_number']: scene for scene in scene_info}
+
+    # 遍历 new_video_script 中的每个方案和场景
+    for solution_index, detail_new_video_script in enumerate(new_video_script):
+        solution_title = detail_new_video_script.get('title', f"方案 {solution_index + 1}")
+
+        for scene_index, scene in enumerate(detail_new_video_script.get('场景顺序与新文案', [])):
+            original_scene_num = scene.get('original_scene_number')
+
+            # 检测点 1: original_scene_number 是否在 scene_info 中存在
+            if original_scene_num not in scene_info_map:
+                print(f"[ERROR] 在方案 '{solution_title}' 的第 {scene_index + 1} 个场景中：")
+                print(f"  - original_scene_number '{original_scene_num}' 不在 scene_info 中。")
                 return False
+
+            original_scene = scene_info_map[original_scene_num]
+
+            # --- 检测点 2: 比较 source_clip_id 是否完全一致 ---
+
+            # 安全地获取原始场景和新场景的 narration list，如果键不存在则视为空列表[]
+            original_narration_list = original_scene.get('narration_script_list', [])
+            new_narration_list = scene.get('new_narration_script_list', [])
+
+            # 分别提取两边的 source_clip_id 到集合中
+            original_clip_ids = {item['source_clip_id'] for item in original_narration_list}
+            new_clip_ids = {item['source_clip_id'] for item in new_narration_list}
+
+            # 比较两个集合是否相等。集合比较能确保元素和数量都一致，且忽略顺序。
+            if original_clip_ids != new_clip_ids:
+                print(
+                    f"[ERROR] 在方案 '{solution_title}' 的第 {scene_index + 1} 个场景 (对应 original_scene_number: {original_scene_num}) 中：")
+                print(f"  - source_clip_id 不匹配！")
+                print(f"  - 期望的 ID 集合 (来自 scene_info): {original_clip_ids or '空'}")
+                print(f"  - 实际的 ID 集合 (来自 new_script): {new_clip_ids or '空'}")
+                return False
+
+    # 如果所有循环都正常完成，说明没有发现错误
+    print("检测通过！所有场景引用均有效，且 source_clip_id 完全匹配。")
     return True
 
 
@@ -1464,7 +1500,7 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
         for video_time_segment in video_time_segments:
             sub_count += 1
             seg_start, seg_end = video_time_segment
-            if seg_end > seg_start:
+            if seg_end > seg_start + 100:
                 segment_output_scene_file = f'output/{base_name}/split_scene/{name_key}_part{sub_count}.mp4'
                 print(f'\n处理: {segment_output_scene_file} 时间段: {seg_start}-{seg_end}')
                 output_path = segment_output_scene_file
@@ -1781,7 +1817,7 @@ def video_remake(video_path, no_owner=False, video_info={}):
 
 
 if __name__ == '__main__':
-    video_remake('test21.mp4')
+    video_remake('7204664023407775015.mp4')
     # test_all()
     #
     # UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志

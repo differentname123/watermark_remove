@@ -31,7 +31,7 @@ from typing import List
 # ========== 在这里写死你要的 get_config 参数（按需修改） ==========
 COOKIE_NAMES = [
 ]
-user_name_list = ['tao', 'xiaoxue', 'jie', 'qiqi', 'mama', 'xiaosu', 'jun', 'jj', 'ning', 'qiqixiao', 'ruruxiao']
+user_name_list = ['tao', 'xiaoxue', 'jie', 'qiqi', 'mama', 'xiaosu', 'jun', 'jj', 'taoxiao', 'qiqixiao', 'ruruxiao']
 for name in user_name_list:
     cookie_var = f"{name}_bilibili_total_cookie"
     if cookie_var not in COOKIE_NAMES:

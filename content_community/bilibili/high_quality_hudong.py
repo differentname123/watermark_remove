@@ -1594,7 +1594,7 @@ def fun():
             name = config_map[uid].get('name', uid)
             # if uid in ['3546965562362625']:
             #     continue
-            if name in ['tao', 'xiaoxue', 'jie', 'qiqi', 'mama', 'xiaosu', 'jun', 'jj', 'qiqixiao', 'ning']:
+            if name in ['tao', 'xiaoxue', 'jie', 'qiqi', 'mama', 'xiaosu', 'jun', 'jj', 'qiqixiao', 'taoxiao']:
                 continue
 
             if NEED_UPDATE_SIGN:
