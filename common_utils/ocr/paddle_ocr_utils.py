@@ -1,3 +1,5 @@
+import json
+
 import cv2
 import os
 import numpy as np
@@ -172,22 +174,51 @@ def draw_box_on_image(image: np.ndarray, box: Optional[np.ndarray], output_path:
 def main_find_subtitle(image_path: str, output_path='temp.jpg'):
     """
     主函数，执行完整的字幕定位和可视化流程。
+    支持断点调用：会检查并使用本地缓存的字幕坐标。
 
     :param image_path: 输入图片的路径。
     :param output_path: 输出图片的保存路径。
     """
+    # --- 断点调用功能 ---
+    # 1. 生成缓存文件路径
+    # 将文件扩展名替换为 .json 作为缓存文件名
+    base_name = os.path.splitext(image_path)[0]
+    cache_path = base_name + '_subtitle_box.json'
+
+    # 2. 检查缓存是否存在
+    if os.path.exists(cache_path):
+        print(f"✅ 发现缓存文件，直接从 '{cache_path}' 读取字幕坐标。")
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            subtitle_box = json.load(f)
+
+        # 可视化缓存的结果
+        if subtitle_box is not None:
+            # 需要加载图片来进行可视化
+            from PIL import Image
+            import numpy as np
+            try:
+                # 假设 draw_box_on_image 需要 numpy array 格式的图片
+                image_for_drawing = np.array(Image.open(image_path))
+                draw_box_on_image(image_for_drawing.copy(), np.array(subtitle_box), image_path)
+            except Exception as e:
+                print(f"❗️ 从缓存加载后进行可视化时出错: {e}")
+
+        return subtitle_box
+
+    # --- 如果没有缓存，执行完整流程 ---
+    print("ℹ️ 未发现缓存，开始执行完整的字幕定位流程...")
+
     # 步骤1: 初始化OCR模型
     ocr_model = init_ocr_model()
 
     # 步骤2: 加载图片
     image, height, width = load_image(image_path)
     if image is None:
-        return
+        return None
 
     # 步骤3: 执行OCR预测
     ocr_result = predict_text(ocr_model, image)
 
-    # --- 关键变化：一步到位寻找字幕 ---
     # 步骤4: 从OCR结果中寻找字幕
     subtitle_box = find_subtitle(ocr_result, height, width)
 
@@ -196,17 +227,34 @@ def main_find_subtitle(image_path: str, output_path='temp.jpg'):
     if subtitle_box is not None:
         print(f"✅ 成功定位到字幕！高度为: {subtitle_box[2][1] - subtitle_box[0][1]} 像素")
         print("字幕坐标为:")
-        print(subtitle_box.tolist())  # 打印时转为list
+        subtitle_box_list = subtitle_box.tolist()  # 转为列表以进行打印和保存
+        print(subtitle_box_list)
+
+        # --- 断点调用功能 ---
+        # 3. 将新结果保存到缓存文件
+        try:
+            with open(cache_path, 'w', encoding='utf-8') as f:
+                json.dump(subtitle_box_list, f, ensure_ascii=False, indent=4)
+            print(f"💾 字幕坐标已成功保存到 '{cache_path}'")
+        except Exception as e:
+            print(f"❗️ 保存缓存文件时出错: {e}")
+
         draw_box_on_image(image.copy(), subtitle_box, image_path)
     else:
         print("❌ 未能在图片中定位到字幕。")
+        # 如果没有找到字幕，可以选择保存一个 null 或空列表到缓存，避免每次都重新计算
+        # 这里我们选择保存 None
+        with open(cache_path, 'w', encoding='utf-8') as f:
+            json.dump(None, f)
+        print(f"💾 '无字幕'状态已保存到 '{cache_path}'")
+
     print("=" * 54)
-    # 将subtitle_box转换为列表
+
+    # 返回列表格式的结果
     if subtitle_box is not None:
-        subtitle_box = subtitle_box.tolist()
+        return subtitle_box.tolist()
     else:
-        subtitle_box = None
-    return subtitle_box
+        return None
 
 
 # ==============================================================================
@@ -432,7 +480,7 @@ import numpy as np
 def find_overall_subtitle_box_target_number(
     video_path: str,
     merged_timerange_list: list[dict],
-    num_samples: int = 20,
+    num_samples: int = 10,
     output_dir = 'temp_dir'
 ):
     """
@@ -446,8 +494,8 @@ def find_overall_subtitle_box_target_number(
     """
 
     # --- 准备工作：创建或清空输出目录 ---
-    if os.path.exists(output_dir):
-        shutil.rmtree(output_dir)
+    # if os.path.exists(output_dir):
+    #     shutil.rmtree(output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
     # --- 检查视频文件 ---
@@ -672,4 +720,4 @@ def find_overall_subtitle_box_target_number_old(video_path: str, num_samples: in
 # 使用示例
 # ==============================================================================
 if __name__ == '__main__':
-    main_find_subtitle('test.jpg', 'output.jpg')
+    main_find_subtitle('frame_4759.jpg', 'output.jpg')

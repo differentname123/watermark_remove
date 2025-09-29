@@ -675,8 +675,12 @@ def gen_asr(video_path, base_name):
     start_time = time.time()
     speech_asr_output_file = f'output/{base_name}/speech_asr_with_owner.json'
 
-    if not is_valid_target_file_simple(speech_asr_output_file):
+    if not is_valid_target_file_simple(speech_asr_output_file, min_size_bytes=10):
         owner_asr_info = gen_owner_asr_by_llm(video_path)
+        # 判断owner_asr_info是否为dict
+        if owner_asr_info is None:
+            print("[ERROR] 生成asr文本失败，返回空结果")
+            raise ValueError("生成asr文本失败，返回空结果")
         save_json(speech_asr_output_file, owner_asr_info)
     print(f"生成精准asr与说话人信息文件耗时: {time.time() - start_time} 秒")
     owner_asr_info = read_json(speech_asr_output_file)
@@ -857,7 +861,7 @@ def process_scenes_complete_fix(
 
             # === owner 的重叠判断：双条件任一满足即算重叠 ===
             cond1 = overlap_duration >= min_overlap_ms
-            cond2 = scene_duration > 0 and (overlap_duration / scene_duration) >= 0.5
+            cond2 = scene_duration > 0 and (overlap_duration / scene_duration) >= 0.2
             if cond1 or cond2:
                 overlapping_indices.append(i)
 
@@ -1421,8 +1425,10 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
     if new_owner_text:
         original_script = fused_new_scene.get('original_script', '')
         offset = 100
-        if not original_script:
+        if not original_script or fused_new_scene.get('original_script_start', 10) > fused_new_scene.get('narration_script_start'):
             offset = 500
+        else:
+            print()
         s = _to_int(fused_new_scene.get('narration_script_start')) or int(scene_start)
         s = s - offset
         e = _to_int(fused_new_scene.get('narration_script_end')) + 500
@@ -1734,7 +1740,7 @@ def test_all():
 
 
 @timeit_print
-def video_remake(video_path, no_owner=False):
+def video_remake(video_path, no_owner=False, video_info={}):
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
@@ -1751,10 +1757,10 @@ def video_remake(video_path, no_owner=False):
 
             new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, basename)
 
-            video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
+            subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
 
             final_video_path, final_video_script = gen_new_video_by_scene_and_script(
-                video_path, new_video_script, scene_info, subtitle_box, basename
+                subtitle_video_path, new_video_script, scene_info, subtitle_box, basename
             )
 
             # 成功则返回结果
@@ -1775,7 +1781,7 @@ def video_remake(video_path, no_owner=False):
 
 
 if __name__ == '__main__':
-    video_remake('7554759964426849563.mp4')
+    video_remake('test21.mp4')
     # test_all()
     #
     # UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志

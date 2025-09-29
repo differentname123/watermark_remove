@@ -370,7 +370,7 @@ def main_task():
             if modify_relation(fid, 1):  # 1 代表关注
                 successful_follows += 1
             else:
-                time.sleep(3600)
+                time.sleep(2 * 3600)
                 failed_follows += 1
                 failed_set.add(fid)  # 将失败的 FID 添加到集合中
             if successful_follows > 5000:
@@ -378,7 +378,7 @@ def main_task():
                 break
 
             delay = random.uniform(MIN_OPERATION_DELAY_SEC, MAX_OPERATION_DELAY_SEC)
-            delay = delay * 2
+            delay = delay * 4
             logging.info(f"等待 {delay:.2f} 秒...")
             time.sleep(delay)
         # 删除followers_fids_set和processed_fids_set中失败的 FID

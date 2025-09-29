@@ -441,7 +441,7 @@ def _preprocess_media_steps(
 
     # --------- 重制视频分支（原脚本里始终 False） ---------
     # 保留原来判断（即：永远不会执行），以确保逻辑一致
-    if generation_options.get('isOriginal', False):
+    if generation_options.get('is_original', False):
         t0 = time.time()
         has_author_voice = generation_options.get('has_author_voice', True)
         # 反转has_author_voice
@@ -490,21 +490,21 @@ def _preprocess_media_steps(
     #         stage_times['尾部插图'] = time.time() - t0
     #         print(f"⚠️ 尾部插图失败，继续使用原视频：{e}")
 
-    # 视频细节调整（当 duration < 600）
-    if duration < 6000:
-        tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
-        try:
-            t0 = time.time()
-            result = apply_all_subtle_tweaks(video_path, output_path=tweak_video_path)
-            if os.path.exists(tweak_video_path) and result and os.path.getsize(tweak_video_path) > 0:
-                video_path = tweak_video_path
-                print(f"✅ 视频细节调整成功，保存为 {tweak_video_path}")
-            else:
-                print(f"❌ 视频细节调整失败，继续使用原视频。")
-            stage_times['视频细节调整'] = time.time() - t0
-        except Exception as e:
-            stage_times['视频细节调整'] = time.time() - t0
-            print(f"⚠️ 视频细节调整失败：{e}")
+    # # 视频细节调整（当 duration < 600）
+    # if duration < 6000:
+    #     tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
+    #     try:
+    #         t0 = time.time()
+    #         result = apply_all_subtle_tweaks(video_path, output_path=tweak_video_path)
+    #         if os.path.exists(tweak_video_path) and result and os.path.getsize(tweak_video_path) > 0:
+    #             video_path = tweak_video_path
+    #             print(f"✅ 视频细节调整成功，保存为 {tweak_video_path}")
+    #         else:
+    #             print(f"❌ 视频细节调整失败，继续使用原视频。")
+    #         stage_times['视频细节调整'] = time.time() - t0
+    #     except Exception as e:
+    #         stage_times['视频细节调整'] = time.time() - t0
+    #         print(f"⚠️ 视频细节调整失败：{e}")
 
     # # 添加结尾片段
     # temp_video_path = video_path.replace('.mp4', '_temp.mp4')
