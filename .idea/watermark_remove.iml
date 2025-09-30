@@ -7,6 +7,8 @@
       <excludeFolder url="file://$MODULE_DIR$/python" />
       <excludeFolder url="file://$MODULE_DIR$/python37" />
       <excludeFolder url="file://$MODULE_DIR$/LLM/TikTokDownloader/downloads" />
+      <excludeFolder url="file://$MODULE_DIR$/common_utils/video_scene/output" />
+      <excludeFolder url="file://$MODULE_DIR$/content_community/bilibili/output" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.12 (watermark_remove)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />

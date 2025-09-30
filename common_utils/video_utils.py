@@ -2605,3 +2605,67 @@ def clip_video_ms(
         error_message = f"发生未知错误: {e}"
         print(error_message)
         return False, error_message
+
+
+def add_transparent_watermark(
+        video_path: str,
+        watermark_path: str,
+        output_path: str,
+        relative_width: float = 0.05,
+        opacity: float = 1,
+        position: str = "top_left"
+):
+    """
+    使用 ffmpeg 为视频添加一个圆形的、动态缩放的半透明水印。
+    它会取水印图片的内切圆部分。
+    """
+    position_map = {
+        "top_left": "10:10",
+        "top_right": "W-w-10:10",
+        "bottom_left": "10:H-h-10",
+        "bottom_right": "W-w-10:H-h-10"
+    }
+
+    if position not in position_map:
+        raise ValueError("位置参数无效。请从 'top_left', 'top_right', 'bottom_left', 'bottom_right' 中选择。")
+
+    try:
+        video_width, _ = get_media_dimensions(video_path)
+        watermark_scaled_width = int(video_width * relative_width)
+
+        # 这是修改的核心：构建一个新的 filter_complex 字符串
+        filter_complex = (
+            # 1. 缩放水印图片，并确保它有 RGBA 格式以便修改 alpha 通道
+            f"[1:v]scale={watermark_scaled_width}:-1,format=rgba,"
+            # 2. 使用 geq 滤镜创建圆形蒙版并应用透明度
+            #    r='r(X,Y)': 保持原始的 R, G, B 通道不变
+            #    a='...':     重写 Alpha (透明) 通道
+            #    pow(X-W/2,2)+pow(Y-H/2,2) <= pow(min(W,H)/2,2) : 这是圆的方程，判断像素是否在内切圆内
+            #    if(condition, true_val, false_val) : 三元表达式
+            #    true_val: opacity * 255 (Alpha通道范围是0-255)
+            #    false_val: 0 (完全透明)
+            "geq=r='r(X,Y)':a='if(lte(pow(X-W/2,2)+pow(Y-H/2,2),pow(min(W,H)/2,2)),"
+            f"{opacity}*255,0)'[wm];"
+            # 3. 将处理好的圆形水印 [wm] 叠加到主视频 [0:v] 上
+            f"[0:v][wm]overlay={position_map[position]}"
+        )
+
+        command = [
+            'ffmpeg',
+            '-i', video_path,
+            '-i', watermark_path,
+            '-filter_complex', filter_complex,
+            '-loglevel', 'error',
+            '-y',
+            output_path
+        ]
+
+        subprocess.run(command, check=True, capture_output=True, text=True)
+        print(f"圆形动态缩放水印添加成功，已保存至: {output_path}")
+
+    except (FileNotFoundError, ValueError) as e:
+        print(f"错误：{e}")
+        print("请确保您的系统中已经正确安装了 ffmpeg 和 ffprobe。")
+    except subprocess.CalledProcessError as e:
+        print("ffmpeg 或 ffprobe 在执行过程中返回了一个错误：")
+        print(e.stderr)

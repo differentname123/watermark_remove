@@ -547,7 +547,7 @@ def check_owner_asr(owner_asr_info, video_duration):
         duration = end_time - start_time
 
         # 1. 最大跨度不能超过 20s
-        if len(owner_asr_info[i]['final_text']) > 100 and owner_asr_info[i]['speaker'] == 'owner':
+        if len(owner_asr_info[i]['final_text']) > 200 and owner_asr_info[i]['speaker'] == 'owner':
             print(f"[ERROR] 片段 {i} 跨度过长: {duration} ms 文案为:{owner_asr_info[i]['final_text']}")
             return False
 
@@ -1168,6 +1168,12 @@ def check_new_video_script(new_video_script, scene_info):
     for solution_index, detail_new_video_script in enumerate(new_video_script):
         solution_title = detail_new_video_script.get('title', f"方案 {solution_index + 1}")
 
+        scenes_list = detail_new_video_script.get('场景顺序与新文案')
+        if not isinstance(scenes_list, list) or len(scenes_list) == 0:
+            print(f"[ERROR] 方案 '{solution_title}' 的字段 '场景顺序与新文案' 不存在或为空（必须提供且至少包含 1 个场景）。")
+            return False
+
+
         for scene_index, scene in enumerate(detail_new_video_script.get('场景顺序与新文案', [])):
             original_scene_num = scene.get('original_scene_number')
 
@@ -1203,7 +1209,7 @@ def check_new_video_script(new_video_script, scene_info):
     return True
 
 
-def gen_new_video_script_llm(scene_info, video_path):
+def gen_new_video_script_llm(scene_info, video_path, no_owner=False):
     """
     生成新的视频方案
     """
@@ -1215,6 +1221,11 @@ def gen_new_video_script_llm(scene_info, video_path):
     retry_delay = 10
     max_retries = 3
     prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本.txt'
+
+    if no_owner:
+        print("[INFO] 使用无主人说话人版本的提示词")
+        prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本纯重排场景.txt'
+
     prompt = read_file_to_str(prompt_file_path)
     full_prompt = f'{prompt}\n{scene_info}'
     raw = ""
@@ -1349,7 +1360,7 @@ def gen_final_scene_info(logical_scene_info, origin_scene_info):
 
 
 @timeit_print
-def gen_new_video_script(video_path, scene_sub_text, base_name, target_speaker='owner'):
+def gen_new_video_script(video_path, scene_sub_text, base_name, target_speaker='owner', no_owner=False):
     """
     生成新视频的文本脚本
     """
@@ -1359,7 +1370,7 @@ def gen_new_video_script(video_path, scene_sub_text, base_name, target_speaker='
     output_file_logical_scene_info = f'output/{base_name}/logical_scene_info.json'
     final_scene_info_path = f'output/{base_name}/final_scene_info.json'
 
-    if is_valid_target_file_simple(output_file_final):
+    if is_valid_target_file_simple(output_file_final, 10):
         new_video_script = read_json(output_file_final)
         scene_info = read_json(output_file_scene_info)
         return new_video_script, scene_info
@@ -1378,7 +1389,7 @@ def gen_new_video_script(video_path, scene_sub_text, base_name, target_speaker='
     final_scene_info = gen_final_scene_info(logical_scene_info, scene_info)
     save_json(final_scene_info_path, final_scene_info)
 
-    new_video_script = gen_new_video_script_llm(final_scene_info, video_path=video_path)
+    new_video_script = gen_new_video_script_llm(final_scene_info, video_path=video_path,no_owner=no_owner)
     save_json(output_file_final, new_video_script)
 
     return new_video_script, scene_info
@@ -1787,11 +1798,15 @@ def video_remake(video_path, no_owner=False, video_info={}):
                 for item in fixed_speech_asr_with_sub_text:
                     item['speaker'] = 'other'
 
+            # 检测fixed_speech_asr_with_sub_text中的speaker有没有为 owner的
+            has_owner = any(item.get('speaker') == 'owner' for item in fixed_speech_asr_with_sub_text)
+            no_owner = not has_owner
+
             sorted_scene_timestamp = get_scene(video_path, basename)
 
             scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, basename)
 
-            new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, basename)
+            new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, basename, no_owner=no_owner)
 
             subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
 
@@ -1817,7 +1832,7 @@ def video_remake(video_path, no_owner=False, video_info={}):
 
 
 if __name__ == '__main__':
-    video_remake('7204664023407775015.mp4')
+    video_remake('7554829113672944950.mp4')
     # test_all()
     #
     # UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志

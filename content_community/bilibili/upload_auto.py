@@ -12,6 +12,7 @@
 5. 任何情况下都不修改 metadata_cache.json。
 """
 import datetime
+import hashlib
 import json
 import os
 import copy
@@ -23,7 +24,8 @@ import datetime as dt
 from common_utils.common_utils import get_config, format_seconds_to_mmss, read_json
 from common_utils.video_scene.combine_asr_scene_online import video_remake
 from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover, \
-    merge_videos_ffmpeg, apply_all_subtle_tweaks, _get_video_resolution, process_video_with_template, probe_duration
+    merge_videos_ffmpeg, apply_all_subtle_tweaks, _get_video_resolution, process_video_with_template, probe_duration, \
+    add_transparent_watermark
 from common_utils.video_utils_cut import text_image_to_video_with_subtitles, gen_ending_video
 from content_community.app.remake_video import remake_video_robust
 
@@ -39,6 +41,16 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 # mama_BILI_JCT = get_config("mama_bilibili_csrf_token")
 # mama_total_cookie = get_config("mama_bilibili_total_cookie")
 # config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT, mama_total_cookie)
+group_info = {
+    'fun': ['ruru', 'jie', 'hong', 'qiqi', 'yan', 'jj', 'xiaosu', 'chabian', 'dan', 'yiyi', 'qiqixiao', 'yang',
+            'xiaodan',
+            'xiaoxue', 'ruruxiao', 'qiqixiao', 'hong', 'qiqi', 'yan', 'mama', 'dahao',
+            'mama', 'lin', 'xiaohao', 'xue', 'jj', 'cai', 'ruru'
+            ],
+    'sport': ['nana', 'jun'],
+    'game': ['cai', 'tao', 'ning']
+}
+
 
 video_recommend_user_list = ['nana']
 # 定义需要处理的账号名及其对应的config_map键名（区分大小写）
@@ -99,6 +111,35 @@ def load_json(path: str, default):
     except json.JSONDecodeError as e:
         print(f"⚠️  警告：文件 {path} JSON 解析失败，原因：{e}。将使用默认值。")
         return default
+
+
+def get_watermark_path(user_type, user_name):
+    """
+    生成合适的水印图片路径
+    """
+    # 获取asset下面所有的图片，并且包含user_type
+    asset_dir = 'asset'
+    all_files = os.listdir(asset_dir)
+    filtered_files = [f for f in all_files if user_type in f and f.endswith('.png')]
+
+    if filtered_files:
+        # 对文件列表进行排序，以确保每次执行的顺序一致
+        filtered_files.sort()
+
+        # 使用 user_name 的哈希值来计算一个固定的索引
+        # 这样同一个 user_name 总是会得到相同的索引
+        user_hash_hex = hashlib.sha256(user_name.encode('utf-8')).hexdigest()
+        user_hash_int = int(user_hash_hex, 16)
+        selected_index = user_hash_int % len(filtered_files)
+
+        selected_file = filtered_files[selected_index]
+        watermark_path = os.path.join(asset_dir, selected_file)
+        print(f"{user_name} ✅ 使用水印图片 {watermark_path} 筛选池大小 {len(filtered_files)}")
+        return watermark_path
+    else:
+        print(f"⚠️ 未找到符合条件的水印图片，使用默认水印。")
+        return 'asset/default_watermark.png'
+
 
 def _deep_update(orig: dict, new: dict):
     """
@@ -431,6 +472,7 @@ def _preprocess_media_steps(
     current_video_path = video_path
     duration = metadata[0].get('duration', "00:10")
     duration = time_str_to_seconds(duration)
+    full_title = metadata[0].get('full_title', "00:10")
 
     # 初始化可能产生的临时路径变量（与原脚本一致名称）
     new_video_path = None
@@ -438,16 +480,15 @@ def _preprocess_media_steps(
     tweak_video_path = None
     addPrologue_video_path = None
     template_video_path = None
-
     # --------- 重制视频分支（原脚本里始终 False） ---------
     # 保留原来判断（即：永远不会执行），以确保逻辑一致
-    if generation_options.get('is_original', False):
+    if generation_options.get('is_original', False) and duration < 600:
         t0 = time.time()
         has_author_voice = generation_options.get('has_author_voice', True)
         # 反转has_author_voice
         no_owner = not has_author_voice
         creative_guidance = generation_options.get('creative_guidance', '')
-        print(f"🔄 重制视频 {video_path}... userName: {userName} 是否不包含作者语音{no_owner} 创作指导：{creative_guidance}")
+        print(f"🔄 重制视频 {video_path}... userName: {userName} 是否不包含作者语音{no_owner} 创作指导：{creative_guidance} 视频名称{full_title} duration{duration}")
         try:
 
             final_video_path, final_video_script = video_remake(video_path, no_owner)
@@ -844,6 +885,23 @@ def auto_upload():
                 except Exception as e:
                     print(f"⚠️ 尾部引导视频失败，继续使用原视频：{e}")
 
+
+        # 进行水印的增加
+
+        try:
+            output_watermark_path = final_output_path.replace('.mp4', '_watermark.mp4')
+            user_type = 'fun'
+            for group, users in group_info.items():
+                if userName in users:
+                    user_type = group
+                    break
+            watermark_path = get_watermark_path(user_type, userName)
+            add_transparent_watermark(final_output_path, watermark_path, output_watermark_path)
+            final_output_path = output_watermark_path
+        except Exception as e:
+            print(f"⚠️ 水印增加失败，继续使用原视频：{e}")
+
+        all_files_to_cleanup.append(watermark_path)
         all_files_to_cleanup.append(final_output_path)
         all_files_to_cleanup.append(new_video_path)
         all_files_to_cleanup.append(temp_ending_video_path)
