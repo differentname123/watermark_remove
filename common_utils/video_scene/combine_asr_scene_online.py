@@ -673,7 +673,7 @@ def gen_asr(video_path, base_name):
     生成修复后的asr以及句子时间段
     """
     start_time = time.time()
-    speech_asr_output_file = f'output/{base_name}/speech_asr_with_owner.json'
+    speech_asr_output_file = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/speech_asr_with_owner.json'
 
     if not is_valid_target_file_simple(speech_asr_output_file, min_size_bytes=10):
         owner_asr_info = gen_owner_asr_by_llm(video_path)
@@ -994,7 +994,7 @@ def get_scene_sub_text(sorted_scene_timestamp, owner_asr, base_name):
     owner_speaker = 'owner' if is_have_owner else 'other'
     min_scene_duration_ms = 10000 if is_have_owner else 1000
     scene_sub_text = process_scenes_complete_fix(owner_asr, merged_timestamps, owner_speaker=owner_speaker, min_scene_duration_ms=min_scene_duration_ms)
-    output_file_scene_sub_text = f'output/{base_name}/scene_sub_text.json'
+    output_file_scene_sub_text = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/scene_sub_text.json'
     save_json(output_file_scene_sub_text, scene_sub_text)
     print(f"场景划分完成:数量{len(scene_sub_text)} owner_speaker:{owner_speaker} min_scene_duration_ms:{min_scene_duration_ms}")
     return scene_sub_text
@@ -1195,6 +1195,13 @@ def check_new_video_script(new_video_script, scene_info):
             original_clip_ids = {item['source_clip_id'] for item in original_narration_list}
             new_clip_ids = {item['source_clip_id'] for item in new_narration_list}
 
+            # 并且要求new_narration_list中每个元素包含new_narration_script字段
+            for item in new_narration_list:
+                if 'new_narration_script' not in item:
+                    print(f"[ERROR] 在方案 '{solution_title}' 的第 {scene_index + 1} 个场景中：")
+                    print(f"  - new_narration_script_list 中的元素缺少 'new_narration_script' 字段！")
+                    return False
+
             # 比较两个集合是否相等。集合比较能确保元素和数量都一致，且忽略顺序。
             if original_clip_ids != new_clip_ids:
                 print(
@@ -1365,10 +1372,10 @@ def gen_new_video_script(video_path, scene_sub_text, base_name, target_speaker='
     生成新视频的文本脚本
     """
     scene_sub_text_list = scene_sub_text
-    output_file_final = f'output/{base_name}/new_script.json'
-    output_file_scene_info = f'output/{base_name}/merge_speaker_scene_info.json'
-    output_file_logical_scene_info = f'output/{base_name}/logical_scene_info.json'
-    final_scene_info_path = f'output/{base_name}/final_scene_info.json'
+    output_file_final = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/new_script.json'
+    output_file_scene_info = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/merge_speaker_scene_info.json'
+    output_file_logical_scene_info = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/logical_scene_info.json'
+    final_scene_info_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/final_scene_info.json'
 
     if is_valid_target_file_simple(output_file_final, 10):
         new_video_script = read_json(output_file_final)
@@ -1512,7 +1519,7 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
             sub_count += 1
             seg_start, seg_end = video_time_segment
             if seg_end > seg_start + 100:
-                segment_output_scene_file = f'output/{base_name}/split_scene/{name_key}_part{sub_count}.mp4'
+                segment_output_scene_file = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/split_scene/{name_key}_part{sub_count}.mp4'
                 print(f'\n处理: {segment_output_scene_file} 时间段: {seg_start}-{seg_end}')
                 output_path = segment_output_scene_file
                 if not is_valid_target_file_simple(segment_output_scene_file):
@@ -1535,7 +1542,7 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
 
                 need_merge_video_file.append(output_path)
     else:
-        output_scene_file = f'output/{base_name}/split_scene/{name_key}_part{0}.mp4'
+        output_scene_file = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/split_scene/{name_key}_part{0}.mp4'
         if not is_valid_target_file_simple(output_scene_file):
             clip_video_ms(video_path, scene_start, scene_end, output_scene_file)
         need_merge_video_file.append(output_scene_file)
@@ -1628,7 +1635,7 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, 
     new_video_script.sort(key=lambda x: x.get('方案整体评分', 0), reverse=True)
     new_video_script_result = new_video_script
     final_video_script = new_video_script_result[0]
-    final_scene_info_path = f'output/{base_name}/final_scene_info.json'
+    final_scene_info_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/final_scene_info.json'
     final_scene_info = read_json(final_scene_info_path)
 
     need_merge_video_file = []
@@ -1667,7 +1674,7 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, 
             process_video_with_owner_text(video_path, new_narration_script, split_scene, split_scene['scene_start'], split_scene['scene_end'], base_name, max_diff, need_merge_video_file, name_key_full, subtitle_box)
 
 
-    final_output_path = f'output/{base_name}/remake.mp4'
+    final_output_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/remake.mp4'
     merge_videos_ffmpeg(need_merge_video_file, output_path=final_output_path)
     tags = final_video_script.get('tags', [])
     bgm_path = get_bgm_path(tags)
@@ -1723,7 +1730,7 @@ def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list, base
     找到字幕区域并且遮挡字幕
     """
     time_ranges = []
-    output_dir = f'output/{base_name}/subtitle'
+    output_dir = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/subtitle'
 
 
     duration_list = []
@@ -1754,14 +1761,14 @@ def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list, base
             }
         )
         time_ranges.append((start / 1000, end / 1000))
-    final_box_path = f'output/{base_name}/subtitle/final_subtitle_box.json'
+    final_box_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/subtitle/final_subtitle_box.json'
     if not is_valid_target_file_simple(final_box_path):
         final_box = find_overall_subtitle_box_target_number(video_path, merged_timerange_list, output_dir=output_dir)
         save_json(final_box_path, final_box)
     final_box = read_json(final_box_path)
     top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(video_path, final_box)
 
-    cover_video_path = f'output/{base_name}/subtitle_covered.mp4'
+    cover_video_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/subtitle_covered.mp4'
     if is_valid_target_file_simple(cover_video_path):
         print(f"已存在遮挡字幕的视频: {cover_video_path}")
         return cover_video_path, [top_left, bottom_right]
@@ -1787,7 +1794,7 @@ def test_all():
 
 
 @timeit_print
-def video_remake(video_path, no_owner=False, video_info={}):
+def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
@@ -1807,6 +1814,8 @@ def video_remake(video_path, no_owner=False, video_info={}):
             scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, basename)
 
             new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, basename, no_owner=no_owner)
+            if is_half:
+                return
 
             subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
 

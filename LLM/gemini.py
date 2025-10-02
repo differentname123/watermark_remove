@@ -109,7 +109,7 @@ class ApiKeyManager:
             # 3. 写回文件
             with open(self.stats_file, 'w') as f:
                 json.dump(stats, f, indent=4)
-            print(f"[INFO] 密钥 '{key_name}' 使用次数已更新为: {stats[key_name]}")
+            print(f"[INFO] 密钥 '{key_name}' 使用次数已更新为: {stats[key_name]} 当前时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
 
 
 

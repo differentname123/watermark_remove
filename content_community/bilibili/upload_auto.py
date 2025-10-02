@@ -897,11 +897,13 @@ def auto_upload():
                     break
             watermark_path = get_watermark_path(user_type, userName)
             add_transparent_watermark(final_output_path, watermark_path, output_watermark_path)
-            final_output_path = output_watermark_path
+            if os.path.exists(output_watermark_path) and os.path.getsize(output_watermark_path) > 0:
+                print(f"✅ 水印增加成功，保存为 {output_watermark_path}")
+                final_output_path = output_watermark_path
         except Exception as e:
             print(f"⚠️ 水印增加失败，继续使用原视频：{e}")
 
-        all_files_to_cleanup.append(watermark_path)
+        all_files_to_cleanup.append(output_watermark_path)
         all_files_to_cleanup.append(final_output_path)
         all_files_to_cleanup.append(new_video_path)
         all_files_to_cleanup.append(temp_ending_video_path)
