@@ -43,12 +43,11 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 # config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT, mama_total_cookie)
 group_info = {
     'fun': ['ruru', 'jie', 'hong', 'qiqi', 'yan', 'jj', 'xiaosu', 'chabian', 'dan', 'yiyi', 'qiqixiao', 'yang',
-            'xiaodan',
-            'xiaoxue', 'ruruxiao', 'qiqixiao', 'hong', 'qiqi', 'yan', 'mama', 'dahao',
+            'xiaodan', 'ruruxiao', 'qiqixiao', 'hong', 'qiqi', 'yan', 'mama', 'dahao',
             'mama', 'lin', 'xiaohao', 'xue', 'jj', 'cai', 'ruru'
             ],
     'sport': ['nana', 'jun'],
-    'game': ['cai', 'tao', 'ning']
+    'game': ['cai', 'tao', 'ning', 'xiaoxue']
 }
 
 
@@ -417,8 +416,8 @@ def _basic_task_checks(key: str, value: Dict[str, Any], video_id_key) -> Tuple[b
     不做任何副作用，只用于上游决定是否跳过。
     """
     status = value.get('status', '未处理')
-    if status == 'error':
-        return True, f"⚠️ 跳过 {key}：之前处理失败，已标记"
+    if status != 'complete':
+        return True, f"⚠️ 跳过 {key}：当前状态为{status} 不为 complete"
     if video_id_key in upload_log_global and upload_log_global[video_id_key].get("upload_info"):
         return True, f"⏭️ 跳过 {key}：已记录上传成功"
     metadata = value.get('metadata')
@@ -721,11 +720,7 @@ def auto_upload():
       以确保同一用户同一时刻只会有一个上传任务在运行。
     """
     global upload_log_global
-    try:
-        bvid_file_data = read_json(bvid_file_path)
-    except Exception as e:
-        print(f"❌ 读取 {bvid_file_path} 失败：{e}")
-        bvid_file_data = {}
+
 
 
     temp_set: Set[str] = set()  # 临时集合，记录被跳过/需持久化的任务
@@ -749,7 +744,6 @@ def auto_upload():
         if key in processed_video_id:
             continue
         userName = value.get('userName', 'other')
-        user_videos = bvid_file_data.get(userName, [])
         today_start = dt.datetime.combine(dt.date.today(), dt.time.min).timestamp()
 
 
@@ -798,9 +792,16 @@ def auto_upload():
             userName = 'base'
             continue
         config = config_map.get(userName, config_map['base'])
+
+        try:
+            bvid_file_data = read_json(bvid_file_path)
+        except Exception as e:
+            print(f"❌ 读取 {bvid_file_path} 失败：{e}")
+            bvid_file_data = {}
+        user_videos = bvid_file_data.get(userName, [])
         recent_videos = [v for v in user_videos if v.get('created') and v['created'] >= today_start]
         print(f"🔍 处理 {key} (用户: {userName}) 今日已上传 {len(recent_videos)} 个视频，时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
-        if len(recent_videos) >= 30:
+        if len(recent_videos) >= 20:
             print(f"⚠️ 跳过 {userName} 用户上传：今日已上传 {len(recent_videos)} 个视频，达到上限。")
             continue
         video_path_list = []
