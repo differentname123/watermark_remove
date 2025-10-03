@@ -768,7 +768,7 @@ def get_scene(video_path, basename):
     all_scene_info_dict = {}
     for high_threshold in [30, 40, 50, 60, 70]:
         start_time = time.time()
-        scene_info_file = f'output/{basename}/scenes_{high_threshold}/scene_info.json'
+        scene_info_file =r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/scenes_{high_threshold}/scene_info.json'
         if is_valid_target_file_simple(scene_info_file):
             # print(f"场景信息文件已存在，跳过处理: {scene_info_file}")
             all_scene_info_dict[high_threshold] = read_json(scene_info_file)
@@ -792,7 +792,7 @@ def get_scene(video_path, basename):
 
     print(f"场景识别合并完成:场景数量为: {len(kept_sorted)}")
     # 将kept_sorted保存到文件
-    save_json(f'output/{basename}/scenes_fused/merged_timestamps.json', kept_sorted)
+    save_json(r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/scenes_fused/merged_timestamps.json', kept_sorted)
 
     # for key, value in pairs.items():
     #     timestamp = value[1]
@@ -1841,7 +1841,7 @@ def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
 
 
 if __name__ == '__main__':
-    video_remake('7554829113672944950.mp4')
+    video_remake('7454508040444841267.mp4')
     # test_all()
     #
     # UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志

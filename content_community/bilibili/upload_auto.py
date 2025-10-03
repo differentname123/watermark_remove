@@ -42,12 +42,12 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 # mama_total_cookie = get_config("mama_bilibili_total_cookie")
 # config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT, mama_total_cookie)
 group_info = {
-    'fun': ['ruru', 'jie', 'hong', 'qiqi', 'yan', 'jj', 'xiaosu', 'chabian', 'dan', 'yiyi', 'qiqixiao', 'yang',
-            'xiaodan', 'ruruxiao', 'qiqixiao', 'hong', 'qiqi', 'yan', 'mama', 'dahao',
-            'mama', 'lin', 'xiaohao', 'xue', 'jj', 'cai', 'ruru'
+    'fun': ['ruru', 'jie', 'qiqi', 'jj', 'xiaosu', 'chabian', 'dan', 'yiyi', 'qiqixiao', 'yang',
+            'xiaodan', 'ruruxiao', 'qiqixiao', 'qiqi', 'mama', 'dahao',
+            'mama', 'lin', 'xiaohao', 'xue', 'jj', 'ruru'
             ],
     'sport': ['nana', 'jun'],
-    'game': ['cai', 'tao', 'ning', 'xiaoxue']
+    'game': ['cai', 'tao', 'ning', 'xiaoxue', 'yan', 'hong']
 }
 
 

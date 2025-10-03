@@ -380,6 +380,10 @@ def auto_replay_refactored(user_name: str):
     try:
         all_records_file = f"{BASE_DIR}/{user_name}_replay_video_info.json"
         all_records = read_json(all_records_file)
+        # 只保留send_time在7天内的数据
+        seven_days_ago = time.time() - 7 * 24 * 60 * 60
+        all_records = {k: v for k, v in all_records.items() if v.get('send_time', 0) >= seven_days_ago}
+
         config_map = init_config()
     except FileNotFoundError:
         print(f"错误：找不到文件 {all_records_file} 或配置文件。")
@@ -536,6 +540,10 @@ def add_replay_comment_for_video(user_name='qiqi'):
     all_params = config_map[uid].get('all_params', {})
     commenter = BilibiliCommenter(total_cookie=total_cookie, csrf_token=csrf_token, all_params=all_params)
     temp_found_videos = bvid_file_data.get(user_name, [])
+    # 只保留created在最近7天内的视频
+    seven_days_ago = time.time() - 7 * 24 * 60 * 60
+    temp_found_videos = [video for video in temp_found_videos if video.get('created', 0) >= seven_days_ago]
+
     temp_found_videos = temp_found_videos[:10]
     metadata_cache_with_uploads = merge_json_files('../../LLM/TikTokDownloader/back_up', "metadata_cache_with_uploads")
 
@@ -780,7 +788,7 @@ if __name__ == '__main__':
     # result = format_video_data()
     # print(f"格式化结果，共 {len(result)} 行")
 
-    username_list = [ 'nana']
+    username_list = ["cai","yang","dahao","ruru","yiyi","lin","mama","hong","yan","jie","qiqi","xiaosu","jun","jj","qiqixiao","xiaoxue"]
     while True:
         start_time = time.time()
         run_once(username_list)
