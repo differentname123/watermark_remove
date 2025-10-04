@@ -566,7 +566,11 @@ def find_overall_subtitle_box_target_number(
     print(f"\n[阶段 2] 开始检测 {len(saved_frame_paths)} 张图片的字幕框...")
     detected_boxes = []
     for p in saved_frame_paths:
-        box = main_find_subtitle(p)
+        try:
+            box = main_find_subtitle(p)
+        except Exception as e:
+            print(f"警告: 处理图片 '{os.path.basename(p)}' 时出错: {e}")
+            box = None
         if box is not None:
             detected_boxes.append(box)
     print(f"[阶段 2] 检测完成。共检测到 {len(detected_boxes)} 个字幕框。")
