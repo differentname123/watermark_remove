@@ -1795,10 +1795,24 @@ def test_all():
 
 @timeit_print
 def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
+    basename = os.path.basename(video_path).split('.mp4')[0]
+
     max_attempts = 3
+    all_files = [r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/speech_asr_with_owner.json',
+                    r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/new_script.json',
+                    r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/logical_scene_info.json',
+                    ]
+
+    if not is_half:
+        # 检测是否所有文件都存在且大小大于10KB
+        all_valid = all(is_valid_target_file_simple(f, 10) for f in all_files)
+        if not all_valid:
+            print(f"[INFO] 检测到部分输出文件缺失或无效，将重新处理视频: {video_path}")
+            return None, None, []
+
+
     for attempt in range(1, max_attempts + 1):
         try:
-            basename = os.path.basename(video_path).split('.mp4')[0]
 
             fixed_speech_asr_with_sub_text = gen_asr(video_path, basename)
             if no_owner:
@@ -1822,9 +1836,10 @@ def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
             final_video_path, final_video_script = gen_new_video_by_scene_and_script(
                 subtitle_video_path, new_video_script, scene_info, subtitle_box, basename
             )
+            cleaner_file_list = [r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/remake.mp4', subtitle_video_path]
 
             # 成功则返回结果
-            return final_video_path, final_video_script
+            return final_video_path, final_video_script, cleaner_file_list
 
         except Exception as e:
             last_exc = e
@@ -1841,7 +1856,7 @@ def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
 
 
 if __name__ == '__main__':
-    video_remake('7454508040444841267.mp4')
+    video_remake('7554771932919385371.mp4')
     # test_all()
     #
     # UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志

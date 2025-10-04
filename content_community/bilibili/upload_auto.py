@@ -307,7 +307,7 @@ def upload_worker(upload_params, key, updated_entry, files_to_cleanup, stage_tim
             result = upload_to_bilibili(**upload_params)
             break
         except Exception as e:
-            print(f"❌ 上传接口异常 (第 {attempt} 次重试) user={userName} key={key}：{e}")
+            print(f"❌ 上传接口异常 (第 {attempt} 次重试) user={userName} key={key}：{e} {upload_params}")
             if attempt < max_retries:
                 # 等候一会再试（与原逻辑一致）
                 time.sleep(60)
@@ -479,6 +479,7 @@ def _preprocess_media_steps(
     tweak_video_path = None
     addPrologue_video_path = None
     template_video_path = None
+    cleaner_file_list = []
     # --------- 重制视频分支（原脚本里始终 False） ---------
     # 保留原来判断（即：永远不会执行），以确保逻辑一致
     if generation_options.get('is_original', False) and duration < 600:
@@ -490,7 +491,7 @@ def _preprocess_media_steps(
         print(f"🔄 重制视频 {video_path}... userName: {userName} 是否不包含作者语音{no_owner} 创作指导：{creative_guidance} 视频名称{full_title} duration{duration}")
         try:
 
-            final_video_path, final_video_script = video_remake(video_path, no_owner)
+            final_video_path, final_video_script, cleaner_file_list = video_remake(video_path, no_owner)
             if final_video_path and os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0:
                 print(f"✅ 重制视频成功，保存为 {final_video_path}")
                 video_path = final_video_path
@@ -642,6 +643,7 @@ def _preprocess_media_steps(
         addPrologue_video_path,
         template_video_path,
     ]
+    files_to_cleanup.extend(cleaner_file_list)
     return video_path, cover_path, stage_times, files_to_cleanup
 
 def _build_upload_params(
