@@ -47,7 +47,7 @@ group_info = {
             'mama', 'lin', 'xiaohao', 'xue', 'jj', 'ruru'
             ],
     'sport': ['nana', 'jun'],
-    'game': ['cai', 'tao', 'ning', 'xiaoxue', 'yan', 'hong']
+    'game': ['cai', 'tao', 'taoxiao', 'ning', 'xiaoxue', 'yan', 'hong', 'junxiao']
 }
 
 
@@ -55,6 +55,8 @@ video_recommend_user_list = ['nana']
 # 定义需要处理的账号名及其对应的config_map键名（区分大小写）
 accounts = {
     'tao': 'tao',
+    'taoxiao': 'taoxiao',
+    'junxiao': 'junxiao',
     'ruru': 'ruru',
     'nana': 'nana',
     'jie': 'jie',
