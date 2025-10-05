@@ -10,7 +10,9 @@
 """
 import collections
 import copy
+import json
 import os
+import random
 import time
 import traceback
 from typing import List, Dict, Any, Optional
@@ -546,8 +548,8 @@ def check_owner_asr(owner_asr_info, video_duration):
         duration = end_time - start_time
 
         # 1. 最大跨度不能超过 20s
-        if duration > 20000:
-            print(f"[ERROR] 片段 {i} 跨度过长: {duration} ms")
+        if len(owner_asr_info[i]['final_text']) > 200 and owner_asr_info[i]['speaker'] == 'owner':
+            print(f"[ERROR] 片段 {i} 跨度过长: {duration} ms 文案为:{owner_asr_info[i]['final_text']}")
             return False
 
         # # 2. 检查时长合理性：使用最快和最慢语速来估算时长范围
@@ -584,6 +586,17 @@ def gen_owner_asr_by_llm(video_path):
             owner_asr_info = string_to_object(raw)
             if check_owner_asr(owner_asr_info, video_duration_ms) is False:
                 raise ValueError(f"[ERROR] 生成生成asr文本异常，尝试重新生成 (尝试 {attempt}/{max_retries})")
+
+            if owner_asr_info == []:
+                owner_asr_info = [
+                    {
+                        "start": "00:00.000",
+                        "end": ms_to_time(video_duration_ms),
+                        "speaker": "other",
+                        "final_text": ""
+                    }]
+                print("[WARN] 生成的asr文本为空，使用默认值")
+
             return owner_asr_info
         except Exception as e:
             print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
@@ -661,10 +674,14 @@ def gen_asr(video_path, base_name):
     生成修复后的asr以及句子时间段
     """
     start_time = time.time()
-    speech_asr_output_file = f'output/{base_name}/speech_asr_with_owner.json'
+    speech_asr_output_file = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/speech_asr_with_owner.json'
 
-    if not is_valid_target_file_simple(speech_asr_output_file):
+    if not is_valid_target_file_simple(speech_asr_output_file, min_size_bytes=10):
         owner_asr_info = gen_owner_asr_by_llm(video_path)
+        # 判断owner_asr_info是否为dict
+        if owner_asr_info is None:
+            print("[ERROR] 生成asr文本失败，返回空结果")
+            raise ValueError("生成asr文本失败，返回空结果")
         save_json(speech_asr_output_file, owner_asr_info)
     print(f"生成精准asr与说话人信息文件耗时: {time.time() - start_time} 秒")
     owner_asr_info = read_json(speech_asr_output_file)
@@ -750,9 +767,9 @@ def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True):
 def get_scene(video_path, basename):
 
     all_scene_info_dict = {}
-    for high_threshold in [30, 40, 50, 60, 70]:
+    for high_threshold in [30, 50, 70]:
         start_time = time.time()
-        scene_info_file = f'output/{basename}/scenes_{high_threshold}/scene_info.json'
+        scene_info_file =r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/scenes_{high_threshold}/scene_info.json'
         if is_valid_target_file_simple(scene_info_file):
             # print(f"场景信息文件已存在，跳过处理: {scene_info_file}")
             all_scene_info_dict[high_threshold] = read_json(scene_info_file)
@@ -776,7 +793,7 @@ def get_scene(video_path, basename):
 
     print(f"场景识别合并完成:场景数量为: {len(kept_sorted)}")
     # 将kept_sorted保存到文件
-    save_json(f'output/{basename}/scenes_fused/merged_timestamps.json', kept_sorted)
+    save_json(r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/scenes_fused/merged_timestamps.json', kept_sorted)
 
     # for key, value in pairs.items():
     #     timestamp = value[1]
@@ -845,7 +862,7 @@ def process_scenes_complete_fix(
 
             # === owner 的重叠判断：双条件任一满足即算重叠 ===
             cond1 = overlap_duration >= min_overlap_ms
-            cond2 = scene_duration > 0 and (overlap_duration / scene_duration) >= 0.5
+            cond2 = scene_duration > 0 and (overlap_duration / scene_duration) >= 0.2
             if cond1 or cond2:
                 overlapping_indices.append(i)
 
@@ -978,7 +995,7 @@ def get_scene_sub_text(sorted_scene_timestamp, owner_asr, base_name):
     owner_speaker = 'owner' if is_have_owner else 'other'
     min_scene_duration_ms = 10000 if is_have_owner else 1000
     scene_sub_text = process_scenes_complete_fix(owner_asr, merged_timestamps, owner_speaker=owner_speaker, min_scene_duration_ms=min_scene_duration_ms)
-    output_file_scene_sub_text = f'output/{base_name}/scene_sub_text.json'
+    output_file_scene_sub_text = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/scene_sub_text.json'
     save_json(output_file_scene_sub_text, scene_sub_text)
     print(f"场景划分完成:数量{len(scene_sub_text)} owner_speaker:{owner_speaker} min_scene_duration_ms:{min_scene_duration_ms}")
     return scene_sub_text
@@ -1140,18 +1157,67 @@ def extract_and_merge_owner_other(scenes, target_speaker):
 
 def check_new_video_script(new_video_script, scene_info):
     """
-    生成的original_scene_number是否都在scene_info中
+    检测 new_video_script 的有效性，确保：
+    1. 每个场景的 original_scene_number 都能在 scene_info 中找到。
+    2. 找到的原始场景中 'narration_script_list' 的 source_clip_id 集合
+       必须与 new_script 场景中 'new_narration_script_list' 的 source_clip_id 集合完全一致。
     """
-    scene_numbers = {str(scene['scene_number']) for scene in scene_info}
-    for detail_new_video_script in new_video_script:
-        for scene in detail_new_video_script.get('场景顺序与新文案', []):
-            if str(scene['original_scene_number']) not in scene_numbers:
-                print(f"[ERROR] original_scene_number {scene['original_scene_number']} 不在 scene_info 中")
+    # 创建一个从 scene_number 到整个场景对象的映射，便于快速查找
+    scene_info_map = {scene['scene_number']: scene for scene in scene_info}
+
+    # 遍历 new_video_script 中的每个方案和场景
+    for solution_index, detail_new_video_script in enumerate(new_video_script):
+        solution_title = detail_new_video_script.get('title', f"方案 {solution_index + 1}")
+
+        scenes_list = detail_new_video_script.get('场景顺序与新文案')
+        if not isinstance(scenes_list, list) or len(scenes_list) == 0:
+            print(f"[ERROR] 方案 '{solution_title}' 的字段 '场景顺序与新文案' 不存在或为空（必须提供且至少包含 1 个场景）。")
+            return False
+
+
+        for scene_index, scene in enumerate(detail_new_video_script.get('场景顺序与新文案', [])):
+            original_scene_num = scene.get('original_scene_number')
+
+            # 检测点 1: original_scene_number 是否在 scene_info 中存在
+            if original_scene_num not in scene_info_map:
+                print(f"[ERROR] 在方案 '{solution_title}' 的第 {scene_index + 1} 个场景中：")
+                print(f"  - original_scene_number '{original_scene_num}' 不在 scene_info 中。")
                 return False
+
+            original_scene = scene_info_map[original_scene_num]
+
+            # --- 检测点 2: 比较 source_clip_id 是否完全一致 ---
+
+            # 安全地获取原始场景和新场景的 narration list，如果键不存在则视为空列表[]
+            original_narration_list = original_scene.get('narration_script_list', [])
+            new_narration_list = scene.get('new_narration_script_list', [])
+
+            # 分别提取两边的 source_clip_id 到集合中
+            original_clip_ids = {item['source_clip_id'] for item in original_narration_list}
+            new_clip_ids = {item['source_clip_id'] for item in new_narration_list}
+
+            # 并且要求new_narration_list中每个元素包含new_narration_script字段
+            for item in new_narration_list:
+                if 'new_narration_script' not in item:
+                    print(f"[ERROR] 在方案 '{solution_title}' 的第 {scene_index + 1} 个场景中：")
+                    print(f"  - new_narration_script_list 中的元素缺少 'new_narration_script' 字段！")
+                    return False
+
+            # 比较两个集合是否相等。集合比较能确保元素和数量都一致，且忽略顺序。
+            if original_clip_ids != new_clip_ids:
+                print(
+                    f"[ERROR] 在方案 '{solution_title}' 的第 {scene_index + 1} 个场景 (对应 original_scene_number: {original_scene_num}) 中：")
+                print(f"  - source_clip_id 不匹配！")
+                print(f"  - 期望的 ID 集合 (来自 scene_info): {original_clip_ids or '空'}")
+                print(f"  - 实际的 ID 集合 (来自 new_script): {new_clip_ids or '空'}")
+                return False
+
+    # 如果所有循环都正常完成，说明没有发现错误
+    print("检测通过！所有场景引用均有效，且 source_clip_id 完全匹配。")
     return True
 
 
-def gen_new_video_script_llm(scene_info, video_path):
+def gen_new_video_script_llm(scene_info, video_path, no_owner=False):
     """
     生成新的视频方案
     """
@@ -1163,6 +1229,11 @@ def gen_new_video_script_llm(scene_info, video_path):
     retry_delay = 10
     max_retries = 3
     prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本.txt'
+
+    if no_owner:
+        print("[INFO] 使用无主人说话人版本的提示词")
+        prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本纯重排场景.txt'
+
     prompt = read_file_to_str(prompt_file_path)
     full_prompt = f'{prompt}\n{scene_info}'
     raw = ""
@@ -1297,17 +1368,17 @@ def gen_final_scene_info(logical_scene_info, origin_scene_info):
 
 
 @timeit_print
-def gen_new_video_script(video_path, scene_sub_text, base_name, target_speaker='owner'):
+def gen_new_video_script(video_path, scene_sub_text, base_name, target_speaker='owner', no_owner=False):
     """
     生成新视频的文本脚本
     """
     scene_sub_text_list = scene_sub_text
-    output_file_final = f'output/{base_name}/new_script.json'
-    output_file_scene_info = f'output/{base_name}/merge_speaker_scene_info.json'
-    output_file_logical_scene_info = f'output/{base_name}/logical_scene_info.json'
-    final_scene_info_path = f'output/{base_name}/final_scene_info.json'
+    output_file_final = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/new_script.json'
+    output_file_scene_info = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/merge_speaker_scene_info.json'
+    output_file_logical_scene_info = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/logical_scene_info.json'
+    final_scene_info_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/final_scene_info.json'
 
-    if is_valid_target_file_simple(output_file_final):
+    if is_valid_target_file_simple(output_file_final, 10):
         new_video_script = read_json(output_file_final)
         scene_info = read_json(output_file_scene_info)
         return new_video_script, scene_info
@@ -1326,7 +1397,7 @@ def gen_new_video_script(video_path, scene_sub_text, base_name, target_speaker='
     final_scene_info = gen_final_scene_info(logical_scene_info, scene_info)
     save_json(final_scene_info_path, final_scene_info)
 
-    new_video_script = gen_new_video_script_llm(final_scene_info, video_path=video_path)
+    new_video_script = gen_new_video_script_llm(final_scene_info, video_path=video_path,no_owner=no_owner)
     save_json(output_file_final, new_video_script)
 
     return new_video_script, scene_info
@@ -1407,8 +1478,14 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
             return None
 
     if new_owner_text:
+        original_script = fused_new_scene.get('original_script', '')
+        offset = 100
+        if not original_script or fused_new_scene.get('original_script_start', 10) > fused_new_scene.get('narration_script_start'):
+            offset = 500
+        else:
+            print()
         s = _to_int(fused_new_scene.get('narration_script_start')) or int(scene_start)
-        s = s - 100
+        s = s - offset
         e = _to_int(fused_new_scene.get('narration_script_end')) + 500
 
         if e is None:
@@ -1442,8 +1519,8 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
         for video_time_segment in video_time_segments:
             sub_count += 1
             seg_start, seg_end = video_time_segment
-            if seg_end > seg_start:
-                segment_output_scene_file = f'output/{base_name}/split_scene/{name_key}_part{sub_count}.mp4'
+            if seg_end > seg_start + 100:
+                segment_output_scene_file = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/split_scene/{name_key}_part{sub_count}.mp4'
                 print(f'\n处理: {segment_output_scene_file} 时间段: {seg_start}-{seg_end}')
                 output_path = segment_output_scene_file
                 if not is_valid_target_file_simple(segment_output_scene_file):
@@ -1451,23 +1528,104 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
 
                 if sub_count == 2:
                     output_path = segment_output_scene_file.replace('.mp4', '_with_text.mp4')
+                    origin_video_path = segment_output_scene_file
+                    keep_original_audio = False
                     if not is_valid_target_file_simple(output_path):
                         # audio_path = gen_audio_path(video_path).replace("vocals.wav", "no_vocals.wav")
                         # pure_audio_path = gen_audio_path(video_path).replace(".wav", "_pure.wav")
                         # if not is_valid_target_file_simple(pure_audio_path):
                         #     process_media_by_volume(audio_path, pure_audio_path)
                         # segment_output_scene_background_file = segment_output_scene_file.replace('.mp4', '_with_background.mp4')
-                        # replace_video_audio(segment_output_scene_file,seg_start, seg_end, audio_path, segment_output_scene_background_file)
-                        gen_video(new_owner_text, output_path, segment_output_scene_file, keep_original_audio=False, fixed_rect=subtitle_box)
+                        # replace_video_audio(segment_output_scene_file,seg_start, seg_end, pure_audio_path, segment_output_scene_background_file)
+                        # origin_video_path = segment_output_scene_background_file
+                        # keep_original_audio = True
+                        gen_video(new_owner_text, output_path, origin_video_path, keep_original_audio=keep_original_audio, fixed_rect=subtitle_box)
 
                 need_merge_video_file.append(output_path)
     else:
-        output_scene_file = f'output/{base_name}/split_scene/{name_key}_part{0}.mp4'
+        output_scene_file = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/split_scene/{name_key}_part{0}.mp4'
         if not is_valid_target_file_simple(output_scene_file):
             clip_video_ms(video_path, scene_start, scene_end, output_scene_file)
         need_merge_video_file.append(output_scene_file)
 
     return need_merge_video_file
+
+
+def get_bgm_path(tags):
+    """
+    根据标签匹配数量对BGM进行排序，并选择一个合适的BGM路径。
+
+    Args:
+        tags (dict): 输入的标签字典，例如 {'style': ['清新'], 'mood': ['愉快']}
+
+    Returns:
+        str: 选中的BGM文件路径。
+    """
+    all_tags = []
+    for key, value in tags.items():
+        all_tags.extend(value)
+    # 使用集合以便快速计算交集
+    all_tags_set = set(all_tags)
+
+    bgm_dir = r"W:\project\python_project\watermark_remove\content_community\app\bgm_audio"
+    bgm_info_list = read_json(r"W:\project\python_project\watermark_remove\content_community\app\bgm_info.json")
+
+    bgm_info_map = {}
+    for bgm_info in bgm_info_list:
+        bgm_name = bgm_info.get('bgm_name', '未知').split('.')[0]
+        bgm_tags_dict = bgm_info.get('selected_tags', {})
+        bgm_all_tags = []
+        for key, bgm_tag_list in bgm_tags_dict.items():
+            bgm_all_tags.extend(bgm_tag_list)
+        bgm_info_map[bgm_name] = bgm_all_tags
+
+    # 获取所有有效的BGM文件
+    bgm_files = [f for f in os.listdir(bgm_dir) if f.lower().endswith('.wav')]
+    bgm_file_names = [os.path.splitext(f)[0] for f in bgm_files]
+
+    bgm_with_match_count = []
+    for bgm_file_name in bgm_file_names:
+        bgm_tags = bgm_info_map.get(bgm_file_name, [])
+        if not bgm_tags:
+            continue
+
+        # 计算交集，获取匹配的标签数量
+        match_count = len(all_tags_set.intersection(set(bgm_tags)))
+
+        if match_count > 0:
+            bgm_path = os.path.join(bgm_dir, f"{bgm_file_name}.wav")
+            bgm_with_match_count.append({'path': bgm_path, 'match_count': match_count})
+
+    if not bgm_with_match_count:
+        # 如果没有任何匹配的BGM，可以采取备用策略，例如随机选择一个BGM
+        print(f"在 {bgm_dir} 目录下未找到任何与给定标签匹配的音频文件，将随机选择一个文件。")
+        if not bgm_files:
+            raise FileNotFoundError(f"在 {bgm_dir} 目录下找不到任何音频文件！")
+        return os.path.join(bgm_dir, random.choice(bgm_files))
+
+    # 根据匹配数量进行降序排序
+    bgm_with_match_count.sort(key=lambda x: x['match_count'], reverse=True)
+
+    # --- 选择策略 ---
+    # 策略1：直接选择匹配度最高的BGM
+    # best_bgm = bgm_with_match_count[0]
+
+    # 策略2：在匹配度最高的几个BGM中随机选择一个（例如前3个）
+    top_n = 3
+    top_choices = bgm_with_match_count[:top_n]
+    if not top_choices:
+        # 理论上，如果bgm_with_match_count不为空，这里就不会为空
+        raise ValueError("未能确定顶部的BGM选项。")
+
+    selected_bgm = random.choice(top_choices)
+
+    # print(f"候选BGM数量: {len(bgm_with_match_count)}")
+    # print("根据匹配度排序的BGM列表:")
+    # for item in bgm_with_match_count:
+    #     print(f"  - 路径: {item['path']}, 匹配标签数: {item['match_count']}")
+
+    print(f"\n最终选择的BGM: {selected_bgm['path']} (匹配数: {selected_bgm['match_count']})")
+    return selected_bgm['path']
 
 @timeit_print
 def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box, base_name):
@@ -1478,7 +1636,7 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, 
     new_video_script.sort(key=lambda x: x.get('方案整体评分', 0), reverse=True)
     new_video_script_result = new_video_script
     final_video_script = new_video_script_result[0]
-    final_scene_info_path = f'output/{base_name}/final_scene_info.json'
+    final_scene_info_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/final_scene_info.json'
     final_scene_info = read_json(final_scene_info_path)
 
     need_merge_video_file = []
@@ -1499,7 +1657,7 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, 
     print(f'完成场景信息合并')
 
     new_scene_list = final_video_script['场景顺序与新文案']
-    # new_scene_list = new_scene_list[:1]
+    # new_scene_list = new_scene_list[7:]
     for fused_new_scene in new_scene_list:
         scene_start = fused_new_scene.get('scene_start')
         scene_end = fused_new_scene.get('scene_end')
@@ -1508,24 +1666,26 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, 
         new_narration_script_list = fused_new_scene.get('new_narration_script_list', [])
         split_scene_list = generate_scene_segments(scene_start, scene_end, new_narration_script_list)
         # split_scene_list = [{'new_narration_script': '', 'scene_end': scene_end, 'scene_start': scene_start}]
-        print(f'\n处理新场景:{name_key} 分割后的场景数量{len(split_scene_list)} 进度: {new_scene_list.index(fused_new_scene) + 1}/{len(new_scene_list)}')
+        start_time = time.time()
         count = 0
         for split_scene in split_scene_list:
             count += 1
             name_key_full = f"{name_key}_part{count}"
             new_narration_script = split_scene.get('new_narration_script', '').strip()
             process_video_with_owner_text(video_path, new_narration_script, split_scene, split_scene['scene_start'], split_scene['scene_end'], base_name, max_diff, need_merge_video_file, name_key_full, subtitle_box)
+        print(f'\n处理新场景:{name_key} 分割后的场景数量{len(split_scene_list)} 进度: {new_scene_list.index(fused_new_scene) + 1}/{len(new_scene_list)} 耗时: {time.time() - start_time:.2f} 秒\n')
 
 
-    final_output_path = f'output/{base_name}/remake.mp4'
+    final_output_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/remake.mp4'
     merge_videos_ffmpeg(need_merge_video_file, output_path=final_output_path)
-    bgm_path = r"W:\project\python_project\watermark_remove\content_community\app\bgm_audio" + os.sep + 'no_vocals.wav'
+    tags = final_video_script.get('tags', [])
+    bgm_path = get_bgm_path(tags)
     if bgm_path and os.path.exists(bgm_path):
         # print(f"正在为视频添加背景音乐: {bgm_path}")
         final_with_bgm_path = final_output_path.replace('.mp4', '_with_bgm.mp4')
         add_bgm_to_video(final_output_path, bgm_path, str(final_with_bgm_path), auto_compute=True)
-        return final_with_bgm_path
-    return final_output_path
+        return final_with_bgm_path, final_video_script
+    return final_output_path, final_video_script
 
 
 def merge_intervals(intervals):
@@ -1572,7 +1732,7 @@ def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list, base
     找到字幕区域并且遮挡字幕
     """
     time_ranges = []
-    output_dir = f'output/{base_name}/subtitle'
+    output_dir = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/subtitle'
 
 
     duration_list = []
@@ -1603,14 +1763,14 @@ def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list, base
             }
         )
         time_ranges.append((start / 1000, end / 1000))
-    final_box_path = f'output/{base_name}/subtitle/final_subtitle_box.json'
+    final_box_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/subtitle/final_subtitle_box.json'
     if not is_valid_target_file_simple(final_box_path):
         final_box = find_overall_subtitle_box_target_number(video_path, merged_timerange_list, output_dir=output_dir)
         save_json(final_box_path, final_box)
     final_box = read_json(final_box_path)
     top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(video_path, final_box)
 
-    cover_video_path = f'output/{base_name}/subtitle_covered.mp4'
+    cover_video_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/subtitle_covered.mp4'
     if is_valid_target_file_simple(cover_video_path):
         print(f"已存在遮挡字幕的视频: {cover_video_path}")
         return cover_video_path, [top_left, bottom_right]
@@ -1636,41 +1796,118 @@ def test_all():
 
 
 @timeit_print
-def video_remake(video_path, no_owner=False):
+def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
+    """
+    重制视频，并在发生异常时将日志保存到指定文件。
+    """
     basename = os.path.basename(video_path).split('.mp4')[0]
+    output_dir = os.path.join(r"W:\project\python_project\watermark_remove\content_community\bilibili", "output",
+                              basename)
+    log_path = os.path.join(output_dir, "log.json")
 
-    fixed_speech_asr_with_sub_text = gen_asr(video_path, basename)
-    if no_owner:
-        for item in fixed_speech_asr_with_sub_text:
-            item['speaker'] = 'other'
+    # 确保输出目录存在
+    os.makedirs(output_dir, exist_ok=True)
 
-    sorted_scene_timestamp = get_scene(video_path, basename)
+    max_attempts = 3
+    all_files = [
+        os.path.join(output_dir, 'speech_asr_with_owner.json'),
+        os.path.join(output_dir, 'new_script.json'),
+        os.path.join(output_dir, 'logical_scene_info.json'),
+    ]
 
-    scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, basename)
+    if not is_half:
+        all_valid = all(is_valid_target_file_simple(f, 10) for f in all_files)
+        if not all_valid:
+            print(f"[INFO] 检测到部分输出文件缺失或无效，将重新处理视频: {video_path}")
+            return None, None, []
 
-    new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, basename)
-    #
-    # video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
-    #
-    # final_video_path = gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box, basename)
-    # return final_video_path
+    last_exc = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            print(f"[video_remake] Attempt {attempt}/{max_attempts} for '{video_path}'...")
+
+            fixed_speech_asr_with_sub_text = gen_asr(video_path, basename)
+            if no_owner:
+                for item in fixed_speech_asr_with_sub_text:
+                    item['speaker'] = 'other'
+
+            has_owner = any(item.get('speaker') == 'owner' for item in fixed_speech_asr_with_sub_text)
+            no_owner = not has_owner
+
+            sorted_scene_timestamp = get_scene(video_path, basename)
+            scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, basename)
+            new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, basename, no_owner=no_owner)
+
+            if is_half:
+                return  # 提前成功返回
+
+            subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
+            final_video_path, final_video_script = gen_new_video_by_scene_and_script(
+                subtitle_video_path, new_video_script, scene_info, subtitle_box, basename
+            )
+            cleaner_file_list = [
+                os.path.join(output_dir, 'remake.mp4'),
+                subtitle_video_path
+            ]
+
+            # 成功则返回结果
+            print(f"[video_remake] Successfully processed '{video_path}' on attempt {attempt}.")
+            return final_video_path, final_video_script, cleaner_file_list
+
+        except Exception as e:
+            last_exc = e
+            print(f"[video_remake] Attempt {attempt} failed for '{video_path}': {e}")
+
+            # --- 日志记录核心代码 ---
+            # 1. 准备日志信息
+            error_message = {
+                "attempt": attempt,
+                "max_attempts": max_attempts,
+                "video_path": video_path,
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "traceback": traceback.format_exc()
+            }
+
+            # 2. 将日志信息写入 JSON 文件
+            try:
+                with open(log_path, 'w', encoding='utf-8') as f:
+                    json.dump(error_message, f, ensure_ascii=False, indent=4)
+                print(f"[video_remake] Error log saved to '{log_path}'")
+            except Exception as log_e:
+                print(f"[video_remake] CRITICAL: Failed to write log file '{log_path}': {log_e}")
+            # ------------------------
+
+            if attempt == max_attempts:
+                print(f"[video_remake] All {max_attempts} attempts failed for '{video_path}'.")
+                # 循环结束，最终失败，返回None
+                return None, None, []  # 保持返回值的结构一致性
+            else:
+                print(f"[video_remake] Retrying after a short delay...")
+                time.sleep(2)  # 增加一个2秒的延时，避免因瞬时问题（如文件占用）导致连续快速失败
+
+    # 理论上循环会通过return退出，如果能执行到这里说明逻辑有问题，但也提供一个返回值
+    return None, None, []
+
 
 if __name__ == '__main__':
-    # video_remake('test14.mp4')
+    video_remake('7551467524232154410.mp4', is_half=True, no_owner=True)
     # test_all()
-
-    UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志
-    upload_log = read_json(UPLOAD_LOG_FILE)
-    for key, item in upload_log.items():
-        video_path = item.get('video_path')
-        video_name = item.get('video_name')
-        if not video_path or not os.path.exists(video_path):
-            print(f"[WARN] 视频路径无效或不存在: {video_path}")
-            continue
-        try:
-            print(f"\n处理视频: {video_path}")
-            video_remake(video_path)
-        except Exception as e:
-            print(f"[ERROR] 处理视频 {video_path} 时出错: {e}")
-            traceback.print_exc()
-
+    #
+    # UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志
+    # upload_log = read_json(UPLOAD_LOG_FILE)
+    # for key, item in upload_log.items():
+    #     video_path = item.get('video_path')
+    #     video_name = item.get('video_name')
+    #     if '流浪' not in video_path:
+    #         continue
+    #     if not video_path or not os.path.exists(video_path):
+    #         print(f"[WARN] 视频路径无效或不存在: {video_path}")
+    #         continue
+    #     try:
+    #         print(f"\n处理视频: {video_path}")
+    #         video_remake(video_path, True)
+    #     except Exception as e:
+    #         print(f"[ERROR] 处理视频 {video_path} 时出错: {e}")
+    #         traceback.print_exc()
+    #

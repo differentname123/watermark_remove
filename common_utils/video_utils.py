@@ -792,6 +792,43 @@ def cover_video_area_blur(
             os.remove(temp_patch_file)
 
 
+def cover_video_area_blur_optimized(
+    video_path: str,
+    output_path: str,
+    top_left,
+    bottom_right,
+    time_ranges=None,
+    blur_strength: int = 15  # 适当降低模糊强度以提升速度
+):
+    x1, y1 = top_left
+    x2, y2 = bottom_right
+    w, h = x2 - x1, y2 - y1
+
+    # 构建 enable 表达式
+    enable_expr = _build_enable_expr(time_ranges)
+
+    # 单 pass filter_complex:
+    # [0:v]split=2[orig][crop];[crop]crop=w:h:x1:y1,boxblur=strength[blur];[orig][blur]overlay=x1:y1:enable='...'
+    vf = (
+        f"[0:v]split=2[orig][crop];"
+        f"[crop]crop={w}:{h}:{x1}:{y1},boxblur={blur_strength}[blurred];"
+        f"[orig][blurred]overlay={x1}:{y1}{enable_expr}"
+    )
+
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-i", video_path,
+        "-filter_complex", vf,
+        "-c:a", "copy",
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        output_path
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"FFmpeg failed:\n{proc.stderr}")
+    print(f"[SUCCESS] Output saved to {output_path}")
+
 def add_subtitles_to_video(
         video_path: str,
         subtitles_info: list,
@@ -1680,8 +1717,9 @@ def _merge_chunk_ffmpeg(video_paths, output_path, probe_fn):
     ]
 
     print("[INFO] 执行 ffmpeg 合并（小批次）:", " ".join(cmd))
+    start_time = time.time()
     subprocess.run(cmd, check=True)
-    print(f"[SUCCESS] 小批次合并完成：{output_path}")
+    print(f" 耗时 {time.time() - start_time:.2f} 秒 [SUCCESS] 小批次合并完成：{output_path}")
 
 def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.mp4",
                         batch_size=20, temp_dir=None, probe_fn=None,

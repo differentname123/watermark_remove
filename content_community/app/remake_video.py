@@ -25,7 +25,8 @@ from common_utils.split_scenes import find_and_split_scenes
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
 # from common_utils.tts.paddle_speech_demo import synthesize_and_get_duration
 from common_utils.video_utils import cover_video_area_gently, add_subtitles_to_video, cover_video_area_simple, \
-    re_edit_video_ffmpeg, extract_audio_from_video, cut_audio_segment, cover_video_area_blur, get_video_duration_seconds
+    re_edit_video_ffmpeg, extract_audio_from_video, cut_audio_segment, cover_video_area_blur, \
+    get_video_duration_seconds, cover_video_area_blur_optimized
 # from paddlespeech.cli.tts.infer import TTSExecutor
 
 import json
@@ -540,7 +541,7 @@ def cover_subtitle(
     """
     start_time = time.time()
     try:
-        cover_video_area_blur(
+        cover_video_area_blur_optimized(
             video_path=video_path,
             output_path=output_path,
             top_left=top_left,

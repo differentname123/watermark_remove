@@ -10,6 +10,7 @@
 """
 import collections
 import copy
+import json
 import os
 import random
 import time
@@ -766,7 +767,7 @@ def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True):
 def get_scene(video_path, basename):
 
     all_scene_info_dict = {}
-    for high_threshold in [30, 40, 50, 60, 70]:
+    for high_threshold in [30, 50, 70]:
         start_time = time.time()
         scene_info_file =r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/scenes_{high_threshold}/scene_info.json'
         if is_valid_target_file_simple(scene_info_file):
@@ -1665,13 +1666,14 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, 
         new_narration_script_list = fused_new_scene.get('new_narration_script_list', [])
         split_scene_list = generate_scene_segments(scene_start, scene_end, new_narration_script_list)
         # split_scene_list = [{'new_narration_script': '', 'scene_end': scene_end, 'scene_start': scene_start}]
-        print(f'\n处理新场景:{name_key} 分割后的场景数量{len(split_scene_list)} 进度: {new_scene_list.index(fused_new_scene) + 1}/{len(new_scene_list)}')
+        start_time = time.time()
         count = 0
         for split_scene in split_scene_list:
             count += 1
             name_key_full = f"{name_key}_part{count}"
             new_narration_script = split_scene.get('new_narration_script', '').strip()
             process_video_with_owner_text(video_path, new_narration_script, split_scene, split_scene['scene_start'], split_scene['scene_end'], base_name, max_diff, need_merge_video_file, name_key_full, subtitle_box)
+        print(f'\n处理新场景:{name_key} 分割后的场景数量{len(split_scene_list)} 进度: {new_scene_list.index(fused_new_scene) + 1}/{len(new_scene_list)} 耗时: {time.time() - start_time:.2f} 秒\n')
 
 
     final_output_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/remake.mp4'
@@ -1795,68 +1797,101 @@ def test_all():
 
 @timeit_print
 def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
+    """
+    重制视频，并在发生异常时将日志保存到指定文件。
+    """
     basename = os.path.basename(video_path).split('.mp4')[0]
+    output_dir = os.path.join(r"W:\project\python_project\watermark_remove\content_community\bilibili", "output",
+                              basename)
+    log_path = os.path.join(output_dir, "log.json")
+
+    # 确保输出目录存在
+    os.makedirs(output_dir, exist_ok=True)
 
     max_attempts = 3
-    all_files = [r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/speech_asr_with_owner.json',
-                    r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/new_script.json',
-                    r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/logical_scene_info.json',
-                    ]
+    all_files = [
+        os.path.join(output_dir, 'speech_asr_with_owner.json'),
+        os.path.join(output_dir, 'new_script.json'),
+        os.path.join(output_dir, 'logical_scene_info.json'),
+    ]
 
     if not is_half:
-        # 检测是否所有文件都存在且大小大于10KB
         all_valid = all(is_valid_target_file_simple(f, 10) for f in all_files)
         if not all_valid:
             print(f"[INFO] 检测到部分输出文件缺失或无效，将重新处理视频: {video_path}")
             return None, None, []
 
-
+    last_exc = None
     for attempt in range(1, max_attempts + 1):
         try:
+            print(f"[video_remake] Attempt {attempt}/{max_attempts} for '{video_path}'...")
 
             fixed_speech_asr_with_sub_text = gen_asr(video_path, basename)
             if no_owner:
                 for item in fixed_speech_asr_with_sub_text:
                     item['speaker'] = 'other'
 
-            # 检测fixed_speech_asr_with_sub_text中的speaker有没有为 owner的
             has_owner = any(item.get('speaker') == 'owner' for item in fixed_speech_asr_with_sub_text)
             no_owner = not has_owner
 
             sorted_scene_timestamp = get_scene(video_path, basename)
-
             scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, basename)
-
             new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, basename, no_owner=no_owner)
+
             if is_half:
-                return
+                return  # 提前成功返回
 
             subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
-
             final_video_path, final_video_script = gen_new_video_by_scene_and_script(
                 subtitle_video_path, new_video_script, scene_info, subtitle_box, basename
             )
-            cleaner_file_list = [r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/remake.mp4', subtitle_video_path]
+            cleaner_file_list = [
+                os.path.join(output_dir, 'remake.mp4'),
+                subtitle_video_path
+            ]
 
             # 成功则返回结果
+            print(f"[video_remake] Successfully processed '{video_path}' on attempt {attempt}.")
             return final_video_path, final_video_script, cleaner_file_list
 
         except Exception as e:
             last_exc = e
             print(f"[video_remake] Attempt {attempt} failed for '{video_path}': {e}")
-            traceback.print_exc()
+
+            # --- 日志记录核心代码 ---
+            # 1. 准备日志信息
+            error_message = {
+                "attempt": attempt,
+                "max_attempts": max_attempts,
+                "video_path": video_path,
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "traceback": traceback.format_exc()
+            }
+
+            # 2. 将日志信息写入 JSON 文件
+            try:
+                with open(log_path, 'w', encoding='utf-8') as f:
+                    json.dump(error_message, f, ensure_ascii=False, indent=4)
+                print(f"[video_remake] Error log saved to '{log_path}'")
+            except Exception as log_e:
+                print(f"[video_remake] CRITICAL: Failed to write log file '{log_path}': {log_e}")
+            # ------------------------
 
             if attempt == max_attempts:
-                # 最后一次仍失败，重新抛出异常
                 print(f"[video_remake] All {max_attempts} attempts failed for '{video_path}'.")
-                return None, None
+                # 循环结束，最终失败，返回None
+                return None, None, []  # 保持返回值的结构一致性
             else:
-                # 否则继续下一次重试（不阻塞，立即重试；如需间隔可在此处添加 time.sleep）
-                print(f"[video_remake] Retrying ({attempt + 1}/{max_attempts})...")
+                print(f"[video_remake] Retrying after a short delay...")
+                time.sleep(2)  # 增加一个2秒的延时，避免因瞬时问题（如文件占用）导致连续快速失败
+
+    # 理论上循环会通过return退出，如果能执行到这里说明逻辑有问题，但也提供一个返回值
+    return None, None, []
 
 
 if __name__ == '__main__':
-    video_remake('7554771932919385371.mp4')
+    video_remake('7551467524232154410.mp4', is_half=True, no_owner=True)
     # test_all()
     #
     # UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志

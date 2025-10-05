@@ -42,11 +42,11 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 # mama_total_cookie = get_config("mama_bilibili_total_cookie")
 # config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT, mama_total_cookie)
 group_info = {
-    'fun': ['ruru', 'jie', 'qiqi', 'jj', 'xiaosu', 'chabian', 'dan', 'yiyi', 'qiqixiao', 'yang',
+    'fun': ['ruru', 'qiqi', 'jj', 'xiaosu', 'chabian', 'dan', 'yiyi', 'qiqixiao', 'yang',
             'xiaodan', 'ruruxiao', 'qiqixiao', 'qiqi', 'dahao', 'lin', 'xiaohao', 'xue', 'jj', 'ruru'
             ],
     'sport': ['nana', 'jun'],
-    'game': ['cai', 'tao', 'taoxiao', 'ning', 'xiaoxue', 'yan', 'hong', 'junxiao', 'mama']
+    'game': ['cai', 'tao', 'taoxiao', 'ning', 'xiaoxue', 'yan', 'hong', 'junxiao', 'mama', 'jie']
 }
 
 
@@ -489,7 +489,7 @@ def _preprocess_media_steps(
         # 反转has_author_voice
         no_owner = not has_author_voice
         creative_guidance = generation_options.get('creative_guidance', '')
-        print(f"🔄 重制视频 {video_path}... userName: {userName} 是否不包含作者语音{no_owner} 创作指导：{creative_guidance} 视频名称{full_title} duration{duration}")
+        print(f"🔄 重制视频 {video_path}... userName: {userName} 是否不包含作者语音{no_owner} 创作指导：{creative_guidance} 视频名称：{full_title} duration{duration}")
         try:
 
             final_video_path, final_video_script, cleaner_file_list = video_remake(video_path, no_owner)
