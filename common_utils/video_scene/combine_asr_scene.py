@@ -491,7 +491,26 @@ def merge_scenes_advanced(
     """
     if not scene_timestamps:
         return []
+    if len(scene_timestamps) < 10:
+        # 直接使用所有时间戳（包括0）作为切分点
+        # 使用 set 确保时间戳唯一，然后排序
+        boundaries = sorted(list(set([0] + [t for t, c in scene_timestamps])))
 
+        simple_scenes = []
+        for i in range(len(boundaries) - 1):
+            start, end = boundaries[i], boundaries[i + 1]
+            if start < end:  # 确保时间戳有效
+                simple_scenes.append([start, end])
+
+        # --- 直接套用步骤 4 的格式化逻辑进行输出 ---
+        formatted_output = []
+        for start, end in simple_scenes:
+            formatted_output.append({
+                "scene_start": start,
+                "scene_end": end,
+                "content_list": [{"start": start, "end": end, "speaker": "other", "final_text": "", "text": ""}]
+            })
+        return formatted_output
     # --- 步骤 1: 定义“大块”边界 ---
     video_duration = scene_timestamps[-1][0]
     hard_boundaries = sorted(list(set(
