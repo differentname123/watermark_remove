@@ -246,6 +246,9 @@ def gen_asr(video_path, output_dir, has_author_voice):
         if owner_asr_info is None:
             logger.error("生成asr文本失败，返回空结果")
             raise ValueError("生成asr文本失败，返回空结果")
+        # 为owner_asr_info增加一个字段叫做source_clip_id，从1开始编号
+        for idx, item in enumerate(owner_asr_info):
+            item['source_clip_id'] = idx + 1
         save_json(speech_asr_output_file, owner_asr_info)
     logger.info(f"生成精准asr与说话人信息文件耗时: {time.time() - start_time} 秒")
     owner_asr_info = read_json(speech_asr_output_file)
@@ -835,7 +838,8 @@ def extract_and_merge_owner_other(scenes, target_speaker):
             'narration_script_end': owner_end,
             'original_script': other_text,
             'original_script_start': other_start,
-            'original_script_end': other_end
+            'original_script_end': other_end,
+            'original_content_list': contents
         })
 
         idx += 1
@@ -1036,23 +1040,32 @@ def gen_final_scene_info(logical_scene_info, origin_scene_info, output_dir):
                 continue
             scene_start = min(scene_start, int(target_origin_scene.get('scene_start', scene_start)))
             scene_end = max(scene_end, int(target_origin_scene.get('scene_end', scene_end)))
-            narration_script = target_origin_scene.get('narration_script', '').strip()
-            if narration_script:
-                narration_script_list.append({
-                    'source_clip_id': origin_scene_number,
-                    # 'narration_script_start': target_origin_scene.get('narration_script_start'),
-                    # 'narration_script_end': target_origin_scene.get('narration_script_end'),
-                    'narration_script': narration_script
-                })
+            original_content_list = target_origin_scene.get('original_content_list', [])
+            # 筛选出speaker为owner的文本
+            owner_content_list = [item for item in original_content_list if item.get('speaker') == 'owner']
+            if owner_content_list:
+                for owner_content in owner_content_list:
+                    narration_script = owner_content.get('final_text', '').strip()
+                    source_clip_id = owner_content.get('source_clip_id', '')
+                    if narration_script:
+                        narration_script_list.append({
+                            'source_clip_id': source_clip_id,
+                            'narration_script': narration_script
+                        })
 
-            original_script = target_origin_scene.get('original_script', '').strip()
-            if original_script:
-                original_script_list.append({
-                    'source_clip_id': origin_scene_number,
-                    # 'original_script_start': target_origin_scene.get('original_script_start'),
-                    # 'original_script_end': target_origin_scene.get('original_script_end'),
-                    'original_script': original_script
-                })
+            origin_content_list = [item for item in original_content_list if item.get('speaker') != 'owner']
+
+            if origin_content_list:
+                for origin_content in origin_content_list:
+                    original_script = origin_content.get('final_text', '').strip()
+                    source_clip_id = origin_content.get('source_clip_id', '')
+                    if original_script:
+                        original_script_list.append({
+                            'source_clip_id': source_clip_id,
+                            # 'original_script_start': target_origin_scene.get('original_script_start'),
+                            # 'original_script_end': target_origin_scene.get('original_script_end'),
+                            'original_script': original_script
+                        })
 
         temp_dict['scene_number'] = logical_scene.get('new_scene_number', '')
         temp_dict['scene_start'] = scene_start if scene_start != 10000000 else 0
@@ -1081,10 +1094,10 @@ def gen_new_video_script(video_path, scene_sub_text, output_dir, target_speaker=
     output_file_logical_scene_info_path = os.path.join(output_dir, 'logical_scene_info.json')
     final_scene_info_path = os.path.join(output_dir, 'final_scene_info.json')
 
-    if is_valid_target_file_simple(output_file_final_path, 10):
-        new_video_script = read_json(output_file_final_path)
-        scene_info = read_json(output_file_scene_info_path)
-        return new_video_script, scene_info
+    # if is_valid_target_file_simple(output_file_final_path, 10):
+    #     new_video_script = read_json(output_file_final_path)
+    #     scene_info = read_json(output_file_scene_info_path)
+    #     return new_video_script, scene_info
 
     scene_info = extract_and_merge_owner_other(scene_sub_text_list, target_speaker)
     save_json(output_file_scene_info_path, scene_info)
@@ -1498,6 +1511,8 @@ def gen_sub_scene(video_path, output_dir, sorted_scene_timestamp, has_author_voi
     根据场景分割点和是否包含原始作者语音进行子场景划分
     """
     fixed_speech_asr_with_sub_text = gen_asr(video_path, output_dir, has_author_voice)
+    for idx, item in enumerate(fixed_speech_asr_with_sub_text):
+        item['source_clip_id'] = idx + 1
     scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, output_dir)
     return scene_sub_text
 
