@@ -8,530 +8,26 @@
 :description:
 
 """
-import collections
-import copy
-import json
+
 import os
 import random
 import time
 import traceback
-from typing import List, Dict, Any, Optional
-from collections import Counter
-from pypinyin import lazy_pinyin, Style
-
-from typing import List, Dict, Any, Tuple
-
 from LLM.gemini import get_llm_content, get_llm_content_gemini_flash_video
-from common_utils.ASR.asr_fusion import gen_precise_asr
-from common_utils.ASR.speech_brain_utils import perform_speaker_diarization
 from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time, read_file_to_str, string_to_object, \
     timeit_print, is_valid_target_file_simple
-from common_utils.image_utils import save_frames_around_timestamp
 from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box_target_number
-from common_utils.split_audio import separate_with_cli, process_media_by_volume
-from common_utils.split_scenes import find_and_split_scenes, split_scenes_json
-from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
-from common_utils.video_utils import extract_audio_from_video, clip_video_ms, merge_videos_ffmpeg, probe_duration, \
-    add_subtitles_to_video
-from common_utils.video_utils1 import redub_video_with_ffmpeg, replace_video_audio
+from common_utils.split_audio import separate_with_cli
+from common_utils.split_scenes import split_scenes_json
+from common_utils.video_utils import extract_audio_from_video, clip_video_ms, merge_videos_ffmpeg, probe_duration
 from common_utils.video_utils2 import add_bgm_to_video
 
-import string
 import re
-from copy import deepcopy
 
 from common_utils.video_utils_cut import gen_video
 from content_community.app.remake_video import adjust_subtitle_box, cover_subtitle
+base_output_dir = "W:/project/python_project/watermark_remove/content_community/bilibili/output"
 
-# ==============================================================================
-# 1. 辅助常量与函数 (Helpers & Constants)
-# ==============================================================================
-
-# --- 单一数据源：定义用于分割句子的正则表达式 ---
-# 这是我们唯一的“真相来源”。所有关于标点的逻辑都将从此派生。
-# 括号 () 用于捕获分隔符，方括号 [] 内是所有作为分隔符的字符。
-SPLIT_SENTENCE_REGEX = r'([,，.。!?！、？])'
-
-# --- 派生逻辑：根据正则表达式自动生成标点符号集 ---
-# 我们从正则表达式中提取出所有标点，用于 is_not_punctuation 函数。
-# 这样，只要修改上面的正则表达式，下面的集合就会自动更新。
-PUNCTUATION_SET = set(re.findall(r'\[(.*?)\]', SPLIT_SENTENCE_REGEX)[0])
-
-
-def is_not_punctuation(char: str) -> bool:
-    """
-    判断一个字符是否为标点符号。
-    此函数的逻辑完全由 SPLIT_SENTENCE_REGEX 派生，确保了定义的一致性。
-    """
-    # 我们认为，任何不参与分割的字符，如果它也不是空格，就是有效字符。
-    return char and char.strip() and char not in PUNCTUATION_SET
-
-
-def split_text_into_sentences(text: str) -> list[str]:
-    """
-    将段落文本分割成子句列表。
-    此函数是“真相来源”，其行为定义了哪些字符是标点。
-    """
-    if not text:
-        return []
-
-    sentences = re.split(SPLIT_SENTENCE_REGEX, text)
-    if not sentences:
-        return [text]
-
-    # 将分隔符合并到它们前面的句子中
-    result = []
-    for i in range(0, len(sentences), 2):
-        # 确保不添加由连续分隔符产生的空字符串
-        if sentences[i]:
-            current_sentence = sentences[i]
-            if i + 1 < len(sentences) and sentences[i + 1]:
-                current_sentence += sentences[i + 1]
-            result.append(current_sentence)
-
-    # 如果最后没有分割，返回原始文本列表
-    if not result:
-        return [text]
-
-    return result
-
-
-# --- 模拟函数，请替换为您自己的实现 ---
-def get_pinyin_for_char(s: str) -> str:
-    """
-    - 若输入不含中文，原样返回 s（例如 "ABC" -> "ABC"）。
-    - 若输入含中文，则对每个字符返回无声调拼音并以空格分隔（例如 "你好" -> "ni hao"，"你A" -> "ni A"）。
-    """
-    if not s:
-        return s
-    if not any('\u4e00' <= ch <= '\u9fff' for ch in s):
-        return s
-    return " ".join(lazy_pinyin(s, style=Style.NORMAL, errors="keep"))
-
-
-# ------------------------------------------
-
-def _find_char_in_asr(
-        char_pinyin: str,
-        search_center_index: int,
-        asr_data: list[dict],
-        window_size: int = 5
-) -> tuple[dict | None, int]:
-    if not asr_data:
-        return None, -1
-
-    center_idx = int(round(search_center_index))
-
-    n = len(asr_data)
-    if center_idx < 0:
-        center_idx = 0
-    elif center_idx >= n:
-        center_idx = n - 1
-
-    if 0 <= center_idx < len(asr_data):
-        asr_word_info = asr_data[center_idx]
-        asr_word = asr_word_info.get("word", "")
-        if asr_word and char_pinyin == get_pinyin_for_char(asr_word[0]):
-            return asr_word_info, center_idx
-
-    for offset in range(1, window_size + 1):
-        right_idx = center_idx + offset
-        if right_idx < len(asr_data):
-            asr_word_info = asr_data[right_idx]
-            asr_word = asr_word_info.get("word", "")
-            if asr_word and char_pinyin == get_pinyin_for_char(asr_word[0]):
-                return asr_word_info, right_idx
-
-        left_idx = center_idx - offset
-        if left_idx >= 0:
-            asr_word_info = asr_data[left_idx]
-            asr_word = asr_word_info.get("word", "")
-            if asr_word and char_pinyin == get_pinyin_for_char(asr_word[0]):
-                return asr_word_info, left_idx
-
-    return None, -1
-
-
-# ==============================================================================
-# 2. 主逻辑函数 (Main Logic)
-# ==============================================================================
-
-def compute_sentence_time(starts: List[Dict], key: str = "start") -> Optional[int]:
-    """
-    用 items 中每项的 probability^2 作为权重，计算 key 对应值的加权平均并返回 int。
-    - items: 列表，每项为 dict，期望包含 key 和 "probability"（若无 probability 则视为 1）。
-    - 若没有有效的数值则返回 None。
-    """
-    total_w = 0.0
-    weighted_sum = 0.0
-
-    for item in starts:
-        # 提取并验证 value
-        val = item.get(key)
-        if val is None:
-            continue
-        try:
-            v = float(val)
-        except Exception:
-            continue
-
-        # 提取并验证 probability（缺失则默认 1）
-        p = item.get("probability", 1)
-        try:
-            p = float(p)
-        except Exception:
-            p = 1.0
-
-        w = p * p
-        if w <= 0:
-            continue
-
-        weighted_sum += v * w
-        total_w += w
-
-    if total_w == 0:
-        return None
-
-    avg = weighted_sum / total_w
-    return int(round(avg))
-
-
-def split_tokens_linear(tokens):
-    out = []
-    for it in tokens:
-        w = it.get("word", "") or ""
-        try:
-            s = int(it.get("start", 0));
-            e = int(it.get("end", 0))
-        except Exception:
-            out.append(it.copy());
-            continue
-        if not w or len(w) <= 1 or s >= e:
-            out.append(it.copy());
-            continue
-        parts = list(w);
-        total = e - s;
-        n = len(parts)
-        base, rem = divmod(total, n)
-        cur = s
-        for i, p in enumerate(parts):
-            dur = base + (1 if i < rem else 0)
-            new = it.copy()
-            new.update({"word": p, "start": cur, "end": cur + dur})
-            out.append(new)
-            cur += dur
-        if out and out[-1]["end"] != e:
-            out[-1]["end"] = e
-    return out
-
-
-def generate_sub_sentence_timestamps(
-        asr_data_list: List[List[Dict]],
-        corrected_text_data: Dict,
-        search_window: int = 20,
-        time_margin: int = 1000
-) -> Dict:
-    """
-    asr_data_list: 一个包含多个 asr_data 的列表，每个 asr_data 本身是 list[dict]
-    corrected_text_data: 原来的 corrected_text_data（包含 'fixed_asr_list'）
-    返回值结构保持不变，但每个 sub_text 的 start/end 为各 ASR 结果的平均（若存在）
-    """
-    processed_data = deepcopy(corrected_text_data)
-
-    for segment in processed_data:
-        final_text = segment.get("final_text", "")
-        segment['speaker'] = 'owner_speaker'
-        if not final_text:
-            segment['sub_text'] = []
-            continue
-
-        # 针对每个 asr_data 预先筛选与当前 segment 相关的 words 列表
-        relevant_asr_per_source = []
-        for asr_data in asr_data_list:
-            asr_data = split_tokens_linear(asr_data)
-            relevant_asr = [
-                word for word in asr_data
-                if word.get('end', 0) > segment.get('start', 0) - time_margin and
-                   word.get('start', 0) < segment.get('end', 0) + time_margin
-            ]
-            relevant_asr_per_source.append(relevant_asr)
-
-        # 如果所有来源都没有相关 asr，则直接置空
-        if all(len(r) == 0 for r in relevant_asr_per_source):
-            segment['sub_text'] = []
-            continue
-
-        sub_sentence_list = split_text_into_sentences(final_text)
-        pass1_results = []
-
-        segment_char_cursor = 0
-        # 每个 asr source 单独维护 offset（用于 search center index）
-        offsets = [0.0 for _ in asr_data_list]
-
-        for sentence_text in sub_sentence_list:
-            effective_chars = [c for c in sentence_text if is_not_punctuation(c)]
-
-            if not effective_chars:
-                pass1_results.append({"text": sentence_text, "start": None, "end": None})
-                continue
-
-            # 为每个 asr source 尝试找到 first/last char 的信息（可能为 None）
-            sentence_start_candidates = []  # 每个 source 的 start（或 None）
-            sentence_end_candidates = []  # 每个 source 的 end（或 None）
-
-            # 先处理首字符
-            first_char_pinyin = get_pinyin_for_char(effective_chars[0])
-            text_expected_pos = segment_char_cursor
-
-            for idx, relevant_asr in enumerate(relevant_asr_per_source):
-                # 如果该 source 没有相关 asr，跳过
-                if not relevant_asr:
-                    sentence_start_candidates.append(None)
-                    continue
-
-                search_center_index = text_expected_pos + offsets[idx]
-                first_info, first_match_idx = _find_char_in_asr(
-                    first_char_pinyin, search_center_index, relevant_asr, window_size=search_window
-                )
-                if first_info:
-                    sentence_start_candidates.append(first_info)
-                    # 更新对应 source 的 offset
-                    offsets[idx] = first_match_idx - text_expected_pos
-                else:
-                    sentence_start_candidates.append(None)
-
-            # 取所有非 None start 的平均
-            starts = [s for s in sentence_start_candidates if s is not None]
-            sentence_start_time = compute_sentence_time(starts)
-            # 处理 end（单字与多字不同处理）
-            if len(effective_chars) == 1:
-                # end 来自首字符的 end（每个 source）
-                for idx, relevant_asr in enumerate(relevant_asr_per_source):
-                    if not relevant_asr:
-                        sentence_end_candidates.append(None)
-                        continue
-                    # 如果我们之前在该 source 找到 first_info，我们 should get its 'end' value.
-                    # 重新 run 找一次首字（为了得到 end）——可以优化复用，但保持接口一致
-                    search_center_index = text_expected_pos + offsets[idx]
-                    first_info, _ = _find_char_in_asr(
-                        first_char_pinyin, search_center_index, relevant_asr, window_size=search_window
-                    )
-                    if first_info:
-                        sentence_end_candidates.append(first_info)
-                    else:
-                        sentence_end_candidates.append(None)
-            else:
-                # 多字符，找最后一个字符
-                last_char_pinyin = get_pinyin_for_char(effective_chars[-1])
-                text_expected_pos_last = segment_char_cursor + len(effective_chars) - 1
-
-                for idx, relevant_asr in enumerate(relevant_asr_per_source):
-                    if not relevant_asr:
-                        sentence_end_candidates.append(None)
-                        continue
-
-                    search_center_index_last = text_expected_pos_last + offsets[idx]
-                    last_info, last_match_idx = _find_char_in_asr(
-                        last_char_pinyin, search_center_index_last, relevant_asr, window_size=search_window
-                    )
-                    if last_info:
-                        sentence_end_candidates.append(last_info)
-                        # 更新对应 source 的 offset（基于最后字符的位置）
-                        offsets[idx] = last_match_idx - text_expected_pos_last
-                    else:
-                        sentence_end_candidates.append(None)
-
-            ends = [e for e in sentence_end_candidates if e is not None]
-            sentence_end_time = compute_sentence_time(ends, key="end")
-
-            # 如果长度小且没有时间信息，则跳过（保留你原有的规则）
-            if len(effective_chars) <= 5 and sentence_start_time is None and sentence_end_time is None:
-                # 不添加这一短句
-                segment_char_cursor += len(effective_chars)
-                continue
-
-            pass1_results.append({
-                "text": sentence_text,
-                "start": sentence_start_time,
-                "end": sentence_end_time
-            })
-
-            segment_char_cursor += len(effective_chars)
-
-        # 第二遍：填补缺失 start/end（沿用原逻辑）
-        final_sub_text = []
-        for i, sub in enumerate(pass1_results):
-            if sub['start'] is None:
-                prev_end = segment.get('start', 0)
-                for j in range(i - 1, -1, -1):
-                    if pass1_results[j]['end'] is not None:
-                        prev_end = pass1_results[j]['end']
-                        break
-                sub['start'] = prev_end
-
-            if sub['end'] is None:
-                next_start = segment.get('end', 0)
-                for j in range(i + 1, len(pass1_results)):
-                    if pass1_results[j]['start'] is not None:
-                        next_start = pass1_results[j]['start']
-                        break
-                sub['end'] = next_start
-
-            if sub['start'] > sub['end']:
-                sub['end'] = sub['start']
-
-            final_sub_text.append(sub)
-
-        segment['sub_text'] = final_sub_text
-
-    return processed_data
-
-
-def fill_speaker_texts(
-        words: List[Dict[str, Any]],
-        speaker_segments: List[Dict[str, Any]],
-        keep_word_list: bool = False,
-        joiner: Optional[str] = None
-) -> List[Dict[str, Any]]:
-    """
-    将 ASR 的 words 填充进说话人 segment 列表。
-
-    Args:
-        words: 每个元素类似 {"word": "盘", "start": 130, "end": 290, ...}
-        speaker_segments: 每个元素类似 {"start": 31, "end": 14138, "speaker": "SPEAKER_00", ...}
-        keep_word_list: 是否在返回的每个 segment 中保留 "words" 列表（默认 False）
-        joiner: 用于拼接 words 的分隔符；
-                if None -> 自动选择：如果大多数 word 都是 ASCII（包含字母/数字），用 ' '（空格），否则用 ''（不加空格）
-                可以显式传入 '' 或 ' '。
-
-    Returns:
-        返回一个新的 speaker_segments 列表（每个为原 dict 的浅拷贝），
-        每个 dict 会新增:
-            - 'text': 按时间排序拼接得到的字符串
-            - 'words': 若 keep_word_list True，则为包含的 word 列表（按时间排序）
-    """
-    # defensive copies
-    segs = [dict(s) for s in speaker_segments]
-    words_sorted = sorted(words, key=lambda w: w.get('start', 0))
-
-    # choose joiner if None
-    if joiner is None:
-        # heuristic: if any word contains ascii letters/digits, prefer space; else no space (for Chinese)
-        ascii_like = sum(1 for w in words_sorted if
-                         any((c.isascii() and (c.isalpha() or c.isdigit())) for c in str(w.get('word', ''))))
-        joiner = ' ' if ascii_like >= len(words_sorted) / 3 else ''
-
-    # prepare container for assigned words
-    for s in segs:
-        s['_assigned_words'] = []
-
-    # helper: overlap length
-    def overlap_len(a_start, a_end, b_start, b_end):
-        return max(0, min(a_end, b_end) - max(a_start, b_start))
-
-    # assign each word to the segment with max overlap
-    for w in words_sorted:
-        w_s = w.get('start', 0)
-        w_e = w.get('end', 0)
-        best_idx = None
-        best_ol = 0
-        # iterate all segments and find best overlap
-        for i, s in enumerate(segs):
-            s_s = s.get('start', 0)
-            s_e = s.get('end', 0)
-            ol = overlap_len(w_s, w_e, s_s, s_e)
-            if ol > best_ol:
-                best_ol = ol
-                best_idx = i
-        # assign if any positive overlap
-        if best_idx is not None and best_ol > 0:
-            segs[best_idx]['_assigned_words'].append(dict(w))  # append a shallow copy
-
-    # build text and optionally keep words
-    for s in segs:
-        s['_assigned_words'].sort(key=lambda x: x.get('start', 0))
-        s['text'] = joiner.join([str(w.get('word', '')) for w in s['_assigned_words']])
-        if keep_word_list:
-            s['words'] = s['_assigned_words']
-        # cleanup internal key
-        s.pop('_assigned_words', None)
-
-    return segs
-
-
-def merge_by_key(temp_list: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
-    """
-    简单按 (start,end,speaker) 分组合并 temp_list。
-    返回每个分组字典，包含原始 start,end,speaker 和若干 text_{basename} 字段。
-    """
-    if not temp_list:
-        return []
-
-    # 推断每个子列表对应的 basename
-    basenames = []
-    for i, segs in enumerate(temp_list):
-        name = None
-        if isinstance(segs, list) and len(segs) > 0:
-            name = segs[0].get('ASR_FILE') or segs[0].get('asr_file')
-        if name:
-            name = os.path.basename(name)
-        else:
-            name = f"asr_{i}"
-        basenames.append(name)
-
-    base_map: Dict[Tuple[int, int, str], Dict[str, Any]] = {}
-
-    # 聚合：把每个 segment 的 text 塞到对应 key 下
-    for asr_idx, segs in enumerate(temp_list):
-        name = basenames[asr_idx]
-        tf = f"text_{name}"
-        for seg in (segs or []):
-            # 仅按 start,end,speaker 分组；缺少这些字段的 segment 会被跳过
-            if not all(k in seg for k in ("start", "end", "speaker")):
-                # 若你希望保留无 loc 的 seg，可改为把它们放到特殊 key
-                continue
-            key = (seg["start"], seg["end"], seg["speaker"])
-            entry = base_map.setdefault(key, {"start": seg["start"], "end": seg["end"], "speaker": seg["speaker"]})
-            # 直接写入（若同一 (start,end,speaker) 在同一 ASR 中出现多次，后者会覆盖）
-            entry[tf] = seg.get("text", "") or ""
-
-    # 确保每个 entry 都有所有 text_{basename} 字段（缺失则填 ""）
-    for entry in base_map.values():
-        for name in basenames:
-            entry.setdefault(f"text_{name}", "")
-
-    # 按 start 排序并返回列表
-    merged = sorted(base_map.values(), key=lambda e: (e.get("start", 0), e.get("end", 0)))
-    return merged
-
-
-def check_fix_speech_asr(fixed_speech_asr_info, speech_asr_info):
-    """
-    检查修复后的说话人文本是否合理
-    """
-    if not fixed_speech_asr_info or 'fixed_asr_list' not in fixed_speech_asr_info:
-        print("[ERROR] 修复后的说话人文本信息无效或缺失 'fixed_asr_list' 字段")
-        return False
-
-    fixed_list = fixed_speech_asr_info['fixed_asr_list']
-    if len(fixed_list) != len(speech_asr_info):
-        print(f"[ERROR] 修复后的说话人文本长度与原始不匹配: {len(fixed_list)} != {len(speech_asr_info)}")
-        return False
-
-    # 检查'owner_speaker'是否为空或者是否是已存在的说话人
-    speaker_list = {entry.get('speaker') for entry in speech_asr_info if 'speaker' in entry}
-    owner_speaker = fixed_speech_asr_info.get('owner_speaker', '')
-    if owner_speaker and owner_speaker not in speaker_list:
-        print(f"[ERROR] 修复后的说话人文本中 'owner_speaker' 无效: '{owner_speaker}'")
-        return False
-
-    # 将fixed_list中所有speaker为owner_speaker的值设置为 'owner_speaker'
-    for entry in fixed_list:
-        if entry.get('speaker') == owner_speaker:
-            entry['speaker'] = 'owner_speaker'
-
-    print("[INFO] 修复后的说话人文本信息通过基本检查")
-    return True
 
 def check_owner_asr(owner_asr_info, video_duration):
     """
@@ -549,7 +45,7 @@ def check_owner_asr(owner_asr_info, video_duration):
 
         # 1. 最大跨度不能超过 20s
         if len(owner_asr_info[i]['final_text']) > 200 and owner_asr_info[i]['speaker'] == 'owner':
-            print(f"[ERROR] 片段 {i} 跨度过长: {duration} ms 文案为:{owner_asr_info[i]['final_text']}")
+            print(f"[ERROR] 片段 {i} 跨度过长: {duration} ms 文案长度: {len(owner_asr_info[i]['final_text'])} 文案为:{owner_asr_info[i]['final_text']}")
             return False
 
         # # 2. 检查时长合理性：使用最快和最慢语速来估算时长范围
@@ -566,47 +62,95 @@ def check_owner_asr(owner_asr_info, video_duration):
 
     return True
 
-def gen_owner_asr_by_llm(video_path):
-    """
-    通过大模型生成asr文本，附带主人识
-    """
-    retry_delay = 10
-    max_retries = 3
-    prompt_file_path = '../../content_community/app/视频分解素材_直接进行asr转录与owner识别严格.txt'
-    prompt = read_file_to_str(prompt_file_path)
-    full_prompt = f'{prompt}'
-    raw = ""
-    for attempt in range(1, max_retries + 1):
-        try:
-            print(f"[INFO] 生成asr信息 (尝试 {attempt}/{max_retries})")
-            model_name = "gemini-2.5-pro"
-            raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
-            video_duration = probe_duration(video_path)
-            video_duration_ms = int(video_duration * 1000)
-            owner_asr_info = string_to_object(raw)
-            if check_owner_asr(owner_asr_info, video_duration_ms) is False:
-                raise ValueError(f"[ERROR] 生成生成asr文本异常，尝试重新生成 (尝试 {attempt}/{max_retries})")
 
-            if owner_asr_info == []:
-                owner_asr_info = [
+def gen_owner_asr_by_llm(video_path, has_author_voice):
+    """
+    通过大模型生成带说话人识别的ASR文本。
+    （已重构，提升可读性和健壮性）
+    """
+    # --- 1. 配置常量 ---
+    MAX_RETRIES = 3
+    RETRY_DELAY = 10  # 秒
+    PROMPT_FILE_PATH = '../../content_community/app/视频分解素材_直接进行asr转录与owner识别严格.txt'
+    MODEL_NAME = "gemini-2.5-pro"
+
+    # --- 2. 初始化和预处理 ---
+    try:
+        video_duration = probe_duration(video_path)
+        video_duration_ms = int(video_duration * 1000)
+    except Exception as e:
+        print(f"[ERROR] 获取视频时长失败: {e}")
+        return None
+
+    # --- 3. 前置条件判断 (Guard Clause) ---
+    # 如果视频中没有作者声音，直接返回一个覆盖全时长的默认结构
+    if not has_author_voice:
+        print("[INFO] 视频无作者声音，返回默认ASR结构。")
+        return [
+            {
+                "start": "00:00.000",
+                "end": ms_to_time(video_duration_ms),
+                "speaker": "other",
+                "final_text": ""
+            }
+        ]
+
+    # --- 4. 准备Prompt ---
+    try:
+        prompt = read_file_to_str(PROMPT_FILE_PATH)
+    except Exception as e:
+        print(f"[ERROR] 读取Prompt文件失败: {PROMPT_FILE_PATH}, 错误: {e}")
+        return None
+
+    # --- 5. 带重试机制的核心逻辑 ---
+    for attempt in range(1, MAX_RETRIES + 1):
+        print(f"[INFO] 尝试生成ASR信息... (第 {attempt}/{MAX_RETRIES} 次)")
+        raw_response = ""
+        try:
+            # 调用大模型API
+            raw_response = get_llm_content_gemini_flash_video(
+                prompt=prompt,
+                video_path=video_path,
+                model_name=MODEL_NAME
+            )
+
+            # 解析和校验
+            owner_asr_info = string_to_object(raw_response)
+
+            if not check_owner_asr(owner_asr_info, video_duration_ms):
+                print(f"[WARN] 生成的ASR文本校验失败 (尝试 {attempt}/{MAX_RETRIES})")
+                # 校验失败，继续下一次重试
+                continue
+
+            # 处理LLM返回空列表的情况
+            if not owner_asr_info:
+                print("[WARN] 大模型返回为空列表，使用默认值。")
+                return [
                     {
                         "start": "00:00.000",
                         "end": ms_to_time(video_duration_ms),
                         "speaker": "other",
                         "final_text": ""
-                    }]
-                print("[WARN] 生成的asr文本为空，使用默认值")
+                    }
+                ]
 
+            # 成功获取并校验通过，直接返回结果
+            print("[INFO] 成功生成ASR信息。")
             return owner_asr_info
+
         except Exception as e:
-            print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
-            if attempt < max_retries:
-                print(f"[INFO] 正在重试... (等待 {retry_delay} 秒)")
-                time.sleep(retry_delay)  # 等待一段时间后再重试
-            else:
-                print("[ERROR] 达到最大重试次数，失败.")
-                return None  # 达到最大重试次数后返回 None
+            print(f"[ERROR] 生成或处理ASR时发生异常 (尝试 {attempt}/{MAX_RETRIES}): {e}")
+            print(f"       原始响应内容 (raw_response): {raw_response}")
             traceback.print_exc()
+
+        # 如果当前尝试失败且不是最后一次，则等待后重试
+        if attempt < MAX_RETRIES:
+            print(f"[INFO] 将在 {RETRY_DELAY} 秒后重试...")
+            time.sleep(RETRY_DELAY)
+
+    # --- 6. 所有重试均告失败 ---
+    print("[ERROR] 已达到最大重试次数，无法生成ASR信息。")
+    return None
 
 def gen_audio_path(input_path: str, split_vocal=True) -> str:
     """
@@ -633,51 +177,16 @@ def gen_audio_path(input_path: str, split_vocal=True) -> str:
     print(f"处理后的音频文件路径: {processed_audio_path}")
     return processed_audio_path
 
-def fix_owner_speaker(video_path, fixed_speech_asr_info):
-    """
-    进一步的修复主人语音，避免漏识别和误识别
-    """
-    owner_asr_list = []
-    fixed_list = fixed_speech_asr_info['fixed_asr_list']
-    for entry in fixed_list:
-        if entry.get('speaker') == 'owner_speaker' and entry.get('final_text', '').strip():
-            # 删除speaker字段
-            entry.pop('speaker', None)
-            owner_asr_list.append(entry)
-
-    retry_delay = 10
-    max_retries = 3
-    prompt_file_path = '../../content_community/app/视频分解素材_进一步进行准确的主人音频纠正.txt'
-    prompt = read_file_to_str(prompt_file_path)
-    full_prompt = f'{prompt}\n{owner_asr_list}'
-    raw = ""
-    for attempt in range(1, max_retries + 1):
-        try:
-            model_name = "gemini-2.5-pro"
-            raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
-
-            fix_speech_asr_info = string_to_object(raw)
-            return fix_speech_asr_info
-        except Exception as e:
-            print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
-            if attempt < max_retries:
-                print(f"[INFO] 正在重试... (等待 {retry_delay} 秒)")
-                time.sleep(retry_delay)  # 等待一段时间后再重试
-            else:
-                print("[ERROR] 达到最大重试次数，失败.")
-                return None  # 达到最大重试次数后返回 None
-            traceback.print_exc()
-
 @timeit_print
-def gen_asr(video_path, base_name):
+def gen_asr(video_path, output_dir, has_author_voice):
     """
     生成修复后的asr以及句子时间段
     """
     start_time = time.time()
-    speech_asr_output_file = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/speech_asr_with_owner.json'
+    speech_asr_output_file = os.path.join(output_dir, 'speech_asr_with_owner.json')
 
     if not is_valid_target_file_simple(speech_asr_output_file, min_size_bytes=10):
-        owner_asr_info = gen_owner_asr_by_llm(video_path)
+        owner_asr_info = gen_owner_asr_by_llm(video_path, has_author_voice)
         # 判断owner_asr_info是否为dict
         if owner_asr_info is None:
             print("[ERROR] 生成asr文本失败，返回空结果")
@@ -764,42 +273,32 @@ def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True):
 
 
 @timeit_print
-def get_scene(video_path, basename):
-
+def get_scene(video_path, output_dir, high_thresholds=[30, 50, 70]):
+    """
+    生成视频不同阈值下的场景划分
+    """
+    merged_timestamps_file = os.path.join(output_dir, 'merged_timestamps.json')
     all_scene_info_dict = {}
-    for high_threshold in [30, 50, 70]:
+    for high_threshold in high_thresholds:
         start_time = time.time()
-        scene_info_file =r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/scenes_{high_threshold}/scene_info.json'
+        file_name = f'scenes_{high_threshold}_info.json'
+        scene_info_file = os.path.join(output_dir, file_name)
         if is_valid_target_file_simple(scene_info_file):
-            # print(f"场景信息文件已存在，跳过处理: {scene_info_file}")
             all_scene_info_dict[high_threshold] = read_json(scene_info_file)
             continue
-
         # 运行带有精炼功能的场景分割
-        scene_info_dict = split_scenes_json(
-            video_path,
-            high_threshold=high_threshold,  # 初始高阈值
-            min_scene_len=25,  # 最小场景长度（帧）
-        )
-        print(
-            f"阈值为 {high_threshold}场景信息字典已生成并打印。共 {len(scene_info_dict)} 个场景。 耗时: {time.time() - start_time} 秒\n")
-        # for key, value in scene_info_dict.items():
-        #     timestamp = value[1]
-        #     save_frames_around_timestamp(video_path, timestamp, 3, str(os.path.join(f'output/{basename}/scenes_{basename}_{high_threshold}', key)))
-
+        scene_info_dict = split_scenes_json(video_path, high_threshold=high_threshold, min_scene_len=25)
+        print(f"阈值为 {high_threshold}场景信息字典已生成并打印。共 {len(scene_info_dict)} 个场景。 耗时: {time.time() - start_time} 秒\n")
         save_json(scene_info_file, scene_info_dict)
         all_scene_info_dict[high_threshold] = scene_info_dict
+
+
     kept_sorted, pairs = merge_scene_timestamps(all_scene_info_dict, min_count=3)
-
     print(f"场景识别合并完成:场景数量为: {len(kept_sorted)}")
-    # 将kept_sorted保存到文件
-    save_json(r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/scenes_fused/merged_timestamps.json', kept_sorted)
-
-    # for key, value in pairs.items():
-    #     timestamp = value[1]
-    #     save_frames_around_timestamp(my_video_path, timestamp, 3,
-    #                                  str(os.path.join(f'scenes_fused_{basename}', key)))
-
+    save_json(merged_timestamps_file, kept_sorted)
+    # 进行kept_sorted合法性判断，如果小于3直接抛出异常
+    if len(kept_sorted) < 3:
+        raise ValueError(f"[ERROR] 场景识别合并后时间点过少: {len(kept_sorted)} < 3，无法进行有效分割，请检查输入视频内容或调整阈值。")
     return kept_sorted
 
 
@@ -976,8 +475,104 @@ def process_scenes_complete_fix(
     return final_scenes
 
 
-@timeit_print
-def get_scene_sub_text(sorted_scene_timestamp, owner_asr, base_name):
+def merge_scenes_advanced(
+        scene_timestamps,
+        min_scene_duration_ms,
+        high_occurrence_threshold=2,
+        max_merge_duration_ms=10000,
+        final_cleanup_threshold_ms=1500  # 新增参数：最终清理的阈值
+):
+    """
+    最终版场景合并函数，采用“分块处理”的健壮逻辑。
+
+    1.  用高频时间戳定义不可逾越的“大块”。
+    2.  在每个“大块”内部，利用低频点进行精细分割和智能合并。
+    3.  最后全局清理极短的碎片。
+    """
+    if not scene_timestamps:
+        return []
+
+    # --- 步骤 1: 定义“大块”边界 ---
+    video_duration = scene_timestamps[-1][0]
+    hard_boundaries = sorted(list(set(
+        [0] + [t for t, c in scene_timestamps if c >= high_occurrence_threshold] + [video_duration]
+    )))
+
+    all_processed_scenes = []
+
+    # --- 步骤 2: 逐个“大块”进行内部分割与合并 ---
+    for i in range(len(hard_boundaries) - 1):
+        block_start, block_end = hard_boundaries[i], hard_boundaries[i + 1]
+        if block_start >= block_end:
+            continue
+
+        # 收集落在这个大块内部的所有时间戳
+        internal_points = [block_start]
+        for timestamp, _ in scene_timestamps:
+            if block_start < timestamp < block_end:
+                internal_points.append(timestamp)
+        internal_points.append(block_end)
+
+        # 利用内部所有点进行最精细的分割
+        internal_segments = []
+        unique_points = sorted(list(set(internal_points)))
+        for j in range(len(unique_points) - 1):
+            start, end = unique_points[j], unique_points[j + 1]
+            if start < end:
+                internal_segments.append([start, end])
+
+        if not internal_segments:
+            continue
+
+        # 在这个“大块”内部执行合并逻辑
+        block_merged_scenes = []
+        for segment in internal_segments:
+            if not block_merged_scenes:
+                block_merged_scenes.append(segment)
+                continue
+
+            last_scene = block_merged_scenes[-1]
+            current_duration = segment[1] - segment[0]
+            last_duration = last_scene[1] - last_scene[0]
+
+            # 强制合并：如果上一个场景不合格
+            if last_duration < min_scene_duration_ms:
+                last_scene[1] = segment[1]
+            # 选择性合并：如果当前场景不合格，且上一个场景还有空间
+            elif current_duration < min_scene_duration_ms and last_duration < max_merge_duration_ms:
+                last_scene[1] = segment[1]
+            # 不合并：当前场景成为新的独立场景
+            else:
+                block_merged_scenes.append(segment)
+
+        all_processed_scenes.extend(block_merged_scenes)
+
+    # --- 步骤 3: 全局清理 ---
+    if not all_processed_scenes:
+        return []
+
+    final_scenes = []
+    for scene in all_processed_scenes:
+        duration = scene[1] - scene[0]
+        if final_scenes and duration < final_cleanup_threshold_ms:
+            final_scenes[-1][1] = scene[1]
+        else:
+            final_scenes.append(scene)
+
+    # --- 步骤 4: 格式化输出 ---
+    formatted_output = []
+    for start, end in final_scenes:
+        formatted_output.append({
+            "scene_start": start,
+            "scene_end": end,
+            "content_list": [{"start": start, "end": end, "speaker": "other", "final_text": "", "text": ""}]
+        })
+    return formatted_output
+
+
+def get_scene_sub_text(sorted_scene_timestamp, owner_asr, output_dir):
+    output_file_scene_sub_text_file = os.path.join(output_dir, 'scene_sub_text.json')
+
     merged_timestamps = sorted_scene_timestamp
     # 将all_sub_text_list按照end升序排序
     owner_asr.sort(key=lambda x: x.get('end', 0))
@@ -992,12 +587,20 @@ def get_scene_sub_text(sorted_scene_timestamp, owner_asr, base_name):
             asr['text'] = asr['final_text']
         asr['start'] = time_to_ms(asr.get('start', 0))
         asr['end'] = time_to_ms(asr.get('end', 0))
-    owner_speaker = 'owner' if is_have_owner else 'other'
-    min_scene_duration_ms = 10000 if is_have_owner else 1000
-    scene_sub_text = process_scenes_complete_fix(owner_asr, merged_timestamps, owner_speaker=owner_speaker, min_scene_duration_ms=min_scene_duration_ms)
-    output_file_scene_sub_text = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/scene_sub_text.json'
-    save_json(output_file_scene_sub_text, scene_sub_text)
-    print(f"场景划分完成:数量{len(scene_sub_text)} owner_speaker:{owner_speaker} min_scene_duration_ms:{min_scene_duration_ms}")
+
+    if len(owner_asr) > 2:
+        owner_speaker = 'owner' if is_have_owner else 'other'
+        min_scene_duration_ms = 10000 if is_have_owner else 1000
+        scene_sub_text = process_scenes_complete_fix(owner_asr, merged_timestamps, owner_speaker=owner_speaker, min_scene_duration_ms=min_scene_duration_ms)
+    else:
+        print("[WARN] 说话人文本过少，直接使用场景分割点进行划分")
+        scene_sub_text = merge_scenes_advanced(merged_timestamps, min_scene_duration_ms=5000)
+    save_json(output_file_scene_sub_text_file, scene_sub_text)
+    print(f"初步场景划分完成:数量{len(scene_sub_text)}")
+
+    # 检测scene_sub_text的长度是否小于3，如果是则抛出异常
+    if len(scene_sub_text) < 3:
+        raise ValueError(f"[ERROR] 最终场景划分结果过少: {len(scene_sub_text)} < 3，无法进行有效分割，请检查输入视频内容或调整阈值。")
     return scene_sub_text
 
 
@@ -1217,7 +820,7 @@ def check_new_video_script(new_video_script, scene_info):
     return True
 
 
-def gen_new_video_script_llm(scene_info, video_path, no_owner=False):
+def gen_new_video_script_llm(scene_info, has_author_voice=True):
     """
     生成新的视频方案
     """
@@ -1230,7 +833,7 @@ def gen_new_video_script_llm(scene_info, video_path, no_owner=False):
     max_retries = 3
     prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本.txt'
 
-    if no_owner:
+    if not has_author_voice:
         print("[INFO] 使用无主人说话人版本的提示词")
         prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本纯重排场景.txt'
 
@@ -1368,37 +971,37 @@ def gen_final_scene_info(logical_scene_info, origin_scene_info):
 
 
 @timeit_print
-def gen_new_video_script(video_path, scene_sub_text, base_name, target_speaker='owner', no_owner=False):
+def gen_new_video_script(video_path, scene_sub_text, output_dir, target_speaker='owner', has_author_voice=False):
     """
     生成新视频的文本脚本
     """
     scene_sub_text_list = scene_sub_text
-    output_file_final = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/new_script.json'
-    output_file_scene_info = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/merge_speaker_scene_info.json'
-    output_file_logical_scene_info = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/logical_scene_info.json'
-    final_scene_info_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/final_scene_info.json'
+    output_file_final_path = os.path.join(output_dir, 'new_script.json')
+    output_file_scene_info_path = os.path.join(output_dir, 'merge_speaker_scene_info.json')
+    output_file_logical_scene_info_path = os.path.join(output_dir, 'logical_scene_info.json')
+    final_scene_info_path = os.path.join(output_dir, 'final_scene_info.json')
 
-    if is_valid_target_file_simple(output_file_final, 10):
-        new_video_script = read_json(output_file_final)
-        scene_info = read_json(output_file_scene_info)
+    if is_valid_target_file_simple(output_file_final_path, 10):
+        new_video_script = read_json(output_file_final_path)
+        scene_info = read_json(output_file_scene_info_path)
         return new_video_script, scene_info
 
     scene_info = extract_and_merge_owner_other(scene_sub_text_list, target_speaker)
-    save_json(output_file_scene_info, scene_info)
+    save_json(output_file_scene_info_path, scene_info)
 
-    if is_valid_target_file_simple(output_file_logical_scene_info):
-        logical_scene_info = read_json(output_file_logical_scene_info)
+    if is_valid_target_file_simple(output_file_logical_scene_info_path):
+        logical_scene_info = read_json(output_file_logical_scene_info_path)
     else:
         logical_scene_info = gen_logical_scene_llm(scene_info, video_path=video_path)
-        save_json(output_file_logical_scene_info, logical_scene_info)
+        save_json(output_file_logical_scene_info_path, logical_scene_info)
     print(f"场景逻辑合并完成:数量{len(logical_scene_info.get("new_scene_info"))} 删除的子场景数量:{len(logical_scene_info.get("deleted_scene"))}\n")
 
 
     final_scene_info = gen_final_scene_info(logical_scene_info, scene_info)
     save_json(final_scene_info_path, final_scene_info)
 
-    new_video_script = gen_new_video_script_llm(final_scene_info, video_path=video_path,no_owner=no_owner)
-    save_json(output_file_final, new_video_script)
+    new_video_script = gen_new_video_script_llm(final_scene_info, has_author_voice=has_author_voice)
+    save_json(output_file_final_path, new_video_script)
 
     return new_video_script, scene_info
 
@@ -1727,12 +1330,11 @@ def merge_intervals(intervals):
 
 
 @timeit_print
-def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list, base_name):
+def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list, output_dir):
     """
     找到字幕区域并且遮挡字幕
     """
     time_ranges = []
-    output_dir = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/subtitle'
 
 
     duration_list = []
@@ -1763,151 +1365,84 @@ def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list, base
             }
         )
         time_ranges.append((start / 1000, end / 1000))
-    final_box_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/subtitle/final_subtitle_box.json'
+    final_box_path = os.path.join(output_dir, 'final_subtitle_box.json')
+
     if not is_valid_target_file_simple(final_box_path):
         final_box = find_overall_subtitle_box_target_number(video_path, merged_timerange_list, output_dir=output_dir)
         save_json(final_box_path, final_box)
     final_box = read_json(final_box_path)
     top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(video_path, final_box)
 
-    cover_video_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/subtitle_covered.mp4'
-    if is_valid_target_file_simple(cover_video_path):
+    cover_video_path = os.path.join(output_dir, 'subtitle_covered.mp4')
+    if is_valid_target_file_simple(cover_video_path, 10):
         print(f"已存在遮挡字幕的视频: {cover_video_path}")
         return cover_video_path, [top_left, bottom_right]
     cover_subtitle(video_path, cover_video_path, top_left, bottom_right, time_ranges=time_ranges)
+    if not is_valid_target_file_simple(cover_video_path, 10):
+        raise ValueError(f"生成遮挡字幕视频失败: {cover_video_path}")
+
     return cover_video_path, [top_left, bottom_right]
 
-def test_all():
-    video_dir = 'test_video'
-    video_list = []
-    for root, dirs, files in os.walk(video_dir):
-        for file in files:
-            if file.endswith('.mp4') or file.endswith('.mov') or file.endswith('.mkv'):
-                video_list.append(os.path.join(root, file))
-    print(f"找到 {len(video_list)} 个视频文件")
+@timeit_print
+def gen_sub_scene(video_path, output_dir, sorted_scene_timestamp, has_author_voice=True):
+    """
+    根据场景分割点和是否包含原始作者语音进行子场景划分
+    """
+    fixed_speech_asr_with_sub_text = gen_asr(video_path, output_dir, has_author_voice)
+    scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, output_dir)
+    return scene_sub_text
 
-    for video in video_list:
-        print(f"\n处理视频: {video}")
-        try:
-            video_remake(video)
-        except Exception as e:
-            print(f"[ERROR] 处理视频 {video} 时出错: {e}")
-            traceback.print_exc()
+def gen_video_script(video_path, params={}):
+    """
+    根据原始视频以及一些参数生成新的视频方案
+    参数包括 是否包含原始作者语音（默认为True表示包含作者语音） 创作指导 评论参考
+    """
+    # 信息准备
+    has_author_voice = params.get('has_author_voice', True)
+    basename = os.path.basename(video_path).split('.mp4')[0]
+    output_dir = os.path.join(base_output_dir, basename)
 
+    # 获取场景分割点信息
+    sorted_scene_timestamp = get_scene(video_path, output_dir)
+
+    # 进行子场景的划分
+
+    scene_sub_text = gen_sub_scene(video_path, output_dir, sorted_scene_timestamp, has_author_voice=has_author_voice)
+
+    # 进行新文案的生成
+    new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, output_dir, has_author_voice=has_author_voice)
+
+def gen_new_video(video_path):
+    """
+    根据新的方案生成新的视频
+    """
+    basename = os.path.basename(video_path).split('.mp4')[0]
+    output_dir = os.path.join(base_output_dir, basename)
+
+    output_file_final_path = os.path.join(output_dir, 'new_script.json')
+    output_file_scene_info_path = os.path.join(output_dir, 'merge_speaker_scene_info.json')
+    all_files = [output_file_final_path, output_file_scene_info_path]
+
+    all_valid = all(is_valid_target_file_simple(f, 10) for f in all_files)
+    if not all_valid:
+        print(f"[INFO] 检测到部分输出文件缺失或无效，将重新处理视频: {video_path}")
+        return None, None, []
+    scene_info = read_json(output_file_scene_info_path)
+    new_video_script = read_json(output_file_final_path)
+
+    subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
+    final_video_path, final_video_script = gen_new_video_by_scene_and_script(
+        subtitle_video_path, new_video_script, scene_info, subtitle_box, basename
+    )
 
 @timeit_print
 def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
     """
     重制视频，并在发生异常时将日志保存到指定文件。
     """
-    basename = os.path.basename(video_path).split('.mp4')[0]
-    output_dir = os.path.join(r"W:\project\python_project\watermark_remove\content_community\bilibili", "output",
-                              basename)
-    log_path = os.path.join(output_dir, "log.json")
-
-    # 确保输出目录存在
-    os.makedirs(output_dir, exist_ok=True)
-
-    max_attempts = 3
-    all_files = [
-        os.path.join(output_dir, 'speech_asr_with_owner.json'),
-        os.path.join(output_dir, 'new_script.json'),
-        os.path.join(output_dir, 'logical_scene_info.json'),
-    ]
-
-    if not is_half:
-        all_valid = all(is_valid_target_file_simple(f, 10) for f in all_files)
-        if not all_valid:
-            print(f"[INFO] 检测到部分输出文件缺失或无效，将重新处理视频: {video_path}")
-            return None, None, []
-
-    last_exc = None
-    for attempt in range(1, max_attempts + 1):
-        try:
-            print(f"[video_remake] Attempt {attempt}/{max_attempts} for '{video_path}'...")
-
-            fixed_speech_asr_with_sub_text = gen_asr(video_path, basename)
-            if no_owner:
-                for item in fixed_speech_asr_with_sub_text:
-                    item['speaker'] = 'other'
-
-            has_owner = any(item.get('speaker') == 'owner' for item in fixed_speech_asr_with_sub_text)
-            no_owner = not has_owner
-
-            sorted_scene_timestamp = get_scene(video_path, basename)
-            scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, basename)
-            new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, basename, no_owner=no_owner)
-
-            if is_half:
-                return  # 提前成功返回
-
-            subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
-            final_video_path, final_video_script = gen_new_video_by_scene_and_script(
-                subtitle_video_path, new_video_script, scene_info, subtitle_box, basename
-            )
-            cleaner_file_list = [
-                os.path.join(output_dir, 'remake.mp4'),
-                subtitle_video_path
-            ]
-
-            # 成功则返回结果
-            print(f"[video_remake] Successfully processed '{video_path}' on attempt {attempt}.")
-            return final_video_path, final_video_script, cleaner_file_list
-
-        except Exception as e:
-            last_exc = e
-            print(f"[video_remake] Attempt {attempt} failed for '{video_path}': {e}")
-
-            # --- 日志记录核心代码 ---
-            # 1. 准备日志信息
-            error_message = {
-                "attempt": attempt,
-                "max_attempts": max_attempts,
-                "video_path": video_path,
-                "error_type": type(e).__name__,
-                "error_message": str(e),
-                "traceback": traceback.format_exc()
-            }
-
-            # 2. 将日志信息写入 JSON 文件
-            try:
-                with open(log_path, 'w', encoding='utf-8') as f:
-                    json.dump(error_message, f, ensure_ascii=False, indent=4)
-                print(f"[video_remake] Error log saved to '{log_path}'")
-            except Exception as log_e:
-                print(f"[video_remake] CRITICAL: Failed to write log file '{log_path}': {log_e}")
-            # ------------------------
-
-            if attempt == max_attempts:
-                print(f"[video_remake] All {max_attempts} attempts failed for '{video_path}'.")
-                # 循环结束，最终失败，返回None
-                return None, None, []  # 保持返回值的结构一致性
-            else:
-                print(f"[video_remake] Retrying after a short delay...")
-                time.sleep(2)  # 增加一个2秒的延时，避免因瞬时问题（如文件占用）导致连续快速失败
-
-    # 理论上循环会通过return退出，如果能执行到这里说明逻辑有问题，但也提供一个返回值
-    return None, None, []
+    gen_video_script(video_path)
+    gen_new_video(video_path)
 
 
 if __name__ == '__main__':
-    video_remake('7551467524232154410.mp4', is_half=True, no_owner=True)
-    # test_all()
-    #
-    # UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志
-    # upload_log = read_json(UPLOAD_LOG_FILE)
-    # for key, item in upload_log.items():
-    #     video_path = item.get('video_path')
-    #     video_name = item.get('video_name')
-    #     if '流浪' not in video_path:
-    #         continue
-    #     if not video_path or not os.path.exists(video_path):
-    #         print(f"[WARN] 视频路径无效或不存在: {video_path}")
-    #         continue
-    #     try:
-    #         print(f"\n处理视频: {video_path}")
-    #         video_remake(video_path, True)
-    #     except Exception as e:
-    #         print(f"[ERROR] 处理视频 {video_path} 时出错: {e}")
-    #         traceback.print_exc()
-    #
+    video_remake('7551467524232154410.mp4')
