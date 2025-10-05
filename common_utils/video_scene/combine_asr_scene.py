@@ -13,6 +13,7 @@ import os
 import random
 import time
 import traceback
+import logging  # 1. 引入 logging 模块
 from LLM.gemini import get_llm_content, get_llm_content_gemini_flash_video
 from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time, read_file_to_str, string_to_object, \
     timeit_print, is_valid_target_file_simple
@@ -26,10 +27,48 @@ import re
 
 from common_utils.video_utils_cut import gen_video
 from content_community.app.remake_video import adjust_subtitle_box, cover_subtitle
+
 base_output_dir = "W:/project/python_project/watermark_remove/content_community/bilibili/output"
 
 
-def check_owner_asr(owner_asr_info, video_duration):
+# 2. 新增 setup_logger 函数，这是日志系统的核心
+def setup_logger(log_file):
+    """
+    配置并返回一个日志记录器，支持并行调用。
+    """
+    # 使用日志文件的绝对路径作为记录器的唯一名称，防止冲突
+    logger_name = os.path.abspath(log_file)
+    logger = logging.getLogger(logger_name)
+
+    # 如果这个logger已经配置过了，直接返回，防止重复添加handler
+    if logger.hasHandlers():
+        return logger
+
+    logger.setLevel(logging.INFO)
+
+    # 创建一个handler，用于写入日志文件
+    # 确保日志文件目录存在
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+
+    # 创建一个handler，用于输出到控制台
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+
+    # 定义handler的输出格式
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+
+    # 给logger添加handler
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+    return logger
+
+
+def check_owner_asr(owner_asr_info, video_duration, logger):
     """
         检查生成的asr文本是否正确，第一是验证每个时间是否合理（1.最长跨度不能够超过20s 2.时长的合理性（也就是最快和最慢的语速就能够知道文本对应的时长是否合理） 3.owner语音和本地speaker说话人日志的差异不能够太大）
 
@@ -45,7 +84,8 @@ def check_owner_asr(owner_asr_info, video_duration):
 
         # 1. 最大跨度不能超过 20s
         if len(owner_asr_info[i]['final_text']) > 200 and owner_asr_info[i]['speaker'] == 'owner':
-            print(f"[ERROR] 片段 {i} 跨度过长: {duration} ms 文案长度: {len(owner_asr_info[i]['final_text'])} 文案为:{owner_asr_info[i]['final_text']}")
+            logger.error(
+                f"[ERROR] 片段 {i} 跨度过长: {duration} ms 文案长度: {len(owner_asr_info[i]['final_text'])} 文案为:{owner_asr_info[i]['final_text']}")
             return False
 
         # # 2. 检查时长合理性：使用最快和最慢语速来估算时长范围
@@ -54,10 +94,10 @@ def check_owner_asr(owner_asr_info, video_duration):
         # max_duration = (word_count / 50) * 60 * 1000  # 最慢语速 (50词/分钟)
         #
         # if not (min_duration <= duration <= max_duration):
-        #     print(f"[ERROR] 片段 {i} 时长不合理: {duration} ms, 预计范围: [{min_duration} ms, {max_duration} ms] 文案为:{owner_asr_info[i]["final_text"]}")
+        #     logger.error(f"[ERROR] 片段 {i} 时长不合理: {duration} ms, 预计范围: [{min_duration} ms, {max_duration} ms] 文案为:{owner_asr_info[i]["final_text"]}")
         #     return False
     if max_time > video_duration + 1000:
-        print(f"[ERROR] 最大结束时间 {max_time} ms 超过视频总时长 {video_duration} ms")
+        logger.error(f"[ERROR] 最大结束时间 {max_time} ms 超过视频总时长 {video_duration} ms")
         return False
 
     return True
@@ -68,6 +108,11 @@ def gen_owner_asr_by_llm(video_path, has_author_voice):
     通过大模型生成带说话人识别的ASR文本。
     （已重构，提升可读性和健壮性）
     """
+    basename = os.path.basename(video_path).split('.mp4')[0]
+    output_dir = os.path.join(base_output_dir, basename)
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
+
     # --- 1. 配置常量 ---
     MAX_RETRIES = 3
     RETRY_DELAY = 10  # 秒
@@ -79,13 +124,13 @@ def gen_owner_asr_by_llm(video_path, has_author_voice):
         video_duration = probe_duration(video_path)
         video_duration_ms = int(video_duration * 1000)
     except Exception as e:
-        print(f"[ERROR] 获取视频时长失败: {e}")
+        logger.error(f"获取视频时长失败: {e}")
         return None
 
     # --- 3. 前置条件判断 (Guard Clause) ---
     # 如果视频中没有作者声音，直接返回一个覆盖全时长的默认结构
     if not has_author_voice:
-        print("[INFO] 视频无作者声音，返回默认ASR结构。")
+        logger.info("视频无作者声音，返回默认ASR结构。")
         return [
             {
                 "start": "00:00.000",
@@ -99,12 +144,12 @@ def gen_owner_asr_by_llm(video_path, has_author_voice):
     try:
         prompt = read_file_to_str(PROMPT_FILE_PATH)
     except Exception as e:
-        print(f"[ERROR] 读取Prompt文件失败: {PROMPT_FILE_PATH}, 错误: {e}")
+        logger.error(f"读取Prompt文件失败: {PROMPT_FILE_PATH}, 错误: {e}")
         return None
 
     # --- 5. 带重试机制的核心逻辑 ---
     for attempt in range(1, MAX_RETRIES + 1):
-        print(f"[INFO] 尝试生成ASR信息... (第 {attempt}/{MAX_RETRIES} 次)")
+        logger.info(f"尝试生成ASR信息... (第 {attempt}/{MAX_RETRIES} 次)")
         raw_response = ""
         try:
             # 调用大模型API
@@ -117,14 +162,14 @@ def gen_owner_asr_by_llm(video_path, has_author_voice):
             # 解析和校验
             owner_asr_info = string_to_object(raw_response)
 
-            if not check_owner_asr(owner_asr_info, video_duration_ms):
-                print(f"[WARN] 生成的ASR文本校验失败 (尝试 {attempt}/{MAX_RETRIES})")
+            if not check_owner_asr(owner_asr_info, video_duration_ms, logger):
+                logger.warning(f"生成的ASR文本校验失败 (尝试 {attempt}/{MAX_RETRIES})")
                 # 校验失败，继续下一次重试
                 continue
 
             # 处理LLM返回空列表的情况
             if not owner_asr_info:
-                print("[WARN] 大模型返回为空列表，使用默认值。")
+                logger.warning("大模型返回为空列表，使用默认值。")
                 return [
                     {
                         "start": "00:00.000",
@@ -135,27 +180,33 @@ def gen_owner_asr_by_llm(video_path, has_author_voice):
                 ]
 
             # 成功获取并校验通过，直接返回结果
-            print("[INFO] 成功生成ASR信息。")
+            logger.info("成功生成ASR信息。")
             return owner_asr_info
 
         except Exception as e:
-            print(f"[ERROR] 生成或处理ASR时发生异常 (尝试 {attempt}/{MAX_RETRIES}): {e}")
-            print(f"       原始响应内容 (raw_response): {raw_response}")
-            traceback.print_exc()
+            logger.error(f"生成或处理ASR时发生异常 (尝试 {attempt}/{MAX_RETRIES}): {e}")
+            logger.error(f"       原始响应内容 (raw_response): {raw_response}")
+            logger.exception("详细堆栈信息：")  # logger.exception 会自动记录堆栈信息
 
         # 如果当前尝试失败且不是最后一次，则等待后重试
         if attempt < MAX_RETRIES:
-            print(f"[INFO] 将在 {RETRY_DELAY} 秒后重试...")
+            logger.info(f"将在 {RETRY_DELAY} 秒后重试...")
             time.sleep(RETRY_DELAY)
 
     # --- 6. 所有重试均告失败 ---
-    print("[ERROR] 已达到最大重试次数，无法生成ASR信息。")
+    logger.error("已达到最大重试次数，无法生成ASR信息。")
     return None
+
 
 def gen_audio_path(input_path: str, split_vocal=True) -> str:
     """
     生成处理好的音频文件路径。
     """
+    basename = os.path.basename(input_path).split('.')[0]
+    output_dir = os.path.join(base_output_dir, basename)
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
+
     processed_audio_path = input_path
     input_audio_path = input_path
     if input_path.lower().endswith(('.mp4', '.mkv', '.avi', '.mov')):
@@ -167,21 +218,25 @@ def gen_audio_path(input_path: str, split_vocal=True) -> str:
     abs_input_path = os.path.abspath(input_path)
     base_dir = os.path.dirname(abs_input_path)
 
-
     if split_vocal:
-        split_audio_path = os.path.join(base_dir, "htdemucs", os.path.basename(input_audio_path).rsplit('.', 1)[0], "vocals.wav")
+        split_audio_path = os.path.join(base_dir, "htdemucs", os.path.basename(input_audio_path).rsplit('.', 1)[0],
+                                        "vocals.wav")
         if not is_valid_target_file_simple(split_audio_path):
             separate_with_cli(input_audio_path, base_dir)
         if is_valid_target_file_simple(split_audio_path):
             processed_audio_path = split_audio_path
-    print(f"处理后的音频文件路径: {processed_audio_path}")
+    logger.info(f"处理后的音频文件路径: {processed_audio_path}")
     return processed_audio_path
+
 
 @timeit_print
 def gen_asr(video_path, output_dir, has_author_voice):
     """
     生成修复后的asr以及句子时间段
     """
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
+
     start_time = time.time()
     speech_asr_output_file = os.path.join(output_dir, 'speech_asr_with_owner.json')
 
@@ -189,10 +244,10 @@ def gen_asr(video_path, output_dir, has_author_voice):
         owner_asr_info = gen_owner_asr_by_llm(video_path, has_author_voice)
         # 判断owner_asr_info是否为dict
         if owner_asr_info is None:
-            print("[ERROR] 生成asr文本失败，返回空结果")
+            logger.error("生成asr文本失败，返回空结果")
             raise ValueError("生成asr文本失败，返回空结果")
         save_json(speech_asr_output_file, owner_asr_info)
-    print(f"生成精准asr与说话人信息文件耗时: {time.time() - start_time} 秒")
+    logger.info(f"生成精准asr与说话人信息文件耗时: {time.time() - start_time} 秒")
     owner_asr_info = read_json(speech_asr_output_file)
     return owner_asr_info
 
@@ -277,6 +332,9 @@ def get_scene(video_path, output_dir, high_thresholds=[30, 50, 70]):
     """
     生成视频不同阈值下的场景划分
     """
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
+
     merged_timestamps_file = os.path.join(output_dir, 'merged_timestamps.json')
     all_scene_info_dict = {}
     for high_threshold in high_thresholds:
@@ -288,17 +346,18 @@ def get_scene(video_path, output_dir, high_thresholds=[30, 50, 70]):
             continue
         # 运行带有精炼功能的场景分割
         scene_info_dict = split_scenes_json(video_path, high_threshold=high_threshold, min_scene_len=25)
-        print(f"阈值为 {high_threshold}场景信息字典已生成并打印。共 {len(scene_info_dict)} 个场景。 耗时: {time.time() - start_time} 秒\n")
+        logger.info(f"阈值为 {high_threshold}场景信息字典已生成并打印。共 {len(scene_info_dict)} 个场景。 耗时: {time.time() - start_time} 秒")
         save_json(scene_info_file, scene_info_dict)
         all_scene_info_dict[high_threshold] = scene_info_dict
 
-
     kept_sorted, pairs = merge_scene_timestamps(all_scene_info_dict, min_count=3)
-    print(f"场景识别合并完成:场景数量为: {len(kept_sorted)}")
+    logger.info(f"场景识别合并完成:场景数量为: {len(kept_sorted)}")
     save_json(merged_timestamps_file, kept_sorted)
     # 进行kept_sorted合法性判断，如果小于3直接抛出异常
     if len(kept_sorted) < 3:
-        raise ValueError(f"[ERROR] 场景识别合并后时间点过少: {len(kept_sorted)} < 3，无法进行有效分割，请检查输入视频内容或调整阈值。")
+        error_msg = f"场景识别合并后时间点过少: {len(kept_sorted)} < 3，无法进行有效分割，请检查输入视频内容或调整阈值。"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     return kept_sorted
 
 
@@ -590,6 +649,9 @@ def merge_scenes_advanced(
 
 
 def get_scene_sub_text(sorted_scene_timestamp, owner_asr, output_dir):
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
+
     output_file_scene_sub_text_file = os.path.join(output_dir, 'scene_sub_text.json')
 
     merged_timestamps = sorted_scene_timestamp
@@ -610,16 +672,19 @@ def get_scene_sub_text(sorted_scene_timestamp, owner_asr, output_dir):
     if len(owner_asr) > 2:
         owner_speaker = 'owner' if is_have_owner else 'other'
         min_scene_duration_ms = 10000 if is_have_owner else 1000
-        scene_sub_text = process_scenes_complete_fix(owner_asr, merged_timestamps, owner_speaker=owner_speaker, min_scene_duration_ms=min_scene_duration_ms)
+        scene_sub_text = process_scenes_complete_fix(owner_asr, merged_timestamps, owner_speaker=owner_speaker,
+                                                     min_scene_duration_ms=min_scene_duration_ms)
     else:
-        print("[WARN] 说话人文本过少，直接使用场景分割点进行划分")
+        logger.warning("说话人文本过少，直接使用场景分割点进行划分")
         scene_sub_text = merge_scenes_advanced(merged_timestamps, min_scene_duration_ms=5000)
     save_json(output_file_scene_sub_text_file, scene_sub_text)
-    print(f"初步场景划分完成:数量{len(scene_sub_text)}")
+    logger.info(f"初步场景划分完成:数量{len(scene_sub_text)}")
 
     # 检测scene_sub_text的长度是否小于3，如果是则抛出异常
     if len(scene_sub_text) < 3:
-        raise ValueError(f"[ERROR] 最终场景划分结果过少: {len(scene_sub_text)} < 3，无法进行有效分割，请检查输入视频内容或调整阈值。")
+        error_msg = f"最终场景划分结果过少: {len(scene_sub_text)} < 3，无法进行有效分割，请检查输入视频内容或调整阈值。"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     return scene_sub_text
 
 
@@ -690,6 +755,7 @@ def merge_short_blank_segments(processed_scenes, min_duration=1000):
         scene['scene_number'] = str(i)
 
     return merged_result
+
 
 def extract_and_merge_owner_other(scenes, target_speaker):
     """
@@ -777,7 +843,7 @@ def extract_and_merge_owner_other(scenes, target_speaker):
     return new_result
 
 
-def check_new_video_script(new_video_script, scene_info):
+def check_new_video_script(new_video_script, scene_info, logger):
     """
     检测 new_video_script 的有效性，确保：
     1. 每个场景的 original_scene_number 都能在 scene_info 中找到。
@@ -793,17 +859,17 @@ def check_new_video_script(new_video_script, scene_info):
 
         scenes_list = detail_new_video_script.get('场景顺序与新文案')
         if not isinstance(scenes_list, list) or len(scenes_list) == 0:
-            print(f"[ERROR] 方案 '{solution_title}' 的字段 '场景顺序与新文案' 不存在或为空（必须提供且至少包含 1 个场景）。")
+            logger.error(
+                f"方案 '{solution_title}' 的字段 '场景顺序与新文案' 不存在或为空（必须提供且至少包含 1 个场景）。")
             return False
-
 
         for scene_index, scene in enumerate(detail_new_video_script.get('场景顺序与新文案', [])):
             original_scene_num = scene.get('original_scene_number')
 
             # 检测点 1: original_scene_number 是否在 scene_info 中存在
             if original_scene_num not in scene_info_map:
-                print(f"[ERROR] 在方案 '{solution_title}' 的第 {scene_index + 1} 个场景中：")
-                print(f"  - original_scene_number '{original_scene_num}' 不在 scene_info 中。")
+                logger.error(f"在方案 '{solution_title}' 的第 {scene_index + 1} 个场景中：")
+                logger.error(f"  - original_scene_number '{original_scene_num}' 不在 scene_info 中。")
                 return False
 
             original_scene = scene_info_map[original_scene_num]
@@ -821,28 +887,31 @@ def check_new_video_script(new_video_script, scene_info):
             # 并且要求new_narration_list中每个元素包含new_narration_script字段
             for item in new_narration_list:
                 if 'new_narration_script' not in item:
-                    print(f"[ERROR] 在方案 '{solution_title}' 的第 {scene_index + 1} 个场景中：")
-                    print(f"  - new_narration_script_list 中的元素缺少 'new_narration_script' 字段！")
+                    logger.error(f"在方案 '{solution_title}' 的第 {scene_index + 1} 个场景中：")
+                    logger.error(f"  - new_narration_script_list 中的元素缺少 'new_narration_script' 字段！")
                     return False
 
             # 比较两个集合是否相等。集合比较能确保元素和数量都一致，且忽略顺序。
             if original_clip_ids != new_clip_ids:
-                print(
-                    f"[ERROR] 在方案 '{solution_title}' 的第 {scene_index + 1} 个场景 (对应 original_scene_number: {original_scene_num}) 中：")
-                print(f"  - source_clip_id 不匹配！")
-                print(f"  - 期望的 ID 集合 (来自 scene_info): {original_clip_ids or '空'}")
-                print(f"  - 实际的 ID 集合 (来自 new_script): {new_clip_ids or '空'}")
+                logger.error(
+                    f"在方案 '{solution_title}' 的第 {scene_index + 1} 个场景 (对应 original_scene_number: {original_scene_num}) 中：")
+                logger.error(f"  - source_clip_id 不匹配！")
+                logger.error(f"  - 期望的 ID 集合 (来自 scene_info): {original_clip_ids or '空'}")
+                logger.error(f"  - 实际的 ID 集合 (来自 new_script): {new_clip_ids or '空'}")
                 return False
 
     # 如果所有循环都正常完成，说明没有发现错误
-    print("检测通过！所有场景引用均有效，且 source_clip_id 完全匹配。")
+    logger.info("检测通过！所有场景引用均有效，且 source_clip_id 完全匹配。")
     return True
 
 
-def gen_new_video_script_llm(scene_info, has_author_voice=True):
+def gen_new_video_script_llm(scene_info, output_dir, has_author_voice=True):
     """
     生成新的视频方案
     """
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
+
     for temp in scene_info:
         # 去掉scene_start和scene_end字段
         temp.pop('scene_start', None)
@@ -853,7 +922,7 @@ def gen_new_video_script_llm(scene_info, has_author_voice=True):
     prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本.txt'
 
     if not has_author_voice:
-        print("[INFO] 使用无主人说话人版本的提示词")
+        logger.info("使用无主人说话人版本的提示词")
         prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本纯重排场景.txt'
 
     prompt = read_file_to_str(prompt_file_path)
@@ -861,25 +930,25 @@ def gen_new_video_script_llm(scene_info, has_author_voice=True):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            print(f"[INFO] 正在生成新的视频脚本 (尝试 {attempt}/{max_retries})")
+            logger.info(f"正在生成新的视频脚本 (尝试 {attempt}/{max_retries})")
             model_name = "gemini-2.5-pro"
             # raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             raw = get_llm_content(prompt=full_prompt, model_name=model_name)
 
             new_video_script = string_to_object(raw)
-            check_result = check_new_video_script(new_video_script, scene_info)
+            check_result = check_new_video_script(new_video_script, scene_info, logger)
             if not check_result:
                 raise ValueError("生成的视频脚本检查未通过")
             return new_video_script
         except Exception as e:
-            print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
+            logger.error(f"生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
             if attempt < max_retries:
-                print(f"[INFO] 正在重试... (等待 {retry_delay} 秒)")
+                logger.info(f"正在重试... (等待 {retry_delay} 秒)")
                 time.sleep(retry_delay)  # 等待一段时间后再重试
             else:
-                print("[ERROR] 达到最大重试次数，失败.")
+                logger.error("达到最大重试次数，失败.")
                 return None  # 达到最大重试次数后返回 None
-            traceback.print_exc()
+            logger.exception("详细堆栈信息：")
 
 
 def check_logical_scene(logical_scene_info, scene_info):
@@ -889,10 +958,16 @@ def check_logical_scene(logical_scene_info, scene_info):
 
     return True
 
+
 def gen_logical_scene_llm(scene_info, video_path):
     """
     生成新的视频方案
     """
+    basename = os.path.basename(video_path).split('.mp4')[0]
+    output_dir = os.path.join(base_output_dir, basename)
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
+
     retry_delay = 10
     max_retries = 3
     prompt_file_path = '../../content_community/app/视频场景根据逻辑性的合并增强版本.txt'
@@ -913,7 +988,7 @@ def gen_logical_scene_llm(scene_info, video_path):
     for attempt in range(1, max_retries + 1):
         try:
             model_name = "gemini-2.5-pro"
-            print(f"[INFO] 正在生成逻辑性场景划分 (尝试 {attempt}/{max_retries})")
+            logger.info(f"正在生成逻辑性场景划分 (尝试 {attempt}/{max_retries})")
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             logical_scene_info = string_to_object(raw)
             check_result = check_logical_scene(logical_scene_info, format_scene_info)
@@ -921,19 +996,23 @@ def gen_logical_scene_llm(scene_info, video_path):
                 raise ValueError("生成的视频脚本检查未通过")
             return logical_scene_info
         except Exception as e:
-            print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
+            logger.error(f"生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
             if attempt < max_retries:
-                print(f"[INFO] 正在重试... (等待 {retry_delay} 秒)")
+                logger.info(f"正在重试... (等待 {retry_delay} 秒)")
                 time.sleep(retry_delay)  # 等待一段时间后再重试
             else:
-                print("[ERROR] 达到最大重试次数，失败.")
+                logger.error("达到最大重试次数，失败.")
                 return None  # 达到最大重试次数后返回 None
-            traceback.print_exc()
+            logger.exception("详细堆栈信息：")
 
-def gen_final_scene_info(logical_scene_info, origin_scene_info):
+
+def gen_final_scene_info(logical_scene_info, origin_scene_info, output_dir):
     """
     通过逻辑性的场景划分和原始的场景信息，生成最终的场景信息
     """
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
+
     final_scene_info = []
     new_scene_list = logical_scene_info.get('new_scene_info', [])
     for logical_scene in new_scene_list:
@@ -953,7 +1032,7 @@ def gen_final_scene_info(logical_scene_info, origin_scene_info):
                     target_origin_scene = origin_scene
                     break
             if not target_origin_scene:
-                print(f"[ERROR] 逻辑场景中的原始场景编号 {origin_scene_number} 不存在于原始场景信息中")
+                logger.error(f"逻辑场景中的原始场景编号 {origin_scene_number} 不存在于原始场景信息中")
                 continue
             scene_start = min(scene_start, int(target_origin_scene.get('scene_start', scene_start)))
             scene_end = max(scene_end, int(target_origin_scene.get('scene_end', scene_end)))
@@ -985,7 +1064,6 @@ def gen_final_scene_info(logical_scene_info, origin_scene_info):
         temp_dict['scene_potential'] = logical_scene.get('scene_potential', '')
         final_scene_info.append(temp_dict)
 
-
     return final_scene_info
 
 
@@ -994,6 +1072,9 @@ def gen_new_video_script(video_path, scene_sub_text, output_dir, target_speaker=
     """
     生成新视频的文本脚本
     """
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
+
     scene_sub_text_list = scene_sub_text
     output_file_final_path = os.path.join(output_dir, 'new_script.json')
     output_file_scene_info_path = os.path.join(output_dir, 'merge_speaker_scene_info.json')
@@ -1013,13 +1094,13 @@ def gen_new_video_script(video_path, scene_sub_text, output_dir, target_speaker=
     else:
         logical_scene_info = gen_logical_scene_llm(scene_info, video_path=video_path)
         save_json(output_file_logical_scene_info_path, logical_scene_info)
-    print(f"场景逻辑合并完成:数量{len(logical_scene_info.get("new_scene_info"))} 删除的子场景数量:{len(logical_scene_info.get("deleted_scene"))}\n")
+    logger.info(
+        f"场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info'))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene'))}")
 
-
-    final_scene_info = gen_final_scene_info(logical_scene_info, scene_info)
+    final_scene_info = gen_final_scene_info(logical_scene_info, scene_info, output_dir)
     save_json(final_scene_info_path, final_scene_info)
 
-    new_video_script = gen_new_video_script_llm(final_scene_info, has_author_voice=has_author_voice)
+    new_video_script = gen_new_video_script_llm(final_scene_info, output_dir, has_author_voice=has_author_voice)
     save_json(output_file_final_path, new_video_script)
 
     return new_video_script, scene_info
@@ -1093,6 +1174,10 @@ def generate_scene_segments(scene_start, scene_end, narration_script_list):
 
 def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, scene_start, scene_end, base_name,
                                   max_diff, need_merge_video_file, name_key, subtitle_box):
+    output_dir = os.path.join(base_output_dir, base_name)
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
+
     def _to_int(v):
         try:
             return int(float(v))
@@ -1102,10 +1187,11 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
     if new_owner_text:
         original_script = fused_new_scene.get('original_script', '')
         offset = 100
-        if not original_script or fused_new_scene.get('original_script_start', 10) > fused_new_scene.get('narration_script_start'):
+        if not original_script or fused_new_scene.get('original_script_start', 10) > fused_new_scene.get(
+                'narration_script_start'):
             offset = 500
         else:
-            print()
+            pass  # old: print()
         s = _to_int(fused_new_scene.get('narration_script_start')) or int(scene_start)
         s = s - offset
         e = _to_int(fused_new_scene.get('narration_script_end')) + 500
@@ -1143,7 +1229,7 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
             seg_start, seg_end = video_time_segment
             if seg_end > seg_start + 100:
                 segment_output_scene_file = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/split_scene/{name_key}_part{sub_count}.mp4'
-                print(f'\n处理: {segment_output_scene_file} 时间段: {seg_start}-{seg_end}')
+                logger.info(f'处理: {segment_output_scene_file} 时间段: {seg_start}-{seg_end}')
                 output_path = segment_output_scene_file
                 if not is_valid_target_file_simple(segment_output_scene_file):
                     clip_video_ms(video_path, seg_start, seg_end, segment_output_scene_file)
@@ -1161,7 +1247,8 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
                         # replace_video_audio(segment_output_scene_file,seg_start, seg_end, pure_audio_path, segment_output_scene_background_file)
                         # origin_video_path = segment_output_scene_background_file
                         # keep_original_audio = True
-                        gen_video(new_owner_text, output_path, origin_video_path, keep_original_audio=keep_original_audio, fixed_rect=subtitle_box)
+                        gen_video(new_owner_text, output_path, origin_video_path,
+                                  keep_original_audio=keep_original_audio, fixed_rect=subtitle_box)
 
                 need_merge_video_file.append(output_path)
     else:
@@ -1173,12 +1260,13 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
     return need_merge_video_file
 
 
-def get_bgm_path(tags):
+def get_bgm_path(tags, logger):
     """
     根据标签匹配数量对BGM进行排序，并选择一个合适的BGM路径。
 
     Args:
         tags (dict): 输入的标签字典，例如 {'style': ['清新'], 'mood': ['愉快']}
+        logger: 日志记录器实例
 
     Returns:
         str: 选中的BGM文件路径。
@@ -1220,7 +1308,7 @@ def get_bgm_path(tags):
 
     if not bgm_with_match_count:
         # 如果没有任何匹配的BGM，可以采取备用策略，例如随机选择一个BGM
-        print(f"在 {bgm_dir} 目录下未找到任何与给定标签匹配的音频文件，将随机选择一个文件。")
+        logger.warning(f"在 {bgm_dir} 目录下未找到任何与给定标签匹配的音频文件，将随机选择一个文件。")
         if not bgm_files:
             raise FileNotFoundError(f"在 {bgm_dir} 目录下找不到任何音频文件！")
         return os.path.join(bgm_dir, random.choice(bgm_files))
@@ -1229,9 +1317,6 @@ def get_bgm_path(tags):
     bgm_with_match_count.sort(key=lambda x: x['match_count'], reverse=True)
 
     # --- 选择策略 ---
-    # 策略1：直接选择匹配度最高的BGM
-    # best_bgm = bgm_with_match_count[0]
-
     # 策略2：在匹配度最高的几个BGM中随机选择一个（例如前3个）
     top_n = 3
     top_choices = bgm_with_match_count[:top_n]
@@ -1241,19 +1326,19 @@ def get_bgm_path(tags):
 
     selected_bgm = random.choice(top_choices)
 
-    # print(f"候选BGM数量: {len(bgm_with_match_count)}")
-    # print("根据匹配度排序的BGM列表:")
-    # for item in bgm_with_match_count:
-    #     print(f"  - 路径: {item['path']}, 匹配标签数: {item['match_count']}")
-
-    print(f"\n最终选择的BGM: {selected_bgm['path']} (匹配数: {selected_bgm['match_count']})")
+    logger.info(f"最终选择的BGM: {selected_bgm['path']} (匹配数: {selected_bgm['match_count']})")
     return selected_bgm['path']
+
 
 @timeit_print
 def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box, base_name):
     """
     生成新视频的文本脚本
     """
+    output_dir = os.path.join(base_output_dir, base_name)
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
+
     max_diff = 500
     new_video_script.sort(key=lambda x: x.get('方案整体评分', 0), reverse=True)
     new_video_script_result = new_video_script
@@ -1276,7 +1361,7 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, 
             for scene in scene_info:
                 if str(scene['scene_number']) == str(original_scene_number):
                     new_narration_script.update(scene)
-    print(f'完成场景信息合并')
+    logger.info('完成场景信息合并')
 
     new_scene_list = final_video_script['场景顺序与新文案']
     # new_scene_list = new_scene_list[7:]
@@ -1294,16 +1379,18 @@ def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, 
             count += 1
             name_key_full = f"{name_key}_part{count}"
             new_narration_script = split_scene.get('new_narration_script', '').strip()
-            process_video_with_owner_text(video_path, new_narration_script, split_scene, split_scene['scene_start'], split_scene['scene_end'], base_name, max_diff, need_merge_video_file, name_key_full, subtitle_box)
-        print(f'\n处理新场景:{name_key} 分割后的场景数量{len(split_scene_list)} 进度: {new_scene_list.index(fused_new_scene) + 1}/{len(new_scene_list)} 耗时: {time.time() - start_time:.2f} 秒\n')
-
+            process_video_with_owner_text(video_path, new_narration_script, split_scene, split_scene['scene_start'],
+                                          split_scene['scene_end'], base_name, max_diff, need_merge_video_file,
+                                          name_key_full, subtitle_box)
+        logger.info(
+            f'处理新场景:{name_key} 分割后的场景数量{len(split_scene_list)} 进度: {new_scene_list.index(fused_new_scene) + 1}/{len(new_scene_list)} 耗时: {time.time() - start_time:.2f} 秒')
 
     final_output_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/remake.mp4'
     merge_videos_ffmpeg(need_merge_video_file, output_path=final_output_path)
     tags = final_video_script.get('tags', [])
-    bgm_path = get_bgm_path(tags)
+    bgm_path = get_bgm_path(tags, logger)
     if bgm_path and os.path.exists(bgm_path):
-        # print(f"正在为视频添加背景音乐: {bgm_path}")
+        # logger.info(f"正在为视频添加背景音乐: {bgm_path}")
         final_with_bgm_path = final_output_path.replace('.mp4', '_with_bgm.mp4')
         add_bgm_to_video(final_output_path, bgm_path, str(final_with_bgm_path), auto_compute=True)
         return final_with_bgm_path, final_video_script
@@ -1353,8 +1440,10 @@ def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list, outp
     """
     找到字幕区域并且遮挡字幕
     """
-    time_ranges = []
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
 
+    time_ranges = []
 
     duration_list = []
     for scene_info in merged_scene_info_list:
@@ -1394,13 +1483,14 @@ def gen_subtitle_box_and_cover_subtitle(video_path, merged_scene_info_list, outp
 
     cover_video_path = os.path.join(output_dir, 'subtitle_covered.mp4')
     if is_valid_target_file_simple(cover_video_path, 10):
-        print(f"已存在遮挡字幕的视频: {cover_video_path}")
+        logger.info(f"已存在遮挡字幕的视频: {cover_video_path}")
         return cover_video_path, [top_left, bottom_right]
     cover_subtitle(video_path, cover_video_path, top_left, bottom_right, time_ranges=time_ranges)
     if not is_valid_target_file_simple(cover_video_path, 10):
         raise ValueError(f"生成遮挡字幕视频失败: {cover_video_path}")
 
     return cover_video_path, [top_left, bottom_right]
+
 
 @timeit_print
 def gen_sub_scene(video_path, output_dir, sorted_scene_timestamp, has_author_voice=True):
@@ -1411,25 +1501,38 @@ def gen_sub_scene(video_path, output_dir, sorted_scene_timestamp, has_author_voi
     scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, output_dir)
     return scene_sub_text
 
+
 def gen_video_script(video_path, params={}):
     """
     根据原始视频以及一些参数生成新的视频方案
     参数包括 是否包含原始作者语音（默认为True表示包含作者语音） 创作指导 评论参考
     """
     # 信息准备
-    has_author_voice = params.get('has_author_voice', True)
     basename = os.path.basename(video_path).split('.mp4')[0]
     output_dir = os.path.join(base_output_dir, basename)
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
+
+    has_author_voice = params.get('has_author_voice', True)
 
     # 获取场景分割点信息
+    logger.info("开始获取场景分割点信息...")
+    start_time = time.time()
     sorted_scene_timestamp = get_scene(video_path, output_dir)
+    logger.info(f"场景分割点信息获取完成。耗时: {time.time() - start_time:.2f} 秒")
 
     # 进行子场景的划分
-
+    logger.info("开始进行子场景划分...")
+    start_time = time.time()
     scene_sub_text = gen_sub_scene(video_path, output_dir, sorted_scene_timestamp, has_author_voice=has_author_voice)
+    logger.info(f"子场景划分完成。耗时: {time.time() - start_time:.2f} 秒")
 
     # 进行新文案的生成
+    logger.info("开始生成新视频脚本...")
+    start_time = time.time()
     new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, output_dir, has_author_voice=has_author_voice)
+    logger.info(f"新视频脚本生成完成。耗时: {time.time() - start_time:.2f} 秒")
+
 
 def gen_new_video(video_path):
     """
@@ -1437,6 +1540,8 @@ def gen_new_video(video_path):
     """
     basename = os.path.basename(video_path).split('.mp4')[0]
     output_dir = os.path.join(base_output_dir, basename)
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
 
     output_file_final_path = os.path.join(output_dir, 'new_script.json')
     output_file_scene_info_path = os.path.join(output_dir, 'merge_speaker_scene_info.json')
@@ -1444,24 +1549,44 @@ def gen_new_video(video_path):
 
     all_valid = all(is_valid_target_file_simple(f, 10) for f in all_files)
     if not all_valid:
-        print(f"[INFO] 检测到部分输出文件缺失或无效，将重新处理视频: {video_path}")
+        logger.warning(f"检测到部分输出文件缺失或无效，将重新处理视频: {video_path}")
         return None, None, []
     scene_info = read_json(output_file_scene_info_path)
     new_video_script = read_json(output_file_final_path)
 
-    subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, basename)
+    logger.info("开始处理字幕区域并生成遮罩...")
+    subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, output_dir)
+    logger.info("字幕处理完成。")
+
+    logger.info("开始根据新脚本生成最终视频...")
     final_video_path, final_video_script = gen_new_video_by_scene_and_script(
         subtitle_video_path, new_video_script, scene_info, subtitle_box, basename
     )
+    logger.info("最终视频生成完成。")
+    return final_video_path, final_video_script
+
 
 @timeit_print
 def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
     """
     重制视频，并在发生异常时将日志保存到指定文件。
     """
-    gen_video_script(video_path)
-    gen_new_video(video_path)
+    basename = os.path.basename(video_path).split('.mp4')[0]
+    output_dir = os.path.join(base_output_dir, basename)
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
+
+    try:
+        logger.info(f"========== 开始处理视频: {video_path} ==========")
+        gen_video_script(video_path)
+        gen_new_video(video_path)
+        logger.info(f"========== 视频处理成功: {video_path} ==========")
+    except Exception as e:
+        logger.error(f"处理视频 {video_path} 时发生未捕获的严重错误: {e}")
+        logger.exception("详细错误堆栈信息:")  # 记录完整的堆栈信息到日志
+        # 这里可以选择重新抛出异常，或者根据业务需要决定是否继续
+        # raise
 
 
 if __name__ == '__main__':
-    video_remake('7551467524232154410.mp4')
+    gen_video_script('7535033987593440527.mp4')
