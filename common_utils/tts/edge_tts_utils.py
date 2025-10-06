@@ -4,6 +4,7 @@ import re
 import subprocess
 import shlex
 import tempfile
+import time
 from pathlib import Path
 
 # --- 依赖：librosa, soundfile, numpy, edge_tts ---
@@ -121,6 +122,7 @@ def generate_audio_and_get_duration_sync(
     4. 使用 ffmpeg 的 loudnorm 对 WAV 文件进行响度归一化。
     5. 返回最终音频的时长。
     """
+    start_time = time.time()
     # ==================== 新增代码块: 处理空文本 ====================
     # 如果 text 是 None，或者去除首尾空白后为空字符串
     if not text or not text.strip():
@@ -188,7 +190,7 @@ def generate_audio_and_get_duration_sync(
             # 确保输出目录存在
             output_path.parent.mkdir(parents=True, exist_ok=True)
             success = process_audio_with_loudnorm(str(trimmed_wav), str(output_path), target_loudness)
-            print(f'音频生成完成：{_get_volume_info(output_path)}  {text}')
+            print(f'音频生成完成：{_get_volume_info(output_path)}  {text} (耗时 {time.time() - start_time:.2f} 秒)')
 
             if success:
                 # 重新加载最终文件以获取准确时长

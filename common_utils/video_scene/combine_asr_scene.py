@@ -1200,6 +1200,136 @@ def process_scenes_improved(logical_scene_info, owner_asr_info):
     return processed_scene_list
 
 
+def adjust_clips_to_range(data, start, end):
+    """
+    (新增步骤) 预处理函数：过滤和裁剪片段，确保它们严格在[start, end]范围内。
+
+    参数:
+        data (list): 原始数据列表。
+        start (int): 期望的开始时间。
+        end (int): 期望的结束时间。
+
+    返回:
+        list: 经过调整后的新列表。
+    """
+    adjusted_data = []
+    for clip in data:
+        clip_start = clip["narration_script_start"]
+        clip_end = clip["narration_script_end"]
+
+        # 检查片段与[start, end]范围是否有重叠
+        # 条件：片段的结束时间必须在范围开始之后，且片段的开始时间必须在范围结束之前
+        if clip_end > start and clip_start < end:
+            # 计算裁剪后的新起始和结束时间
+            new_start = max(clip_start, start)
+            new_end = min(clip_end, end)
+
+            # 只有当裁剪后仍然是有效的时间段时才添加
+            if new_start < new_end:
+                new_clip = clip.copy()
+                new_clip["narration_script_start"] = new_start
+                new_clip["narration_script_end"] = new_end
+                adjusted_data.append(new_clip)
+
+    return adjusted_data
+
+
+def fill_time_gaps(start, end, data):
+    """
+    填充给定时间段内的空白部分。
+    """
+    if not isinstance(start, int) or not isinstance(end, int) or start < 0 or end < start:
+        raise ValueError("start和end必须是有效的非负整数，且end不应小于start。")
+
+    sorted_data = sorted(data, key=lambda x: x["narration_script_start"])
+
+    result = []
+    current_time = start
+
+    for item in sorted_data:
+        item_start = item["narration_script_start"]
+        item_end = item["narration_script_end"]
+
+        if current_time < item_start:
+            result.append({
+                "new_narration_script": "",
+                "narration_script_start": current_time,
+                "narration_script_end": item_start
+            })
+
+        result.append({
+            "new_narration_script": item.get("new_narration_script", item.get("narration_script", "")),
+            "narration_script_start": item_start,
+            "narration_script_end": item_end
+        })
+
+        current_time = item_end
+
+    if current_time < end:
+        result.append({
+            "new_narration_script": "",
+            "narration_script_start": current_time,
+            "narration_script_end": end
+        })
+
+    return result
+
+
+def merge_short_clips(clips, min_duration=500):
+    """
+    合并列表中时长过短的片段。
+    """
+    if not clips:
+        return []
+
+    merged_list = [clips[0]]
+
+    for i in range(1, len(clips)):
+        last_clip = merged_list[-1]
+        current_clip = clips[i]
+
+        last_duration = last_clip["narration_script_end"] - last_clip["narration_script_start"]
+        current_duration = current_clip["narration_script_end"] - current_clip["narration_script_start"]
+
+        if last_duration < min_duration:
+            current_clip["narration_script_start"] = last_clip["narration_script_start"]
+            if last_clip["new_narration_script"] and not current_clip["new_narration_script"]:
+                current_clip["new_narration_script"] = last_clip["new_narration_script"]
+            merged_list[-1] = current_clip
+        elif current_duration < min_duration:
+            last_clip["narration_script_end"] = current_clip["narration_script_end"]
+            if current_clip["new_narration_script"] and not last_clip["new_narration_script"]:
+                last_clip["new_narration_script"] = current_clip["new_narration_script"]
+        else:
+            merged_list.append(current_clip)
+
+    return merged_list
+
+
+def process_narration_clips(start, end, data, min_duration=500):
+    """
+    (最终主函数) 完整流程：裁剪、填充、合并。
+
+    参数:
+        start (int): 最终结果的开始时间。
+        end (int): 最终结果的结束时间。
+        data (list): 原始数据列表。
+        min_duration (int): 片段的最小允许时长。
+
+    返回:
+        list: 经过所有处理后的最终列表。
+    """
+    # 步骤 1: 过滤和裁剪所有片段，确保它们在[start, end]范围内
+    adjusted_data = adjust_clips_to_range(data, start, end)
+
+    # 步骤 2: 使用处理过的数据来填充[start, end]范围内的空白
+    filled_clips = fill_time_gaps(start, end, adjusted_data)
+
+    # 步骤 3: 合并所有时长过短的片段
+    final_clips = merge_short_clips(filled_clips, min_duration)
+
+    return final_clips
+
 @timeit_print
 def gen_video_script(logical_scene_info, owner_asr_info, output_dir, has_author_voice=False):
     """
@@ -1225,13 +1355,13 @@ def gen_video_script(logical_scene_info, owner_asr_info, output_dir, has_author_
 
 def generate_scene_segments(scene_start, scene_end, narration_script_list):
     # 排序
-    narration_script_list.sort(key=lambda x: x['scene_start'])
+    narration_script_list.sort(key=lambda x: x['narration_script_start'])
 
     # 收集所有时间点（包括边界和片段的开始/结束）
     time_points = {scene_start, scene_end}
     for item in narration_script_list:
-        time_points.add(item['scene_start'])
-        time_points.add(item['scene_end'])
+        time_points.add(item['narration_script_start'])
+        time_points.add(item['narration_script_end'])
 
     # 排序时间点
     time_points = sorted(time_points)
@@ -1289,94 +1419,41 @@ def generate_scene_segments(scene_start, scene_end, narration_script_list):
     return result
 
 
-def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, scene_start, scene_end, base_name,
-                                  max_diff, need_merge_video_file, name_key, subtitle_box):
-    output_dir = os.path.join(base_output_dir, base_name)
+def process_video_with_owner_text(video_path, split_scene, output_dir, name_key, subtitle_box):
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
+    new_narration_script = split_scene.get('new_narration_script', '')
+    narration_script_start = split_scene.get('narration_script_start', 0)
+    narration_script_end = split_scene.get('narration_script_end', 0)
+    segment_output_scene_file = os.path.join(output_dir,'split_scene/' f'{name_key}.mp4')
+    start_time = time.time()
 
-    def _to_int(v):
-        try:
-            return int(float(v))
-        except:
-            return None
+    if narration_script_start >= narration_script_end - 100:
+        logger.warning(f"跳过无效时间段: {narration_script_start}-{narration_script_end}")
+        return None
 
-    if new_owner_text:
-        original_script = fused_new_scene.get('original_script', '')
-        offset = 100
-        if not original_script or fused_new_scene.get('original_script_start', 10) > fused_new_scene.get(
-                'narration_script_start'):
-            offset = 500
-        else:
-            pass  # old: print()
-        s = _to_int(fused_new_scene.get('narration_script_start')) or int(scene_start)
-        s = s - offset
-        e = _to_int(fused_new_scene.get('narration_script_end')) + 500
+    if not is_valid_target_file_simple(segment_output_scene_file):
+        clip_video_ms(video_path, narration_script_start, narration_script_end, segment_output_scene_file)
 
-        if e is None:
-            MS_PER_CHAR = 200
-            MIN_MS = 500
-            est = max(MIN_MS, len(new_owner_text) * MS_PER_CHAR)
-            scene_end_time = _to_int(fused_new_scene.get('scene_end'))
-            e = min(s + est, scene_end_time) if scene_end_time is not None else s + est
-
-        if e <= s:
-            e = s + max(500, len(new_owner_text) * MS_PER_CHAR)
-
-        owner_text_start, owner_text_end = s, e
-
-        # 规范化时间，确保在场景时间范围内
-        format_start_time = max(scene_start, owner_text_start)
-        format_end_time = min(scene_end, owner_text_end)
-        if abs(format_start_time - scene_start) < max_diff:
-            format_start_time = scene_start
-        if abs(format_end_time - scene_end) < max_diff:
-            format_end_time = scene_end
-
-        # 获取三个时间段，分别是scene_start到format_start_time，format_start_time到format_end_time，format_end_time到scene_end
-        video_time_segments = [
-            (scene_start, format_start_time),
-            (format_start_time, format_end_time),
-            (format_end_time, scene_end)
-        ]
-
-        sub_count = 0
-        for video_time_segment in video_time_segments:
-            sub_count += 1
-            seg_start, seg_end = video_time_segment
-            if seg_end > seg_start + 100:
-                segment_output_scene_file = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/split_scene/{name_key}_part{sub_count}.mp4'
-                logger.info(f'处理: {segment_output_scene_file} 时间段: {seg_start}-{seg_end}')
-                output_path = segment_output_scene_file
-                if not is_valid_target_file_simple(segment_output_scene_file):
-                    clip_video_ms(video_path, seg_start, seg_end, segment_output_scene_file)
-
-                if sub_count == 2:
-                    output_path = segment_output_scene_file.replace('.mp4', '_with_text.mp4')
-                    origin_video_path = segment_output_scene_file
-                    keep_original_audio = False
-                    if not is_valid_target_file_simple(output_path):
-                        # audio_path = gen_audio_path(video_path).replace("vocals.wav", "no_vocals.wav")
-                        # pure_audio_path = gen_audio_path(video_path).replace(".wav", "_pure.wav")
-                        # if not is_valid_target_file_simple(pure_audio_path):
-                        #     process_media_by_volume(audio_path, pure_audio_path)
-                        # segment_output_scene_background_file = segment_output_scene_file.replace('.mp4', '_with_background.mp4')
-                        # replace_video_audio(segment_output_scene_file,seg_start, seg_end, pure_audio_path, segment_output_scene_background_file)
-                        # origin_video_path = segment_output_scene_background_file
-                        # keep_original_audio = True
-                        gen_video(new_owner_text, output_path, origin_video_path,
-                                  keep_original_audio=keep_original_audio, fixed_rect=subtitle_box)
-
-                need_merge_video_file.append(output_path)
+    if new_narration_script.strip() != '':
+        output_path = segment_output_scene_file.replace('.mp4', '_with_text.mp4')
+        origin_video_path = segment_output_scene_file
+        keep_original_audio = False
+        if not is_valid_target_file_simple(output_path):
+            # audio_path = gen_audio_path(video_path).replace("vocals.wav", "no_vocals.wav")
+            # pure_audio_path = gen_audio_path(video_path).replace(".wav", "_pure.wav")
+            # if not is_valid_target_file_simple(pure_audio_path):
+            #     process_media_by_volume(audio_path, pure_audio_path)
+            # segment_output_scene_background_file = segment_output_scene_file.replace('.mp4', '_with_background.mp4')
+            # replace_video_audio(segment_output_scene_file,seg_start, seg_end, pure_audio_path, segment_output_scene_background_file)
+            # origin_video_path = segment_output_scene_background_file
+            # keep_original_audio = True
+            gen_video(new_narration_script, output_path, origin_video_path, keep_original_audio=keep_original_audio, fixed_rect=subtitle_box)
+        need_merge_video_file = output_path
     else:
-        if scene_start >= scene_end - 100:
-            logger.warning(f"跳过无效时间段: {scene_start}-{scene_end}")
-            return need_merge_video_file
-        output_scene_file = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/split_scene/{name_key}_part{0}.mp4'
-        if not is_valid_target_file_simple(output_scene_file):
-            clip_video_ms(video_path, scene_start, scene_end, output_scene_file)
-        need_merge_video_file.append(output_scene_file)
+        need_merge_video_file = segment_output_scene_file
 
+    logger.info(f"处理片段 {name_key} 完成，耗时 {time.time() - start_time:.2f} 秒\n")
     return need_merge_video_file
 
 
@@ -1450,67 +1527,82 @@ def get_bgm_path(tags, logger):
     return selected_bgm['path']
 
 
+def choose_script(new_video_script, need_different=False):
+    """
+    选择最优的视频脚本方案。
+
+    当 need_different 为 True 时，会优先选择“第一个场景是否改变”为True的方案，
+    在此基础上再按“方案整体评分”从高到低排序。
+    否则，仅按“方案整体评分”排序。
+
+    Args:
+        new_video_script (list or dict): 包含一个或多个脚本方案的列表或单个方案的字典。
+        need_different (bool): 是否优先选择第一个场景已改变的方案。默认为 False。
+
+    Returns:
+        dict or None: 返回最优的脚本方案。如果没有输入脚本，则返回 None。
+    """
+    if not new_video_script:
+        return None
+
+    if isinstance(new_video_script, list):
+        if not new_video_script:
+            return None
+
+        if need_different:
+            # 使用一个元组作为排序的key。
+            # Python会先按元组的第一个元素排序，如果相同，再按第二个元素排序。
+            # 布尔值True在排序时被视为1，False被视为0。
+            # reverse=True使得True（1）排在False（0）之前。
+            new_video_script.sort(
+                key=lambda x: (x.get('第一个场景是否改变', False), x.get('方案整体评分', 0)),
+                reverse=True
+            )
+        else:
+            # 原始的排序逻辑，仅按评分排序
+            new_video_script.sort(key=lambda x: x.get('方案整体评分', 0), reverse=True)
+
+        return new_video_script[0]
+
+    return new_video_script
+
+
 @timeit_print
-def gen_new_video_by_script(video_path, new_video_script, scene_info, subtitle_box, output_dir):
+def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_box, output_dir):
     """
     生成新视频的文本脚本
     """
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
 
-    max_diff = 500
-    new_video_script.sort(key=lambda x: x.get('方案整体评分', 0), reverse=True)
-    new_video_script_result = new_video_script
-    final_video_script = new_video_script_result[0]
-    final_scene_info_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/final_scene_info.json'
-    final_scene_info = read_json(final_scene_info_path)
-
-    need_merge_video_file = []
-    for new_scene in final_video_script['场景顺序与新文案']:
-        original_scene_number = new_scene.get('original_scene_number')
-        for final_scene in final_scene_info:
-            final_scene_number = final_scene.get('scene_number')
-            if str(final_scene_number) == str(original_scene_number):
-                new_scene.update(final_scene)
-                break
-
-        new_narration_script_list = new_scene.get('new_narration_script_list', [])
-        for new_narration_script in new_narration_script_list:
-            original_scene_number = new_narration_script['source_clip_id']
-            for scene in scene_info:
-                if str(scene['scene_number']) == str(original_scene_number):
-                    new_narration_script.update(scene)
-    logger.info('完成场景信息合并')
+    final_output_path = os.path.join(output_dir, 'remake.mp4')
+    final_with_bgm_path = final_output_path.replace('.mp4', '_with_bgm.mp4')
+    final_video_script = choose_script(fused_new_video_script_info, need_different=False)
+    need_merge_video_file_list = []
 
     new_scene_list = final_video_script['场景顺序与新文案']
-    # new_scene_list = new_scene_list[7:]
     for fused_new_scene in new_scene_list:
         scene_start = fused_new_scene.get('scene_start')
         scene_end = fused_new_scene.get('scene_end')
         name_key = f"new_scene_{fused_new_scene.get('new_scene_number')}_original_scene_{fused_new_scene.get('original_scene_number')}"
 
         new_narration_script_list = fused_new_scene.get('new_narration_script_list', [])
-        split_scene_list = generate_scene_segments(scene_start, scene_end, new_narration_script_list)
-        # split_scene_list = [{'new_narration_script': '', 'scene_end': scene_end, 'scene_start': scene_start}]
+        split_scene_list = process_narration_clips(scene_start, scene_end, new_narration_script_list)
         start_time = time.time()
         count = 0
         for split_scene in split_scene_list:
             count += 1
             name_key_full = f"{name_key}_part{count}"
-            new_narration_script = split_scene.get('new_narration_script', '').strip()
-            process_video_with_owner_text(video_path, new_narration_script, split_scene, split_scene['scene_start'],
-                                          split_scene['scene_end'], base_name, max_diff, need_merge_video_file,
-                                          name_key_full, subtitle_box)
-        logger.info(
-            f'处理新场景:{name_key} 分割后的场景数量{len(split_scene_list)} 进度: {new_scene_list.index(fused_new_scene) + 1}/{len(new_scene_list)} 耗时: {time.time() - start_time:.2f} 秒')
+            need_merge_video_file = process_video_with_owner_text(video_path, split_scene, output_dir, name_key_full, subtitle_box)
+            if need_merge_video_file:
+                need_merge_video_file_list.append(need_merge_video_file)
+        logger.info(f'处理新场景:{name_key} 分割后的场景数量{len(split_scene_list)} 进度: {new_scene_list.index(fused_new_scene) + 1}/{len(new_scene_list)} 耗时: {time.time() - start_time:.2f} 秒')
 
-    final_output_path = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/remake.mp4'
-    merge_videos_ffmpeg(need_merge_video_file, output_path=final_output_path)
+    merge_videos_ffmpeg(need_merge_video_file_list, output_path=final_output_path)
     tags = final_video_script.get('tags', [])
     bgm_path = get_bgm_path(tags, logger)
     if bgm_path and os.path.exists(bgm_path):
         # logger.info(f"正在为视频添加背景音乐: {bgm_path}")
-        final_with_bgm_path = final_output_path.replace('.mp4', '_with_bgm.mp4')
         add_bgm_to_video(final_output_path, bgm_path, str(final_with_bgm_path), auto_compute=True)
         return final_with_bgm_path, final_video_script
     return final_output_path, final_video_script
@@ -1728,10 +1820,79 @@ def fuse_all_info(owner_asr_info, final_scene_info, new_video_script_list):
                 for asr_info in owner_asr_info:
                     if str(asr_info['source_clip_id']) == str(source_clip_id):
                         new_narration_script['narration_script'] = asr_info.get('final_text', '')
-                        new_narration_script['narration_script_start'] = asr_info.get('start')
-                        new_narration_script['narration_script_end'] = asr_info.get('end')
+                        new_narration_script['narration_script_start'] = asr_info.get('fix_start')
+                        new_narration_script['narration_script_end'] = asr_info.get('fix_end')
                         break
     return new_video_script_list
+
+
+def correct_owner_timestamps(asr_result: list) -> list:
+    """
+    对ASR结果列表中speaker为owner的文本时间进行纠正。
+
+    Args:
+        asr_result: ASR结果列表。
+
+    Returns:
+        带有 'fix_start' 和 'fix_end' 字段的ASR结果列表。
+    """
+    # 1. 初始化 fix_start 和 fix_end 字段
+    for segment in asr_result:
+        segment['fix_start'] = segment['start']
+        segment['fix_end'] = segment['end']
+
+    # 2. 遍历列表，应用修正逻辑
+    for i in range(len(asr_result)):
+        current_segment = asr_result[i]
+
+        # 只处理 speaker 为 'owner' 的情况
+        if current_segment['speaker'] == 'owner':
+
+            # --- 向前修正逻辑 (修正 start) ---
+            # 查看上一个文本
+            if i > 0:
+                prev_segment = asr_result[i - 1]
+                # 如果上一个不是 owner，则尝试移动 start
+                if prev_segment['speaker'] != 'owner':
+                    gap = current_segment['start'] - prev_segment['end']
+                    if gap > 0:
+                        # 最多移动500ms
+                        movement = min(500, gap)
+                        current_segment['fix_start'] = current_segment['start'] - movement
+
+            # --- 向后修正逻辑 (修正 end) ---
+            # 查看下一个文本
+            if i < len(asr_result) - 1:
+                next_segment = asr_result[i + 1]
+
+                # 如果下一个也是 owner
+                if next_segment['speaker'] == 'owner':
+                    gap = next_segment['start'] - current_segment['end']
+                    if gap > 0:
+                        if gap < 1000:
+                            # 间隔小于1000ms，取中点
+                            midpoint = round(current_segment['end'] + gap / 2)
+                            current_segment['fix_end'] = midpoint
+                            # 注意：这里直接修正了下一个owner的fix_start
+                            next_segment['fix_start'] = midpoint
+                        else:
+                            # 间隔大于等于1000ms，各自移动，但最多500ms
+                            # 同时要保证移动后两者间隔至少500ms
+                            movement = min(500, (gap - 500) / 2)
+                            if movement > 0:
+                                current_segment['fix_end'] = round(current_segment['end'] + movement)
+                                # 注意：这里直接修正了下一个owner的fix_start
+                                next_segment['fix_start'] = round(next_segment['start'] - movement)
+
+                # 如果下一个不是 owner
+                else:
+                    gap = next_segment['start'] - current_segment['end']
+                    if gap > 0:
+                        # 最多移动500ms
+                        movement = min(500, gap)
+                        current_segment['fix_end'] = current_segment['end'] + movement
+
+    return asr_result
 
 def gen_new_video(video_path):
     """
@@ -1747,6 +1908,7 @@ def gen_new_video(video_path):
     owner_asr_path = os.path.join(output_dir, 'speech_asr_with_owner.json')
     all_files = [output_file_final_path, final_scene_info_path, owner_asr_path]
     fuse_all_info_path = os.path.join(output_dir, 'fuse_all_info.json')
+    fixed_owner_asr_path = os.path.join(output_dir, 'fixed_owner_asr.json')
 
     all_valid = all(is_valid_target_file_simple(f, 10) for f in all_files)
     if not all_valid:
@@ -1756,21 +1918,21 @@ def gen_new_video(video_path):
     final_scene_info = read_json(final_scene_info_path)
     new_video_script = read_json(output_file_final_path)
     owner_asr_info = read_json(owner_asr_path)
-    fuse_all_info(owner_asr_info, final_scene_info, new_video_script)
-    save_json(fuse_all_info_path, new_video_script)
+    fixed_owner_asr_info = correct_owner_timestamps(owner_asr_info)
+    save_json(fixed_owner_asr_path, fixed_owner_asr_info)
+
 
     logger.info("开始处理字幕区域并生成遮罩...")
     subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, owner_asr_info, output_dir)
     logger.info("字幕处理完成。")
 
-    # logger.info("开始根据新脚本生成最终视频...")
-    # # 综合三个信息
-    #
-    # final_video_path, final_video_script = gen_new_video_by_script(
-    #     subtitle_video_path, new_video_script, scene_info, subtitle_box, output_dir
-    # )
-    # logger.info("最终视频生成完成。")
-    # return final_video_path, final_video_script
+    logger.info("开始根据新脚本生成最终视频...")
+    # 综合三个信息
+    fused_new_video_script_info = fuse_all_info(fixed_owner_asr_info, final_scene_info, new_video_script)
+    save_json(fuse_all_info_path, fused_new_video_script_info)
+    final_video_path, final_video_script = gen_new_video_by_script(subtitle_video_path, fused_new_video_script_info, subtitle_box, output_dir)
+    logger.info("最终视频生成完成。")
+    return final_video_path, final_video_script
 
 
 @timeit_print
@@ -1796,5 +1958,5 @@ def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
 
 
 if __name__ == '__main__':
-    # gen_new_video_script('7356103013104143643.mp4')
-    gen_new_video('7557267688620444974.mp4')
+    gen_new_video_script('7557598934626028838.mp4')
+    gen_new_video('7557598934626028838.mp4')

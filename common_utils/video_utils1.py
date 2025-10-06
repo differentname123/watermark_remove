@@ -2,6 +2,7 @@ import os
 import subprocess
 import tempfile
 import shutil
+import time
 from datetime import datetime, timedelta
 
 
@@ -264,6 +265,7 @@ def redub_video_with_ffmpeg(video_path: str,
                                 True - 混合原始音频和新音频（不归一化，不降音量）。
     :return: 输出视频的路径。
     """
+    start_time = time.time()
     # ---------- 内部工具函数 ----------
     def _time_str_to_seconds(ts: str) -> float:
         """
@@ -377,7 +379,6 @@ def redub_video_with_ffmpeg(video_path: str,
             if new_audio_duration > original_duration and original_duration > 0:
                 speed_multiplier = new_audio_duration / original_duration
 
-            print(f"进行音频匹配画面：原片段时长: {original_duration:.3f}s, 新音频时长: {new_audio_duration:.3f}s 视频速度调整为: {1/speed_multiplier:.3f}x")
 
             # ---------- 构建滤镜与映射 ----------
             if keep_original_audio and source_has_audio:
@@ -459,6 +460,7 @@ def redub_video_with_ffmpeg(video_path: str,
             print("拼接视频时 FFmpeg 发生错误：")
             print(f"FFmpeg Stderr:\n{e.stderr}")
             raise
+    print(f"进行音频匹配画面：原片段时长: {original_duration:.3f}s, 新音频时长: {new_audio_duration:.3f}s 视频速度调整为: {1/speed_multiplier:.3f}x 耗时: {time.time() - start_time:.2f}s")
 
     return output_path
 

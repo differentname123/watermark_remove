@@ -876,6 +876,7 @@ def add_subtitles_to_video(
     :param bottom_margin: 距离底部的像素偏移，默认 50。
     :param fixed_rect: 固定矩形区域 [[x1,y1],[x2,y2]]。如果为 None，则自动计算。
     """
+    current_start_time = time.time()
     if not os.path.exists(font_path):
         raise FileNotFoundError(f"字体文件未找到: {font_path}")
 
@@ -1049,7 +1050,7 @@ def add_subtitles_to_video(
     try:
         # print("正在为视频添加字幕和矩形背景...")
         subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
-        print(f"字幕添加成功: 已将带字幕的视频保存至: {output_path}")
+        print(f"字幕添加成功: 已将带字幕的视频保存至: {output_path} 耗时: {time.time() - current_start_time:.2f} 秒")
     except FileNotFoundError:
         print("[错误] ffmpeg 未安装或未在系统 PATH 中。请先安装 ffmpeg。")
         raise
@@ -2693,6 +2694,117 @@ def _format_time(time_value: Union[str, int, float]) -> str:
         f"不支持的时间格式: {type(time_value)}。请输入字符串或代表毫秒的数字。"
     )
 
+
+def clip_video_ms_optimized(
+        input_path: str,
+        start_time: Union[str, int, float],
+        end_time: Union[str, int, float],
+        output_path: str,
+        buffer_seconds: int = 10
+):
+    """
+    使用两步剪辑法，高性能地精确截取视频片段。
+
+    此函数首先通过流复制快速截取一个包含目标区域的较大片段，
+    然后对这个小片段进行精确的重编码剪辑，从而在保证毫秒级
+    精度的同时，大幅提升处理速度。
+
+    Args:
+        input_path (str): 输入视频文件的完整路径。
+        start_time (Union[str, int, float]):
+            截取片段的开始时间 (毫秒数或 "HH:MM:SS.mmm" 字符串)。
+        end_time (Union[str, int, float]):
+            截取片段的结束时间，格式同 start_time。
+        output_path (str): 输出视频文件的保存路径。
+        buffer_seconds (int): 为粗剪步骤设置的额外时间缓冲（秒）。
+
+    Returns:
+        bool: 如果截取成功返回 True，否则返回 False。
+        str: 返回 ffmpeg 的输出信息或错误信息。
+    """
+    overall_start_time = time.time()
+
+    try:
+        start_formatted_str = _format_time(start_time)
+        end_formatted_str = _format_time(end_time)
+
+        start_s = time_to_ms(start_formatted_str) / 1000
+        end_s = time_to_ms(end_formatted_str) / 1000
+        duration_s = end_s - start_s
+
+        if duration_s <= 0:
+            raise ValueError("结束时间必须晚于开始时间。")
+
+    except (TypeError, ValueError) as e:
+        print(e)
+        return False, str(e)
+
+    output_path_obj = Path(output_path)
+    output_path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+    # 使用临时目录来安全地管理临时文件
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_clip_path = os.path.join(temp_dir, f"temp_{output_path_obj.name}")
+
+        # --- 第一步：快速粗剪 ---
+        rough_start_s = max(0, start_s - buffer_seconds)
+        # 注意：这里的-to是相对于-ss的时间点，所以是持续时间
+        rough_duration_s = duration_s + 2 * buffer_seconds
+
+        print(f"步骤 1/2: 正在执行快速粗剪 (流复制模式)...")
+        command_rough_cut = [
+            'ffmpeg',
+            '-ss', str(rough_start_s),
+            '-i', input_path,
+            '-t', str(rough_duration_s),  # 使用-t指定时长更稳妥
+            '-c', 'copy',
+            '-y', temp_clip_path
+        ]
+
+        try:
+            subprocess.run(
+                command_rough_cut, check=True, capture_output=True, text=True, encoding='utf-8'
+            )
+        except subprocess.CalledProcessError as e:
+            error_message = f"快速粗剪步骤失败：\n{e.stderr}"
+            print(error_message)
+            return False, error_message
+        except FileNotFoundError:
+            error_message = "错误：找不到 ffmpeg 命令。"
+            print(error_message)
+            return False, error_message
+
+        # --- 第二步：精确细剪 ---
+        # 在临时片段中，新的开始时间是 buffer_seconds
+        fine_start_s = buffer_seconds
+
+        print(f"步骤 2/2: 正在对临时文件进行精确剪辑 (重编码模式)...")
+        command_fine_cut = [
+            'ffmpeg',
+            '-i', temp_clip_path,
+            '-ss', str(fine_start_s),
+            '-t', str(duration_s),  # 截取原始需要的时长
+            '-y', output_path
+        ]
+
+        try:
+            result = subprocess.run(
+                command_fine_cut, check=True, capture_output=True, text=True, encoding='utf-8'
+            )
+
+            total_time = time.time() - overall_start_time
+            success_message = (
+                f"视频截取成功: {output_path}\n"
+                f"时间段: {start_formatted_str} - {end_formatted_str} (时长: {duration_s:.2f}s)\n"
+                f"总耗时: {total_time:.2f} 秒"
+            )
+            print(success_message)
+            return True, result.stderr or success_message
+
+        except subprocess.CalledProcessError as e:
+            error_message = f"精确细剪步骤失败：\n{e.stderr}"
+            print(error_message)
+            return False, error_message
 
 def clip_video_ms(
         input_path: str,
