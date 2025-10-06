@@ -1265,6 +1265,9 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
 
                 need_merge_video_file.append(output_path)
     else:
+        if scene_start >= scene_end - 100:
+            logger.warning(f"跳过无效时间段: {scene_start}-{scene_end}")
+            return need_merge_video_file
         output_scene_file = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/split_scene/{name_key}_part{0}.mp4'
         if not is_valid_target_file_simple(output_scene_file):
             clip_video_ms(video_path, scene_start, scene_end, output_scene_file)

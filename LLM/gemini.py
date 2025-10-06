@@ -341,8 +341,10 @@ def get_llm_content_sub(prompt: str = '你好，Gemini！请介绍一下你自�
             config = types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=24576),
                                                  response_mime_type="text/plain")
             response = client.models.generate_content(model=model_name, contents=contents, config=config)
-
-            return response.text
+            text = response.text
+            if not text:
+                print(f"模型返回了空响应{response.prompt_feedback}")
+            return text
         except Exception as e:
             print(f"[WARN] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 正在尝试下一个... {e}")
             last_error = e

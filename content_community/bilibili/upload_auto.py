@@ -921,6 +921,14 @@ def auto_upload():
 
         # 获取该账号的 executor（默认每账号单线程）
         account_executor = account_executors[userName]
+        # 尝试移除all_files_to_cleanup中的video_path
+        try:
+            if video_info.get('video_path') in all_files_to_cleanup:
+                all_files_to_cleanup.remove(video_info.get('video_path'))
+        except Exception as e:
+            print(f"⚠️ 从清理列表中移除最终视频失败：{e}")
+
+
         future = account_executor.submit(upload_worker, upload_params, video_id_key, updated_entry, all_files_to_cleanup, task_stage_times, userName)
         futures.append(future)
         new_uploads_made = True

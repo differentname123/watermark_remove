@@ -975,9 +975,124 @@ def process_scenes_complete_fix(
 
     return final_scenes
 
+def merge_scenes_advanced(
+        scene_timestamps,
+        min_scene_duration_ms,
+        high_occurrence_threshold=2,
+        max_merge_duration_ms=10000,
+        final_cleanup_threshold_ms=1500  # 新增参数：最终清理的阈值
+):
+    """
+    最终版场景合并函数，采用“分块处理”的健壮逻辑。
+
+    1.  用高频时间戳定义不可逾越的“大块”。
+    2.  在每个“大块”内部，利用低频点进行精细分割和智能合并。
+    3.  最后全局清理极短的碎片。
+    """
+    if not scene_timestamps:
+        return []
+    if len(scene_timestamps) < 10:
+        # 直接使用所有时间戳（包括0）作为切分点
+        # 使用 set 确保时间戳唯一，然后排序
+        boundaries = sorted(list(set([0] + [t for t, c in scene_timestamps])))
+
+        simple_scenes = []
+        for i in range(len(boundaries) - 1):
+            start, end = boundaries[i], boundaries[i + 1]
+            if start < end:  # 确保时间戳有效
+                simple_scenes.append([start, end])
+
+        # --- 直接套用步骤 4 的格式化逻辑进行输出 ---
+        formatted_output = []
+        for start, end in simple_scenes:
+            formatted_output.append({
+                "scene_start": start,
+                "scene_end": end,
+                "content_list": [{"start": start, "end": end, "speaker": "other", "final_text": "", "text": ""}]
+            })
+        return formatted_output
+    # --- 步骤 1: 定义“大块”边界 ---
+    video_duration = scene_timestamps[-1][0]
+    hard_boundaries = sorted(list(set(
+        [0] + [t for t, c in scene_timestamps if c >= high_occurrence_threshold] + [video_duration]
+    )))
+
+    all_processed_scenes = []
+
+    # --- 步骤 2: 逐个“大块”进行内部分割与合并 ---
+    for i in range(len(hard_boundaries) - 1):
+        block_start, block_end = hard_boundaries[i], hard_boundaries[i + 1]
+        if block_start >= block_end:
+            continue
+
+        # 收集落在这个大块内部的所有时间戳
+        internal_points = [block_start]
+        for timestamp, _ in scene_timestamps:
+            if block_start < timestamp < block_end:
+                internal_points.append(timestamp)
+        internal_points.append(block_end)
+
+        # 利用内部所有点进行最精细的分割
+        internal_segments = []
+        unique_points = sorted(list(set(internal_points)))
+        for j in range(len(unique_points) - 1):
+            start, end = unique_points[j], unique_points[j + 1]
+            if start < end:
+                internal_segments.append([start, end])
+
+        if not internal_segments:
+            continue
+
+        # 在这个“大块”内部执行合并逻辑
+        block_merged_scenes = []
+        for segment in internal_segments:
+            if not block_merged_scenes:
+                block_merged_scenes.append(segment)
+                continue
+
+            last_scene = block_merged_scenes[-1]
+            current_duration = segment[1] - segment[0]
+            last_duration = last_scene[1] - last_scene[0]
+
+            # 强制合并：如果上一个场景不合格
+            if last_duration < min_scene_duration_ms:
+                last_scene[1] = segment[1]
+            # 选择性合并：如果当前场景不合格，且上一个场景还有空间
+            elif current_duration < min_scene_duration_ms and last_duration < max_merge_duration_ms:
+                last_scene[1] = segment[1]
+            # 不合并：当前场景成为新的独立场景
+            else:
+                block_merged_scenes.append(segment)
+
+        all_processed_scenes.extend(block_merged_scenes)
+
+    # --- 步骤 3: 全局清理 ---
+    if not all_processed_scenes:
+        return []
+
+    final_scenes = []
+    for scene in all_processed_scenes:
+        duration = scene[1] - scene[0]
+        if final_scenes and duration < final_cleanup_threshold_ms:
+            final_scenes[-1][1] = scene[1]
+        else:
+            final_scenes.append(scene)
+
+    # --- 步骤 4: 格式化输出 ---
+    formatted_output = []
+    for start, end in final_scenes:
+        formatted_output.append({
+            "scene_start": start,
+            "scene_end": end,
+            "content_list": [{"start": start, "end": end, "speaker": "other", "final_text": "", "text": ""}]
+        })
+    return formatted_output
+
 
 @timeit_print
-def get_scene_sub_text(sorted_scene_timestamp, owner_asr, base_name):
+def get_scene_sub_text(sorted_scene_timestamp, owner_asr, output_dir):
+    output_file_scene_sub_text_file = os.path.join(output_dir, 'scene_sub_text.json')
+
     merged_timestamps = sorted_scene_timestamp
     # 将all_sub_text_list按照end升序排序
     owner_asr.sort(key=lambda x: x.get('end', 0))
@@ -992,12 +1107,20 @@ def get_scene_sub_text(sorted_scene_timestamp, owner_asr, base_name):
             asr['text'] = asr['final_text']
         asr['start'] = time_to_ms(asr.get('start', 0))
         asr['end'] = time_to_ms(asr.get('end', 0))
-    owner_speaker = 'owner' if is_have_owner else 'other'
-    min_scene_duration_ms = 10000 if is_have_owner else 1000
-    scene_sub_text = process_scenes_complete_fix(owner_asr, merged_timestamps, owner_speaker=owner_speaker, min_scene_duration_ms=min_scene_duration_ms)
-    output_file_scene_sub_text = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/scene_sub_text.json'
-    save_json(output_file_scene_sub_text, scene_sub_text)
-    print(f"场景划分完成:数量{len(scene_sub_text)} owner_speaker:{owner_speaker} min_scene_duration_ms:{min_scene_duration_ms}")
+
+    if len(owner_asr) > 2:
+        owner_speaker = 'owner' if is_have_owner else 'other'
+        min_scene_duration_ms = 10000 if is_have_owner else 1000
+        scene_sub_text = process_scenes_complete_fix(owner_asr, merged_timestamps, owner_speaker=owner_speaker, min_scene_duration_ms=min_scene_duration_ms)
+    else:
+        print("[WARN] 说话人文本过少，直接使用场景分割点进行划分")
+        scene_sub_text = merge_scenes_advanced(merged_timestamps, min_scene_duration_ms=5000)
+    save_json(output_file_scene_sub_text_file, scene_sub_text)
+    print(f"初步场景划分完成:数量{len(scene_sub_text)}")
+
+    # 检测scene_sub_text的长度是否小于3，如果是则抛出异常
+    if len(scene_sub_text) < 3:
+        raise ValueError(f"[ERROR] 最终场景划分结果过少: {len(scene_sub_text)} < 3，无法进行有效分割，请检查输入视频内容或调整阈值。")
     return scene_sub_text
 
 
@@ -1250,7 +1373,7 @@ def gen_new_video_script_llm(scene_info, video_path, no_owner=False):
                 raise ValueError("生成的视频脚本检查未通过")
             return new_video_script
         except Exception as e:
-            print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
+            print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} raw :{raw}")
             if attempt < max_retries:
                 print(f"[INFO] 正在重试... (等待 {retry_delay} 秒)")
                 time.sleep(retry_delay)  # 等待一段时间后再重试
@@ -1543,6 +1666,8 @@ def process_video_with_owner_text(video_path, new_owner_text, fused_new_scene, s
 
                 need_merge_video_file.append(output_path)
     else:
+        if scene_start >= scene_end - 100:
+            return need_merge_video_file
         output_scene_file = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{base_name}/split_scene/{name_key}_part{0}.mp4'
         if not is_valid_target_file_simple(output_scene_file):
             clip_video_ms(video_path, scene_start, scene_end, output_scene_file)
@@ -1835,7 +1960,7 @@ def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
             no_owner = not has_owner
 
             sorted_scene_timestamp = get_scene(video_path, basename)
-            scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, basename)
+            scene_sub_text = get_scene_sub_text(sorted_scene_timestamp, fixed_speech_asr_with_sub_text, output_dir)
             new_video_script, scene_info = gen_new_video_script(video_path, scene_sub_text, basename, no_owner=no_owner)
 
             if is_half:
@@ -1891,7 +2016,7 @@ def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
 
 
 if __name__ == '__main__':
-    video_remake('7551467524232154410.mp4', is_half=True, no_owner=True)
+    video_remake('7356103013104143643.mp4', is_half=True)
     # test_all()
     #
     # UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志
