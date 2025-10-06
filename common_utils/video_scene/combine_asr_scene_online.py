@@ -765,40 +765,69 @@ def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True):
 
 @timeit_print
 def get_scene(video_path, basename):
+    # --- 新增的配置项 ---
+    initial_thresholds = [30,40, 50,60, 70]  # 初始阈值列表
+    min_final_scenes = 20  # 最终期望的最小场景数
+    adjustment_step = 10  # 每次调整的步长
+    max_attempts = 3  # 最多尝试次数
 
+    # --- 将你原有的逻辑放入一个循环中 ---
+    thresholds = list(initial_thresholds)  # 创建一个可修改的副本
+    kept_sorted = []  # 初始化一个空列表
     all_scene_info_dict = {}
-    for high_threshold in [30, 50, 70]:
-        start_time = time.time()
-        scene_info_file =r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/scenes_{high_threshold}/scene_info.json'
-        if is_valid_target_file_simple(scene_info_file):
-            # print(f"场景信息文件已存在，跳过处理: {scene_info_file}")
-            all_scene_info_dict[high_threshold] = read_json(scene_info_file)
-            continue
 
-        # 运行带有精炼功能的场景分割
-        scene_info_dict = split_scenes_json(
-            video_path,
-            high_threshold=high_threshold,  # 初始高阈值
-            min_scene_len=25,  # 最小场景长度（帧）
-        )
-        print(
-            f"阈值为 {high_threshold}场景信息字典已生成并打印。共 {len(scene_info_dict)} 个场景。 耗时: {time.time() - start_time} 秒\n")
-        # for key, value in scene_info_dict.items():
-        #     timestamp = value[1]
-        #     save_frames_around_timestamp(video_path, timestamp, 3, str(os.path.join(f'output/{basename}/scenes_{basename}_{high_threshold}', key)))
+    for attempt in range(max_attempts):
+        print(f"--- 第 {attempt + 1}/{max_attempts} 次尝试 ---")
+        print(f"当前使用的阈值列表: {thresholds}")
 
-        save_json(scene_info_file, scene_info_dict)
-        all_scene_info_dict[high_threshold] = scene_info_dict
-    kept_sorted, pairs = merge_scene_timestamps(all_scene_info_dict, min_count=3)
+        # 你的核心逻辑基本不变，只是把固定的 [30, 50, 70] 换成了可变的 thresholds
+        for high_threshold in thresholds:
+            start_time = time.time()
+            scene_info_file = r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/scenes_{high_threshold}/scene_info.json'
 
-    print(f"场景识别合并完成:场景数量为: {len(kept_sorted)}")
-    # 将kept_sorted保存到文件
-    save_json(r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/scenes_fused/merged_timestamps.json', kept_sorted)
+            if is_valid_target_file_simple(scene_info_file):
+                all_scene_info_dict[high_threshold] = read_json(scene_info_file)
+                continue
 
-    # for key, value in pairs.items():
-    #     timestamp = value[1]
-    #     save_frames_around_timestamp(my_video_path, timestamp, 3,
-    #                                  str(os.path.join(f'scenes_fused_{basename}', key)))
+            scene_info_dict = split_scenes_json(
+                video_path,
+                high_threshold=high_threshold,
+                min_scene_len=25,
+            )
+            print(
+                f"阈值为 {high_threshold} 场景信息字典已生成。共 {len(scene_info_dict)} 个场景。 耗时: {time.time() - start_time:.2f} 秒\n")
+
+            save_json(scene_info_file, scene_info_dict)
+            all_scene_info_dict[high_threshold] = scene_info_dict
+
+        # 合并逻辑不变
+        kept_sorted, pairs = merge_scene_timestamps(all_scene_info_dict, min_count=3)
+        print(f"场景识别合并完成: 本次尝试生成场景数量为: {len(kept_sorted)}")
+
+        # --- 新增的核心判断逻辑 ---
+        if len(kept_sorted) >= min_final_scenes:
+            print(f"成功！生成的场景数量 ({len(kept_sorted)}) 满足要求 (>= {min_final_scenes})。")
+            break  # 达到目标，跳出重试循环
+        else:
+            print(f"警告：生成的场景数量 ({len(kept_sorted)}) 过少，不满足要求 (>= {min_final_scenes})。")
+            # 如果不是最后一次尝试，则降低阈值准备重试
+            if attempt < max_attempts - 1:
+                print(f"准备降低阈值后重试...")
+                # 将列表中的每个阈值都减小，并确保不低于某个下限（例如10）
+                thresholds = [max(10, t - adjustment_step) for t in thresholds]
+                # 如果阈值已经降到最低无法再降，也提前退出
+                if all(t == 10 for t in thresholds):
+                    print("阈值已降至最低，无法继续。")
+                    break
+            else:
+                print("已达到最大尝试次数，将使用当前结果。")
+
+    # 循环结束后的收尾工作（保存文件等）
+    print(f"\n--- 最终处理结果 ---")
+    print(f"最终场景数量为: {len(kept_sorted)} {kept_sorted}")
+    save_json(
+        r"W:\project\python_project\watermark_remove\content_community\bilibili" + f'/output/{basename}/scenes_fused/merged_timestamps.json',
+        kept_sorted)
 
     return kept_sorted
 
@@ -2016,7 +2045,7 @@ def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
 
 
 if __name__ == '__main__':
-    video_remake('7356103013104143643.mp4', is_half=True)
+    video_remake('7310501358833110322.mp4', is_half=False)
     # test_all()
     #
     # UPLOAD_LOG_FILE = '../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json'  # 上传日志
