@@ -1721,6 +1721,117 @@ def _merge_chunk_ffmpeg(video_paths, output_path, probe_fn):
     subprocess.run(cmd, check=True)
     print(f" 耗时 {time.time() - start_time:.2f} 秒 [SUCCESS] 小批次合并完成：{output_path}")
 
+
+def _merge_chunk_ffmpeg_optimized(video_paths, output_path, probe_fn):
+    """
+    高效地合并来自同一源视频的视频片段（性能最大化版本）。
+
+    本函数采用两阶段策略以实现最佳性能和鲁棒性：
+    1.  **首选方案 (Concat Demuxer)**: 尝试使用 ffmpeg 的 concat demuxer 进行无损、极速的流复制。
+        这是最高效的方法，适用于所有参数完全一致的视频片段，速度极快且无质量损失。
+    2.  **备用方案 (优化后重新编码)**: 如果流复制模式因任何原因失败，会自动回退到简化的
+        filter_complex 进行重新编码。此方案已移除所有冗余滤镜，性能远超原始版本。
+
+    probe_fn: 一个函数，接受视频路径，返回 (width, height, fps, sar) 元组。
+              例如：probe_fn(path) -> (1920, 1080, 25.0, '1:1')
+    """
+    if not video_paths:
+        raise ValueError("video_paths 不能为空")
+
+    # 使用abspath确保路径的正确性，并进行存在性检查
+    video_paths = [os.path.abspath(p) for p in video_paths]
+    for p in video_paths:
+        if not os.path.exists(p):
+            raise FileNotFoundError(f"未找到文件: {p}")
+
+    # 优化点1: 单文件直接复制，这是最快的情况
+    if len(video_paths) == 1:
+        cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", video_paths[0], "-c", "copy", output_path]
+        print("[INFO] 单文件，直接复制:", " ".join(cmd))
+        subprocess.run(cmd, check=True)
+        return
+
+    # --- 方案一：尝试 Concat Demuxer (极速流复制) ---
+    list_path = None
+    try:
+        print("[INFO] 尝试最高性能模式：Concat Demuxer (流复制)")
+
+        # 使用 NamedTemporaryFile 确保临时文件在结束后被自动删除
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt', encoding='utf-8') as tmp_file:
+            for path in video_paths:
+                # ffmpeg 的 file 指令要求对特殊字符（如单引号）进行转义
+                escaped_path = path.replace("'", "'\\''")
+                tmp_file.write(f"file '{escaped_path}'\n")
+            list_path = tmp_file.name
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-loglevel", "error",
+            "-f", "concat",  # 使用 concat demuxer
+            "-safe", "0",  # 当文件列表使用绝对路径时需要此选项
+            "-i", list_path,  # 输入是我们的文件列表
+            "-c", "copy",  # 核心：直接复制流，不进行任何编解码
+            output_path
+        ]
+
+        print("[INFO] 执行 ffmpeg 合并（流复制）:", " ".join(cmd))
+        start_time = time.time()
+        subprocess.run(cmd, check=True, capture_output=True, text=True)  # 使用 capture_output 捕获错误信息
+        print(f" 耗时 {time.time() - start_time:.2f} 秒 [SUCCESS] 高性能合并完成：{output_path}")
+        return  # 成功后直接返回
+
+    except subprocess.CalledProcessError as e:
+        print(f"[WARN] 高性能模式（流复制）失败: {e.stderr}. 将回退到优化后的重新编码模式。")
+    except Exception as e:
+        print(f"[WARN] 执行高性能模式时发生未知错误: {e}. 将回退到优化后的重新编码模式。")
+    finally:
+        # 确保无论成功失败，临时文件都被删除
+        if list_path and os.path.exists(list_path):
+            os.remove(list_path)
+
+    # --- 方案二：回退到优化后的 Re-encoding ---
+    print("\n[INFO] 回退模式：简化的 Filter Complex (优化后重新编码)")
+    ref_w, ref_h, ref_fps, ref_sar = probe_fn(video_paths[0])
+    print(f"[INFO] 参考视频参数: {ref_w}×{ref_h}, fps={ref_fps:.2f}, SAR={ref_sar}")
+
+    inputs = []
+    filter_parts = []
+
+    for idx, path in enumerate(video_paths):
+        inputs += ["-i", path]
+        # 由于所有片段参数一致，我们只需要重置时间戳即可
+        filter_parts.append(f"[{idx}:v]setpts=PTS-STARTPTS[v{idx}]")
+        filter_parts.append(f"[{idx}:a]asetpts=PTS-STARTPTS[a{idx}]")
+
+    concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(video_paths)))
+    filter_parts.append(f"{concat_inputs}concat=n={len(video_paths)}:v=1:a=1[outv][outa]")
+
+    filter_complex = ";".join(filter_parts)
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-loglevel", "error",
+        *inputs,
+        "-filter_complex", filter_complex,
+        "-map", "[outv]",
+        "-map", "[outa]",
+        "-r", f"{ref_fps:.2f}",
+        # 保留统一的输出编码设置，以确保输出格式的一致性
+        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-pix_fmt", "yuv420p",
+        "-colorspace", "bt709",
+        "-color_primaries", "bt709",
+        "-color_trc", "bt709",
+        "-color_range", "tv",
+        "-c:a", "aac", "-b:a", "192k",
+        output_path
+    ]
+
+    print("[INFO] 执行 ffmpeg 合并（优化后重新编码）:", " ".join(cmd))
+    start_time = time.time()
+    subprocess.run(cmd, check=True)
+    print(f" 耗时 {time.time() - start_time:.2f} 秒 [SUCCESS] 优化后重新编码合并完成：{output_path}")
+
 def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.mp4",
                         batch_size=20, temp_dir=None, probe_fn=None,
                         cleanup_temp=True, cleanup_retries=5, cleanup_delay=0.5):
@@ -1756,7 +1867,7 @@ def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.m
 
     try:
         if len(video_paths) <= batch_size:
-            _merge_chunk_ffmpeg(video_paths, output_path, probe_fn)
+            _merge_chunk_ffmpeg_optimized(video_paths, output_path, probe_fn)
             return
 
         chunks = list(_chunked(video_paths, batch_size))
@@ -1764,7 +1875,7 @@ def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.m
             tmp_out = _short_tempfile_name(tmpdir, prefix=f"batch{i}_")
             # 记录：即便用户指定 temp_dir，也会删除我们创建的这些临时文件
             temp_files.append(tmp_out)
-            _merge_chunk_ffmpeg(chunk, tmp_out, probe_fn)
+            _merge_chunk_ffmpeg_optimized(chunk, tmp_out, probe_fn)
 
         # 递归合并临时文件（如果数量超出 batch_size 会继续分批）
         merge_videos_ffmpeg(temp_files, output_path=output_path,
@@ -2592,6 +2703,7 @@ def clip_video_ms(
         bool: 如果截取成功返回 True，否则返回 False。
         str: 返回 ffmpeg 的输出信息（成功时）或错误信息（失败时）。
     """
+    current_time = time.time()
     try:
         start_formatted = _format_time(start_time)
         end_formatted = _format_time(end_time)
@@ -2622,7 +2734,7 @@ def clip_video_ms(
             text=True,
             encoding='utf-8'
         )
-        success_message = f"视频截取完成：已保存至: {output_path} 截取时长: {float(end_formatted) - float(start_formatted)} 时间段为 {start_formatted} - {end_formatted}"
+        success_message = f"视频截取完成：已保存至: {output_path} 截取时长: {float(end_formatted) - float(start_formatted)} 时间段为 {start_formatted} - {end_formatted} 耗时 {time.time() - current_time:.2f} 秒"
         print(success_message)
         # ffmpeg 正常运行时会将大量信息输出到 stderr
         return True, result.stderr or success_message
