@@ -22,6 +22,7 @@ import traceback
 import datetime as dt
 
 from common_utils.common_utils import get_config, format_seconds_to_mmss, read_json
+from common_utils.video_scene.combine_asr_scene import gen_new_video_robus
 from common_utils.video_scene.combine_asr_scene_online import video_remake
 from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover, \
     merge_videos_ffmpeg, apply_all_subtle_tweaks, _get_video_resolution, process_video_with_template, probe_duration, \
@@ -492,7 +493,7 @@ def _preprocess_media_steps(
         print(f"🔄 重制视频 {video_path}... userName: {userName} 是否不包含作者语音{no_owner} 创作指导：{creative_guidance} 视频名称：{full_title} duration{duration}")
         try:
 
-            final_video_path, final_video_script, cleaner_file_list = video_remake(video_path, no_owner)
+            final_video_path, final_video_script, cleaner_file_list = gen_new_video_robus(video_path)
             if final_video_path and os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0:
                 print(f"✅ 重制视频成功，保存为 {final_video_path}")
                 video_path = final_video_path

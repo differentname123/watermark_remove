@@ -1577,7 +1577,7 @@ def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_bo
 
     final_output_path = os.path.join(output_dir, 'remake.mp4')
     final_with_bgm_path = final_output_path.replace('.mp4', '_with_bgm.mp4')
-    final_video_script = choose_script(fused_new_video_script_info, need_different=False)
+    final_video_script = choose_script(fused_new_video_script_info, need_different=True)
     need_merge_video_file_list = []
 
     new_scene_list = final_video_script['场景顺序与新文案']
@@ -1739,6 +1739,21 @@ def gen_logical_scene(video_path, output_dir):
         save_json(output_file_logical_scene_info_path, logical_scene_info)
     return logical_scene_info
 
+def gen_new_video_script_robus(video_path, params={}):
+    """
+    最多尝试3次生成新的视频方案
+    """
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return gen_new_video_script(video_path, params)
+        except Exception as e:
+            print(f"尝试 {attempt} 失败: {e} traceback: {traceback.format_exc()}")
+            if attempt == max_attempts:
+                raise
+            else:
+                print("正在重试...")
+                time.sleep(2)  # 等待一段时间后再重试
 
 
 def gen_new_video_script(video_path, params={}):
@@ -1754,35 +1769,35 @@ def gen_new_video_script(video_path, params={}):
 
     has_author_voice = params.get('has_author_voice', True)
 
-    # # 获取场景分割信息
-    # logical_scene_info = gen_logical_scene(video_path, output_dir)
-    # logger.info(f"场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info'))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene'))}")
+    # 获取场景分割信息
+    logical_scene_info = gen_logical_scene(video_path, output_dir)
+    logger.info(f"场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info'))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene'))}")
+
+
+    # 生成asr信息
+    owner_asr_info = gen_asr(video_path, output_dir, has_author_voice)
+
+    # # --- 多进程并行执行 ---
     #
+    # # 将要执行的函数和它们的参数打包
+    # tasks = [
+    #     (gen_logical_scene, (video_path, output_dir)),
+    #     (gen_asr, (video_path, output_dir, has_author_voice))
+    # ]
     #
-    # # 生成asr信息
-    # owner_asr_info = gen_asr(video_path, output_dir, has_author_voice)
-
-    # --- 多进程并行执行 ---
-
-    # 将要执行的函数和它们的参数打包
-    tasks = [
-        (gen_logical_scene, (video_path, output_dir)),
-        (gen_asr, (video_path, output_dir, has_author_voice))
-    ]
-
-    # 核心改动：将 ThreadPoolExecutor 换成 ProcessPoolExecutor
-    with ProcessPoolExecutor(max_workers=2) as executor:
-        logger.info("开始并行处理场景分割和语音识别 (多进程)...")
-
-        # 提交和获取结果的逻辑完全不用变！
-        futures = [executor.submit(func, *args) for func, args in tasks]
-        results = [f.result() for f in futures]
-
-    # 按提交顺序解包结果
-    logical_scene_info, owner_asr_info = results
-    logger.info("场景分割和语音识别均已完成。")
-
-    # --- 并行执行结束 ---
+    # # 核心改动：将 ThreadPoolExecutor 换成 ProcessPoolExecutor
+    # with ProcessPoolExecutor(max_workers=2) as executor:
+    #     logger.info("开始并行处理场景分割和语音识别 (多进程)...")
+    #
+    #     # 提交和获取结果的逻辑完全不用变！
+    #     futures = [executor.submit(func, *args) for func, args in tasks]
+    #     results = [f.result() for f in futures]
+    #
+    # # 按提交顺序解包结果
+    # logical_scene_info, owner_asr_info = results
+    # logger.info("场景分割和语音识别均已完成。")
+    #
+    # # --- 并行执行结束 ---
 
     # 后续处理
     logger.info(
@@ -1894,6 +1909,22 @@ def correct_owner_timestamps(asr_result: list) -> list:
 
     return asr_result
 
+def gen_new_video_robus(video_path):
+    """
+    最多尝试3次生成新的视频
+    """
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return gen_new_video(video_path)
+        except Exception as e:
+            print(f"尝试 {attempt} 失败: {e} traceback: {traceback.format_exc()}")
+            if attempt == max_attempts:
+                raise
+            else:
+                print("正在重试...")
+                time.sleep(2)  # 等待一段时间后再重试
+
 def gen_new_video(video_path):
     """
     根据新的方案生成新的视频
@@ -1932,7 +1963,7 @@ def gen_new_video(video_path):
     save_json(fuse_all_info_path, fused_new_video_script_info)
     final_video_path, final_video_script = gen_new_video_by_script(subtitle_video_path, fused_new_video_script_info, subtitle_box, output_dir)
     logger.info("最终视频生成完成。")
-    return final_video_path, final_video_script
+    return final_video_path, final_video_script, []
 
 
 @timeit_print
@@ -1958,5 +1989,5 @@ def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
 
 
 if __name__ == '__main__':
-    gen_new_video_script('7557598934626028838.mp4')
-    gen_new_video('7557598934626028838.mp4')
+    # gen_new_video_script('7479808197696425256.mp4')
+    gen_new_video('7479808197696425256.mp4')
