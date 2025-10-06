@@ -1890,7 +1890,7 @@ def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.m
 
     try:
         if len(video_paths) <= batch_size:
-            _merge_chunk_ffmpeg_optimized(video_paths, output_path, probe_fn)
+            _merge_chunk_ffmpeg(video_paths, output_path, probe_fn)
             return
 
         chunks = list(_chunked(video_paths, batch_size))
@@ -1898,7 +1898,7 @@ def merge_videos_ffmpeg(video_paths, output_path="merged_video_original_volume.m
             tmp_out = _short_tempfile_name(tmpdir, prefix=f"batch{i}_")
             # 记录：即便用户指定 temp_dir，也会删除我们创建的这些临时文件
             temp_files.append(tmp_out)
-            _merge_chunk_ffmpeg_optimized(chunk, tmp_out, probe_fn)
+            _merge_chunk_ffmpeg(chunk, tmp_out, probe_fn)
 
         # 递归合并临时文件（如果数量超出 batch_size 会继续分批）
         merge_videos_ffmpeg(temp_files, output_path=output_path,
