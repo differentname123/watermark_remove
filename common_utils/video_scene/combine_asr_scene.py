@@ -139,7 +139,7 @@ def gen_owner_asr_by_llm(video_path, has_author_voice):
     # --- 1. 配置常量 ---
     MAX_RETRIES = 3
     RETRY_DELAY = 10  # 秒
-    PROMPT_FILE_PATH = '../../content_community/app/视频分解素材_直接进行asr转录与owner识别准确.txt'
+    PROMPT_FILE_PATH = '../../content_community/app/视频分解素材_直接进行asr转录与owner识别严格.txt'
     MODEL_NAME = "gemini-2.5-pro"
 
     # --- 2. 初始化和预处理 ---

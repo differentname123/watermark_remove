@@ -1414,10 +1414,45 @@ def gen_new_video_script_llm(scene_info, video_path, no_owner=False):
 
 def check_logical_scene(logical_scene_info, scene_info):
     """
-    生成的original_scene_number是否都在scene_info中
-    """
+    验证生成的 logical_scene_info 是否符合数据完整性和唯一性原则（简洁版）。
 
-    return True
+    返回:
+        (bool, list): (是否验证通过, 错误信息列表)
+    """
+    errors = []
+    # 原始场景编号的集合，用于快速查找
+    original_numbers = {s['scene_number'] for s in scene_info}
+
+    # 收集输出中提到的所有场景编号（允许重复）
+    processed_numbers_list = []
+    for new_scene in logical_scene_info.get('new_scene_info', []):
+        processed_numbers_list.extend(new_scene.get('origin_scene_number_list', []))
+    for deleted_scene in logical_scene_info.get('deleted_scene', []):
+        if deleted_scene.get('origin_scene_number'):
+            processed_numbers_list.append(deleted_scene.get('origin_scene_number'))
+
+    # 将收集到的编号转为集合，用于逻辑比较
+    processed_numbers_set = set(processed_numbers_list)
+
+    # 1. 唯一性检查：列表长度和集合长度不同，说明有重复项
+    if len(processed_numbers_list) != len(processed_numbers_set):
+        # 找出重复的元素
+        seen = set()
+        dupes = sorted([x for x in processed_numbers_list if x in seen or seen.add(x)])
+        errors.append(f"唯一性错误：原始场景 {dupes} 在输出中出现了多次。")
+
+    # 2. 完整性检查：原始场景是否有缺失
+    missing = sorted(list(original_numbers - processed_numbers_set))
+    if missing:
+        errors.append(f"完整性错误：原始场景 {missing} 在输出中缺失。")
+
+    # 3. 有效性检查：输出中是否包含了不存在的场景号
+    invalid = sorted(list(processed_numbers_set - original_numbers))
+    if invalid:
+        errors.append(f"有效性错误：场景 {invalid} 不存在于原始场景列表中。")
+
+    return not errors, errors
+
 
 def gen_logical_scene_llm(scene_info, video_path):
     """
@@ -1446,9 +1481,9 @@ def gen_logical_scene_llm(scene_info, video_path):
             print(f"[INFO] 正在生成逻辑性场景划分 (尝试 {attempt}/{max_retries})")
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             logical_scene_info = string_to_object(raw)
-            check_result = check_logical_scene(logical_scene_info, format_scene_info)
+            check_result, errors = check_logical_scene(logical_scene_info, format_scene_info)
             if not check_result:
-                raise ValueError("生成的视频脚本检查未通过")
+                raise ValueError(f"生成的逻辑检查未通过errors：{errors}")
             return logical_scene_info
         except Exception as e:
             print(f"[ERROR] 生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
