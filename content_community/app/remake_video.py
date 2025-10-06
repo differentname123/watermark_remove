@@ -25,7 +25,7 @@ from common_utils.split_scenes import find_and_split_scenes
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
 # from common_utils.tts.paddle_speech_demo import synthesize_and_get_duration
 from common_utils.video_utils import cover_video_area_gently, add_subtitles_to_video, cover_video_area_simple, \
-    re_edit_video_ffmpeg, extract_audio_from_video, cut_audio_segment, cover_video_area_blur, \
+    re_edit_video_ffmpeg, extract_audio_from_video, cut_audio_segment, \
     get_video_duration_seconds, cover_video_area_blur_optimized
 # from paddlespeech.cli.tts.infer import TTSExecutor
 
@@ -527,38 +527,6 @@ def get_owner_speech_pure(video_path):
     # 步骤 6: 返回最终的、验证过的结果
     return result
 
-def cover_subtitle(
-    video_path: str,
-    output_path: str,
-    top_left,
-    bottom_right,
-    time_ranges=None
-):
-    """
-    覆盖视频中的字幕区域（支持多个时间段）
-    :param time_ranges: 多个 (start_sec, end_sec) 元组列表，例如 [(5,10), (20,25)]
-                        若为 None 或空列表，则全程遮挡
-    """
-    start_time = time.time()
-    try:
-        cover_video_area_blur_optimized(
-            video_path=video_path,
-            output_path=output_path,
-            top_left=top_left,
-            bottom_right=bottom_right,
-            time_ranges=time_ranges
-        )
-    except Exception as e:
-        print(f"覆盖字幕区域失败: {e} 尝试使用备用方法...")
-        cover_video_area_simple(
-            video_path=video_path,
-            output_path=output_path,
-            top_left=top_left,
-            bottom_right=bottom_right,
-            time_ranges=time_ranges
-        )
-        return
-    print(f"覆盖字幕区域完成，输出文件: {output_path} 耗时: {time.time() - start_time:.2f} 秒")
 
 
 def gen_new_audio(optimized_subtitles,voice_name="zh-CN-YunjianNeural",output_dir='output_audio'):

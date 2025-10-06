@@ -32,7 +32,7 @@ from common_utils.split_audio import separate_with_cli, process_media_by_volume
 from common_utils.split_scenes import find_and_split_scenes, split_scenes_json
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
 from common_utils.video_utils import extract_audio_from_video, clip_video_ms, merge_videos_ffmpeg, probe_duration, \
-    add_subtitles_to_video
+    add_subtitles_to_video, cover_subtitle
 from common_utils.video_utils1 import redub_video_with_ffmpeg, replace_video_audio
 from common_utils.video_utils2 import add_bgm_to_video
 
@@ -41,7 +41,7 @@ import re
 from copy import deepcopy
 
 from common_utils.video_utils_cut import gen_video
-from content_community.app.remake_video import adjust_subtitle_box, cover_subtitle
+from content_community.app.remake_video import adjust_subtitle_box
 
 # ==============================================================================
 # 1. 辅助常量与函数 (Helpers & Constants)

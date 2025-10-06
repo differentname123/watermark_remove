@@ -187,7 +187,7 @@ def main_find_subtitle(image_path: str, output_path='temp.jpg'):
 
     # 2. 检查缓存是否存在
     if os.path.exists(cache_path):
-        print(f"✅ 发现缓存文件，直接从 '{cache_path}' 读取字幕坐标。")
+        # print(f"✅ 发现缓存文件，直接从 '{cache_path}' 读取字幕坐标。")
         with open(cache_path, 'r', encoding='utf-8') as f:
             subtitle_box = json.load(f)
 
@@ -206,7 +206,7 @@ def main_find_subtitle(image_path: str, output_path='temp.jpg'):
         return subtitle_box
 
     # --- 如果没有缓存，执行完整流程 ---
-    print("ℹ️ 未发现缓存，开始执行完整的字幕定位流程...")
+    # print("ℹ️ 未发现缓存，开始执行完整的字幕定位流程...")
 
     # 步骤1: 初始化OCR模型
     ocr_model = init_ocr_model()
@@ -225,8 +225,8 @@ def main_find_subtitle(image_path: str, output_path='temp.jpg'):
     # 步骤5: 打印结果并进行可视化
     print("\n" + "=" * 20 + " 定位结果 " + "=" * 20)
     if subtitle_box is not None:
-        print(f"✅ 成功定位到字幕！高度为: {subtitle_box[2][1] - subtitle_box[0][1]} 像素")
-        print("字幕坐标为:")
+        # print(f"✅ 成功定位到字幕！高度为: {subtitle_box[2][1] - subtitle_box[0][1]} 像素")
+        # print("字幕坐标为:")
         subtitle_box_list = subtitle_box.tolist()  # 转为列表以进行打印和保存
         print(subtitle_box_list)
 
@@ -556,14 +556,14 @@ def find_overall_subtitle_box_target_number(
         cv2.imwrite(path, frame)
         saved_frame_paths.append(path)
     cap.release()
-    print(f"[阶段 1] 抽帧完成。共保存 {len(saved_frame_paths)} 帧图片。")
+    # print(f"[阶段 1] 抽帧完成。共保存 {len(saved_frame_paths)} 帧图片。")
 
     if not saved_frame_paths:
         print("未能提取任何帧。")
         return None
 
     # --- 阶段 2: 对抽出的帧进行字幕检测 ---
-    print(f"\n[阶段 2] 开始检测 {len(saved_frame_paths)} 张图片的字幕框...")
+    # print(f"\n[阶段 2] 开始检测 {len(saved_frame_paths)} 张图片的字幕框...")
     detected_boxes = []
     for p in saved_frame_paths:
         try:

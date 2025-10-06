@@ -690,6 +690,42 @@ def _process_and_split_subtitles(
     return processed_subs
 
 
+
+
+
+def cover_subtitle(
+    video_path: str,
+    output_path: str,
+    top_left,
+    bottom_right,
+    time_ranges=None
+):
+    """
+    覆盖视频中的字幕区域（支持多个时间段）
+    :param time_ranges: 多个 (start_sec, end_sec) 元组列表，例如 [(5,10), (20,25)]
+                        若为 None 或空列表，则全程遮挡
+    """
+    start_time = time.time()
+    try:
+        cover_video_area_blur_optimized(
+            video_path=video_path,
+            output_path=output_path,
+            top_left=top_left,
+            bottom_right=bottom_right,
+            time_ranges=time_ranges
+        )
+    except Exception as e:
+        print(f"覆盖字幕区域失败: {e} 尝试使用备用方法...")
+        cover_video_area_simple(
+            video_path=video_path,
+            output_path=output_path,
+            top_left=top_left,
+            bottom_right=bottom_right,
+            time_ranges=time_ranges
+        )
+        return
+    print(f"覆盖字幕区域完成，输出文件: {output_path} 耗时: {time.time() - start_time:.2f} 秒")
+
 def cover_video_area_simple(
     video_path: str,
     output_path: str,
@@ -739,60 +775,46 @@ def _build_enable_expr(time_ranges) -> str:
     expr = "+".join(conditions)
     return f":enable='{expr}'"
 
-
-def cover_video_area_blur(
-        video_path: str,
-        output_path: str,
-        top_left,
-        bottom_right,
-        time_ranges = None,
-        blur_strength: int = 20
+def cover_video_area_blur_optimized(
+    video_path: str,
+    output_path: str,
+    top_left,
+    bottom_right,
+    time_ranges=None,
+    blur_strength: int = 15,
+    crf: int = 28,  # 添加CRF参数，28是一个不错的起点
+    preset: str = "veryfast"  # 添加preset参数，大幅提升速度
 ):
     x1, y1 = top_left
     x2, y2 = bottom_right
     w, h = x2 - x1, y2 - y1
 
-    temp_patch_file = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_f:
-            temp_patch_file = temp_f.name
+    enable_expr = _build_enable_expr(time_ranges)
 
-        # 第一阶段：生成全程模糊补丁（必须全程，因为 overlay 要求对齐）
-        vf_pass1 = f"crop={w}:{h}:{x1}:{y1},boxblur={blur_strength}"
-        cmd_pass1 = [
-            "ffmpeg", "-y", "-loglevel", "error", "-i", video_path,
-            "-vf", vf_pass1, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an",
-            temp_patch_file
-        ]
-        proc_pass1 = subprocess.run(cmd_pass1, capture_output=True, text=True, check=False)
-        if proc_pass1.returncode != 0:
-            raise RuntimeError(f"FFmpeg Pass 1 failed:\n{proc_pass1.stderr}")
+    vf = (
+        f"[0:v]split=2[orig][crop];"
+        f"[crop]crop={w}:{h}:{x1}:{y1},boxblur={blur_strength}[blurred];"
+        f"[orig][blurred]overlay={x1}:{y1}{enable_expr}"
+    )
 
-        # 第二阶段：叠加补丁，仅在指定多时间段内生效
-        enable_expr = _build_enable_expr(time_ranges)
-        vf_pass2 = f"[0:v][1:v]overlay={x1}:{y1}:format=yuv420{enable_expr}"
-        cmd_pass2 = [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-i", video_path,
-            "-i", temp_patch_file,
-            "-filter_complex", vf_pass2,
-            "-c:a", "copy",
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            output_path
-        ]
-        proc_pass2 = subprocess.run(cmd_pass2, capture_output=True, text=True, check=False)
-        if proc_pass2.returncode != 0:
-            raise RuntimeError(f"FFmpeg Pass 2 failed:\n{proc_pass2.stderr}")
-
-        print(f"[SUCCESS] Output saved to {output_path}")
-
-    finally:
-        if temp_patch_file and os.path.exists(temp_patch_file):
-            os.remove(temp_patch_file)
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-i", video_path,
+        "-filter_complex", vf,
+        "-c:a", "copy",
+        "-c:v", "libx264",
+        "-preset", preset, # 使用更快的预设
+        "-crf", str(crf),   # 控制输出质量和大小
+        "-pix_fmt", "yuv420p",
+        output_path
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"FFmpeg failed:\n{proc.stderr}")
+    print(f"[SUCCESS] Output saved to {output_path}")
 
 
-def cover_video_area_blur_optimized(
+def cover_video_area_blur_optimized_old(
     video_path: str,
     output_path: str,
     top_left,

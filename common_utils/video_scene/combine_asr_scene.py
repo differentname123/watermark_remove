@@ -22,13 +22,14 @@ from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_ti
 from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box_target_number
 from common_utils.split_audio import separate_with_cli
 from common_utils.split_scenes import split_scenes_json
-from common_utils.video_utils import extract_audio_from_video, clip_video_ms, merge_videos_ffmpeg, probe_duration
+from common_utils.video_utils import extract_audio_from_video, clip_video_ms, merge_videos_ffmpeg, probe_duration, \
+    cover_subtitle
 from common_utils.video_utils2 import add_bgm_to_video
 
 import re
 
 from common_utils.video_utils_cut import gen_video
-from content_community.app.remake_video import adjust_subtitle_box, cover_subtitle
+from content_community.app.remake_video import adjust_subtitle_box
 
 base_output_dir = "W:/project/python_project/watermark_remove/content_community/bilibili/output"
 
@@ -1562,23 +1563,28 @@ def gen_subtitle_box_and_cover_subtitle(video_path, owner_asr_info, output_dir):
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
 
+    try:
+        video_duration = probe_duration(video_path)
+        video_duration_ms = int(video_duration * 1000)
+    except Exception as e:
+        logger.error(f"获取视频时长失败: {e}")
+        return None
+
     time_ranges = []
 
     duration_list = []
-    for scene_info in merged_scene_info_list:
-        narration_script = scene_info.get('narration_script', '').strip()
-        if not narration_script:
+    for asr_info in owner_asr_info:
+        final_text = asr_info.get('final_text', '').strip()
+        speaker = asr_info.get('speaker', 'unknown')
+        if speaker != 'owner':
             continue
-        scene_start = scene_info.get('scene_start')
-        scene_end = scene_info.get('scene_end')
-        narration_script_start = scene_info.get('narration_script_start')
-        narration_script_end = scene_info.get('narration_script_end')
-        narration_script_start -= 500
-        narration_script_end += 500
-
-        final_narration_script_start = max(scene_start, narration_script_start)
-        final_narration_script_end = min(scene_end, narration_script_end)
-        duration_list.append((final_narration_script_start, final_narration_script_end))
+        if not final_text:
+            continue
+        asr_start = asr_info.get('start')
+        asr_start = max(0, asr_start-500)
+        asr_end = asr_info.get('end')
+        asr_end = min(video_duration_ms, asr_end+500)
+        duration_list.append((asr_start, asr_end))
     merge_intervals_list = merge_intervals(duration_list)
     merged_timerange_list = []
     if not merge_intervals_list:
@@ -1597,6 +1603,7 @@ def gen_subtitle_box_and_cover_subtitle(video_path, owner_asr_info, output_dir):
     if not is_valid_target_file_simple(final_box_path):
         final_box = find_overall_subtitle_box_target_number(video_path, merged_timerange_list, output_dir=output_dir)
         save_json(final_box_path, final_box)
+        logger.info(f"已保存最终字幕框: {final_box_path}")
     final_box = read_json(final_box_path)
     top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(video_path, final_box)
 
@@ -1604,9 +1611,13 @@ def gen_subtitle_box_and_cover_subtitle(video_path, owner_asr_info, output_dir):
     if is_valid_target_file_simple(cover_video_path, 10):
         logger.info(f"已存在遮挡字幕的视频: {cover_video_path}")
         return cover_video_path, [top_left, bottom_right]
+
+    start_time = time.time()
+    logger.info(f"开始生成遮挡字幕视频: {cover_video_path} final_box: {final_box}")
     cover_subtitle(video_path, cover_video_path, top_left, bottom_right, time_ranges=time_ranges)
-    if not is_valid_target_file_simple(cover_video_path, 10):
+    if not is_valid_target_file_simple(cover_video_path, 100):
         raise ValueError(f"生成遮挡字幕视频失败: {cover_video_path}")
+    logger.info(f"完成生成遮挡字幕视频: {cover_video_path} 耗时: {time.time() - start_time:.2f} 秒")
 
     return cover_video_path, [top_left, bottom_right]
 
@@ -1703,7 +1714,7 @@ def gen_new_video(video_path):
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
 
-    output_file_final_path = os.path.join(output_dir, 'new_script.json')
+    output_file_final_path = os.path.join(output_dir, 'new_video_script.json')
     final_scene_info_path = os.path.join(output_dir, 'final_scene_info.json')
     owner_asr_path = os.path.join(output_dir, 'speech_asr_with_owner.json')
     all_files = [output_file_final_path, final_scene_info_path, owner_asr_path]
@@ -1718,15 +1729,15 @@ def gen_new_video(video_path):
     owner_asr_info = read_json(owner_asr_path)
 
     logger.info("开始处理字幕区域并生成遮罩...")
-    subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, scene_info, output_dir)
+    subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, owner_asr_info, output_dir)
     logger.info("字幕处理完成。")
 
-    logger.info("开始根据新脚本生成最终视频...")
-    final_video_path, final_video_script = gen_new_video_by_scene_and_script(
-        subtitle_video_path, new_video_script, scene_info, subtitle_box, basename
-    )
-    logger.info("最终视频生成完成。")
-    return final_video_path, final_video_script
+    # logger.info("开始根据新脚本生成最终视频...")
+    # final_video_path, final_video_script = gen_new_video_by_scene_and_script(
+    #     subtitle_video_path, new_video_script, scene_info, subtitle_box, basename
+    # )
+    # logger.info("最终视频生成完成。")
+    # return final_video_path, final_video_script
 
 
 @timeit_print
@@ -1752,5 +1763,5 @@ def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
 
 
 if __name__ == '__main__':
-    gen_new_video_script('7356103013104143643.mp4')
-    # gen_new_video('7356103013104143643.mp4')
+    # gen_new_video_script('7356103013104143643.mp4')
+    gen_new_video('7356103013104143643.mp4')
