@@ -1729,13 +1729,13 @@ def _merge_chunk_ffmpeg(video_paths, output_path, probe_fn):
         "-map", "[outv]",
         "-map", "[outa]",
         "-r", f"{ref_fps:.2f}",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
         "-pix_fmt", "yuv420p",
         "-colorspace", "bt709",
         "-color_primaries", "bt709",
         "-color_trc", "bt709",
         "-color_range", "tv",
-        "-c:a", "aac", "-b:a", "192k",
+        "-c:a", "aac", "-b:a", "128k",
         output_path
     ]
 
@@ -2851,6 +2851,10 @@ def clip_video_ms(
         '-i', input_path,
         '-ss', start_formatted,
         '-to', end_formatted,
+        '-c:v', 'libx264',  # 或者使用 'libx265' 如果需要 HEVC 编码
+        '-crf', '28',  # 推荐值，可以调整
+        '-c:a', 'copy',  # 复制音频，避免处理和质量损失
+        '-preset', 'veryfast',  # 编码速度和压缩率的平衡，'veryfast', 'fast', 'medium', 'slow'
         '-y', output_path
     ]
 
