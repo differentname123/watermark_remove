@@ -1451,11 +1451,10 @@ def get_bgm_path(tags, logger):
 
 
 @timeit_print
-def gen_new_video_by_scene_and_script(video_path, new_video_script, scene_info, subtitle_box, base_name):
+def gen_new_video_by_script(video_path, new_video_script, scene_info, subtitle_box, output_dir):
     """
     生成新视频的文本脚本
     """
-    output_dir = os.path.join(base_output_dir, base_name)
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
 
@@ -1704,6 +1703,35 @@ def gen_new_video_script(video_path, params={}):
     new_video_script = gen_video_script(logical_scene_info, owner_asr_info, output_dir, has_author_voice=has_author_voice)
     logger.info(f"新视频脚本生成完成。耗时: {time.time() - start_time:.2f} 秒")
 
+def fuse_all_info(owner_asr_info, final_scene_info, new_video_script_list):
+    """
+    将所有信息融合到new_video_script中
+    """
+    for new_video_script in new_video_script_list:
+        first_original_scene_number = new_video_script['场景顺序与新文案'][0]['original_scene_number']
+        new_video_script['第一个场景是否改变'] = False
+        if first_original_scene_number != 1:
+            new_video_script['第一个场景是否改变'] = True
+
+        for new_scene in new_video_script['场景顺序与新文案']:
+            original_scene_number = new_scene.get('original_scene_number')
+            for final_scene in final_scene_info:
+                final_scene_number = final_scene.get('scene_number')
+                if str(final_scene_number) == str(original_scene_number):
+                    new_scene['scene_start'] = final_scene.get('scene_start')
+                    new_scene['scene_end'] = final_scene.get('scene_end')
+                    break
+
+            new_narration_script_list = new_scene.get('new_narration_script_list', [])
+            for new_narration_script in new_narration_script_list:
+                source_clip_id = new_narration_script['source_clip_id']
+                for asr_info in owner_asr_info:
+                    if str(asr_info['source_clip_id']) == str(source_clip_id):
+                        new_narration_script['narration_script'] = asr_info.get('final_text', '')
+                        new_narration_script['narration_script_start'] = asr_info.get('start')
+                        new_narration_script['narration_script_end'] = asr_info.get('end')
+                        break
+    return new_video_script_list
 
 def gen_new_video(video_path):
     """
@@ -1718,6 +1746,7 @@ def gen_new_video(video_path):
     final_scene_info_path = os.path.join(output_dir, 'final_scene_info.json')
     owner_asr_path = os.path.join(output_dir, 'speech_asr_with_owner.json')
     all_files = [output_file_final_path, final_scene_info_path, owner_asr_path]
+    fuse_all_info_path = os.path.join(output_dir, 'fuse_all_info.json')
 
     all_valid = all(is_valid_target_file_simple(f, 10) for f in all_files)
     if not all_valid:
@@ -1727,14 +1756,18 @@ def gen_new_video(video_path):
     final_scene_info = read_json(final_scene_info_path)
     new_video_script = read_json(output_file_final_path)
     owner_asr_info = read_json(owner_asr_path)
+    fuse_all_info(owner_asr_info, final_scene_info, new_video_script)
+    save_json(fuse_all_info_path, new_video_script)
 
     logger.info("开始处理字幕区域并生成遮罩...")
     subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, owner_asr_info, output_dir)
     logger.info("字幕处理完成。")
 
     # logger.info("开始根据新脚本生成最终视频...")
-    # final_video_path, final_video_script = gen_new_video_by_scene_and_script(
-    #     subtitle_video_path, new_video_script, scene_info, subtitle_box, basename
+    # # 综合三个信息
+    #
+    # final_video_path, final_video_script = gen_new_video_by_script(
+    #     subtitle_video_path, new_video_script, scene_info, subtitle_box, output_dir
     # )
     # logger.info("最终视频生成完成。")
     # return final_video_path, final_video_script
@@ -1764,4 +1797,4 @@ def video_remake(video_path, no_owner=False, video_info={}, is_half=False):
 
 if __name__ == '__main__':
     # gen_new_video_script('7356103013104143643.mp4')
-    gen_new_video('7356103013104143643.mp4')
+    gen_new_video('7557267688620444974.mp4')
