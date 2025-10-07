@@ -1061,8 +1061,10 @@ def get_all_income():
 
 
 if __name__ == '__main__':
-    # block_all_author(['3546717871934392'], action_type=6)
-    # block_all_author()
+    # config_map = init_config()
+    # mid_list = config_map.keys()
+    # block_all_author(mid_list, action_type=6)
+    # # block_all_author()
 
     get_all_income()
 
