@@ -21,7 +21,8 @@ import time
 import traceback
 import datetime as dt
 
-from common_utils.common_utils import get_config, format_seconds_to_mmss, read_json
+from common_utils.common_utils import get_config, format_seconds_to_mmss, read_json, is_valid_target_file_simple, \
+    scan_generated_files
 from common_utils.video_scene.combine_asr_scene import gen_new_video_robus
 from common_utils.video_scene.combine_asr_scene_online import video_remake
 from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover, \
@@ -51,7 +52,7 @@ group_info = {
 }
 
 
-video_recommend_user_list = ['nana']
+video_recommend_user_list = ["cai","yang","dahao","ruru","yiyi","lin","mama","hong","yan","jie","qiqi","xiaosu","jun","jj","qiqixiao","xiaoxue"]
 # 定义需要处理的账号名及其对应的config_map键名（区分大小写）
 accounts = {
     'tao': 'tao',
@@ -481,7 +482,6 @@ def _preprocess_media_steps(
     tweak_video_path = None
     addPrologue_video_path = None
     template_video_path = None
-    cleaner_file_list = []
     # --------- 重制视频分支（原脚本里始终 False） ---------
     # 保留原来判断（即：永远不会执行），以确保逻辑一致
     if generation_options.get('is_original', False) and duration < 600:
@@ -493,7 +493,7 @@ def _preprocess_media_steps(
         print(f"🔄 重制视频 {video_path}... userName: {userName} 是否不包含作者语音{no_owner} 创作指导：{creative_guidance} 视频名称：{full_title} duration{duration}")
         try:
 
-            final_video_path, final_video_script, cleaner_file_list = gen_new_video_robus(video_path)
+            final_video_path, final_video_script = gen_new_video_robus(video_path)
             if final_video_path and os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0:
                 print(f"✅ 重制视频成功，保存为 {final_video_path}")
                 video_path = final_video_path
@@ -637,16 +637,7 @@ def _preprocess_media_steps(
         traceback.print_exc()
         print(f"⚠️  封面处理失败：{e}")
 
-    files_to_cleanup = [
-        video_path,
-        new_video_path,
-        temp_video_path,
-        tweak_video_path,
-        addPrologue_video_path,
-        template_video_path,
-    ]
-    files_to_cleanup.extend(cleaner_file_list)
-    return video_path, cover_path, stage_times, files_to_cleanup
+    return video_path, cover_path, stage_times
 
 def _build_upload_params(
     metadata_entry: Dict[str, Any],
@@ -716,6 +707,50 @@ def _build_upload_params(
     }
     return upload_params
 
+def full_video_info(video_info):
+    """
+    将视频信息补充完整，主要是互动信息和标题信息
+    """
+    hudong_path = video_info.get('hudong_path')
+    if is_valid_target_file_simple(hudong_path):
+        hudong_info = read_json(hudong_path)
+        video_info['hudong'] = hudong_info
+    titles_path = video_info.get('titles_path')
+    if is_valid_target_file_simple(titles_path):
+        titles_info = read_json(titles_path)
+        video_info['title_schemes'] = titles_info
+    return video_info
+
+def gen_clean_files(video_path_list):
+    """
+    根据 video_path_list 生成需要清理的文件列表
+    """
+    # 遍历视频
+    cleaner_file_list = []
+    file_names = ['hudong.json', 'title_schemes.json', 'new_video_script.json', 'final_scene_info.json', 'speech_asr_with_owner.json']
+
+    all_files = []
+    for video_path in video_path_list:
+        # 获取目录
+        dir_name = os.path.dirname(video_path)
+        file_name = os.path.basename(video_path)
+        file_names.append(file_name)
+        all_sub_files = scan_generated_files(dir_name)
+        all_files.extend(all_sub_files)
+    # 对all_files进行去重
+    all_files = list(set(all_files))
+
+    # 剔除文件名是file_names中的文件
+    for f in all_files:
+        if os.path.basename(f) not in file_names:
+            cleaner_file_list.append(f)
+    print(f"🧹 生成清理文件列表，共 {len(cleaner_file_list)} 个文件。")
+    return cleaner_file_list
+
+
+
+
+
 def auto_upload():
     """
     非阻塞版 auto_upload（主线程负责预处理，投稿提交到每个账号的单线程 executor）：
@@ -757,6 +792,8 @@ def auto_upload():
         should_skip = False
         # 先把一些变量初始化（与原脚本一致）
         updated_entry = copy.deepcopy(value)
+        updated_entry = full_video_info(updated_entry)
+
         video_id_list = value.get('video_id_list', [key])
         # 排序video_id_list
         video_id_list = sorted(video_id_list)
@@ -765,6 +802,7 @@ def auto_upload():
 
         for video_id in video_id_list:
             value_info = metadata_cache.get(video_id, {})
+            value_info = full_video_info(value_info)
             # 基本检查（同原逻辑）
             should_skip, reason = _basic_task_checks(video_id, value_info, video_id_key)
             if should_skip:
@@ -809,12 +847,14 @@ def auto_upload():
             print(f"⚠️ 跳过 {userName} 用户上传：今日已上传 {len(recent_videos)} 个视频，达到上限。")
             continue
         video_path_list = []
+        origin_video_path_list = []
         best_scheme_final = None
         best_cover_path = None
-        all_files_to_cleanup = []
         comment_list_all = []
         for video_id in video_id_list:
             video_info = metadata_cache.get(video_id, {})
+            video_info = full_video_info(video_info)
+            origin_video_path_list.append(video_info.get('video_path'))
             comment_list = video_info.get('hudong', {}).get('comment_list', [])
             comment_list_all.extend(comment_list)
             # 选择最佳投稿方案
@@ -831,7 +871,7 @@ def auto_upload():
             print(f"\n⏳ {userName} 开始处理任务 {key}，视频ID列表：{video_id_list}，时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
             # 执行一系列的媒体预处理与封面处理
             try:
-                video_path, cover_path, stage_times, files_to_cleanup = _preprocess_media_steps(video_id, video_info, best_scheme, userName)
+                video_path, cover_path, stage_times = _preprocess_media_steps(video_id, video_info, best_scheme, userName)
                 if score > best_score_max:
                     best_score_max = score
                     best_scheme_final = best_scheme
@@ -840,7 +880,6 @@ def auto_upload():
                     video_path_list.insert(0, video_path)
                 else:
                     video_path_list.append(video_path)
-                all_files_to_cleanup.extend(files_to_cleanup)
             except Exception as e:
                 # 严格保持原脚本在异常处的行为：记录错误并继续
                 print(f"⚠️ 处理媒体过程中出现异常：{e} {video_id} {userName}")
@@ -848,7 +887,6 @@ def auto_upload():
                 error_count += 1
                 break
         final_output_path = video_path.replace('.mp4', '_final.mp4')
-        all_files_to_cleanup.append(final_output_path)
         # 将comment_list_all 按照第二个元素降序排序
         comment_list_all = sorted(comment_list_all, key=lambda x: x[1], reverse=True)
         comment_list_all = comment_list_all[:30]
@@ -857,24 +895,6 @@ def auto_upload():
         merge_videos_ffmpeg(video_path_list, output_path=final_output_path)
         if os.path.exists(final_output_path) and os.path.getsize(final_output_path) > 0:
             duration = probe_duration(final_output_path)
-
-            # # ---------- 预处理：在尾部插入引导图片 ----------
-            # new_video_path = final_output_path.replace('.mp4', '_new.mp4')
-            # if duration < 6000:
-            #     try:
-            #         t0 = time.time()
-            #         image_duration = int(duration / 100)
-            #         image_duration = max(1, image_duration)
-            #         print(
-            #             f"🔄 尾部插图处理：视频时长 {duration} 秒，插图持续 {image_duration} 秒。 文件路径：{final_output_path} -> {new_video_path}")
-            #         final_jpg_path = f'{userName}_final.jpg'
-            #         if not os.path.exists(final_jpg_path):
-            #             final_jpg_path = 'final.jpg'
-            #             print(f"⚠️ 尾部插图文件 {final_jpg_path} 不存在，使用默认图片。")
-            #         add_image_to_video_end(final_output_path, final_jpg_path, new_video_path, image_duration)
-            #         final_output_path = new_video_path
-            #     except Exception as e:
-            #         print(f"⚠️ 尾部插图失败，继续使用原视频：{e}")
 
             # ---------- 预处理：在尾部插入引导视频 ----------
             new_video_path = final_output_path.replace('.mp4', '_new.mp4')
@@ -909,10 +929,6 @@ def auto_upload():
         except Exception as e:
             print(f"⚠️ 水印增加失败，继续使用原视频：{e}")
 
-        all_files_to_cleanup.append(output_watermark_path)
-        all_files_to_cleanup.append(final_output_path)
-        all_files_to_cleanup.append(new_video_path)
-        all_files_to_cleanup.append(temp_ending_video_path)
         # 构建上传参数（title/description/tags/topic 等）
         upload_params = _build_upload_params(value, best_scheme_final, best_cover_path, final_output_path, config, userName)
 
@@ -924,12 +940,8 @@ def auto_upload():
         # 获取该账号的 executor（默认每账号单线程）
         account_executor = account_executors[userName]
         # 尝试移除all_files_to_cleanup中的video_path
-        try:
-            if video_info.get('video_path') in all_files_to_cleanup:
-                all_files_to_cleanup.remove(video_info.get('video_path'))
-        except Exception as e:
-            print(f"⚠️ 从清理列表中移除最终视频失败：{e}")
 
+        all_files_to_cleanup = gen_clean_files(origin_video_path_list)
 
         future = account_executor.submit(upload_worker, upload_params, video_id_key, updated_entry, all_files_to_cleanup, task_stage_times, userName)
         futures.append(future)

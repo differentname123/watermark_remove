@@ -1706,3 +1706,22 @@ def is_valid_target_file_simple(path, min_size_bytes: int = 1) -> bool:
         return p.exists() and p.stat().st_size >= int(min_size_bytes)
     except Exception:
         return False
+
+def scan_generated_files(output_dir):
+    # 扫描输出目录，列出所有生成的文件，包括子目录的
+    all_generated_files = []
+
+    # 使用os.walk遍历目录和文件
+    for root, dirs, files in os.walk(output_dir):
+        # 遍历每个文件，并将其完整路径加入all_generated_files列表
+        for file in files:
+            # # 你可以在这里添加文件类型过滤等逻辑
+            # # 比如只列出.mp4或.txt文件
+            # if file.endswith(('.mp4', '.txt')):  # 根据需求过滤文件类型
+            full_file_path = os.path.join(root, file)
+            all_generated_files.append(full_file_path)
+
+    # 可以选择按照文件名排序
+    all_generated_files.sort()
+
+    return all_generated_files

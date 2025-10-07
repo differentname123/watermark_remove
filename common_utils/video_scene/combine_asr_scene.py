@@ -31,7 +31,7 @@ import re
 from common_utils.video_utils_cut import gen_video
 from content_community.app.remake_video import adjust_subtitle_box
 
-base_output_dir = "W:/project/python_project/watermark_remove/content_community/bilibili/output"
+base_output_dir = "W:/project/python_project/watermark_remove/douyin_video"
 
 
 # 2. 新增 setup_logger 函数，这是日志系统的核心
@@ -1230,24 +1230,7 @@ def gen_new_video_robus(video_path):
                 time.sleep(2)  # 等待一段时间后再重试
 
 
-def scan_generated_files(output_dir):
-    # 扫描输出目录，列出所有生成的文件，包括子目录的
-    all_generated_files = []
 
-    # 使用os.walk遍历目录和文件
-    for root, dirs, files in os.walk(output_dir):
-        # 遍历每个文件，并将其完整路径加入all_generated_files列表
-        for file in files:
-            # # 你可以在这里添加文件类型过滤等逻辑
-            # # 比如只列出.mp4或.txt文件
-            # if file.endswith(('.mp4', '.txt')):  # 根据需求过滤文件类型
-            full_file_path = os.path.join(root, file)
-            all_generated_files.append(full_file_path)
-
-    # 可以选择按照文件名排序
-    all_generated_files.sort()
-
-    return all_generated_files
 
 def gen_new_video(video_path):
     """
@@ -1288,14 +1271,7 @@ def gen_new_video(video_path):
     final_video_path, final_video_script = gen_new_video_by_script(subtitle_video_path, fused_new_video_script_info, subtitle_box, output_dir)
     logger.info("最终视频生成完成。")
 
-    # 扫描输出目录，列出所有生成的文件，包括子目录的
-    all_generated_files = scan_generated_files(output_dir)
-    # 排除掉all_files中的文件
-    all_files.append(log_file_path)
-    generated_files = [f for f in all_generated_files if f not in all_files and not f.endswith('.log')]
-
-
-    return final_video_path, final_video_script, generated_files
+    return final_video_path, final_video_script
 
 
 
