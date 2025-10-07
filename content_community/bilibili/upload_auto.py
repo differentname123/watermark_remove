@@ -456,7 +456,7 @@ def _preprocess_media_steps(
     value: Dict[str, Any],
     best_scheme: Dict[str, Any],
     userName: str
-) -> Tuple[str, str, Dict[str, float], List[str]]:
+):
     """
     执行视频 / 封面等一系列预处理步骤（复刻原逻辑的顺序与异常处理）。
     返回：
@@ -494,7 +494,7 @@ def _preprocess_media_steps(
         try:
 
             final_video_path, final_video_script = gen_new_video_robus(video_path)
-            if final_video_path and os.path.exists(final_video_path) and os.path.getsize(final_video_path) > 0:
+            if is_valid_target_file_simple(final_video_path) and has_author_voice:
                 print(f"✅ 重制视频成功，保存为 {final_video_path}")
                 video_path = final_video_path
                 title = final_video_script.get('title')
