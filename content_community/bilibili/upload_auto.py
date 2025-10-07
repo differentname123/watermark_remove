@@ -68,7 +68,7 @@ accounts = {
     'xue': 'xue',
     'cai': 'cai',
     'jun': 'jun',
-    # 'xiaosu': 'xiaosu',
+    'xiaosu': 'xiaosu',
     'chabian': 'chabian',
     'lin': 'lin',
     'jj': 'jj',
