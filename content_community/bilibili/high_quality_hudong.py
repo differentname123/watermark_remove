@@ -1617,7 +1617,7 @@ def fun():
         NEED_UPDATE_SIGN = False
         all_found_videos.sort(key=lambda x: x.get('created', 0), reverse=True)
         # 只保留最近1小时的视频
-        one_hour_ago = time.time() - 3600 * 1
+        one_hour_ago = time.time() - 3600 * 3
         all_found_videos = [video for video in all_found_videos if video.get('created', 0) >= one_hour_ago]
 
         all_found_videos = all_found_videos[:100]
