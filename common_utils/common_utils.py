@@ -1701,8 +1701,8 @@ def is_valid_target_file_simple(path, min_size_bytes: int = 1) -> bool:
     极简判断：文件存在且大小 >= min_size_bytes。
     默认 min_size_bytes=1 （即大小必须大于 0 字节）。
     """
-    p = Path(path)
     try:
+        p = Path(path)
         return p.exists() and p.stat().st_size >= int(min_size_bytes)
     except Exception:
         return False

@@ -975,7 +975,7 @@ def block_all_author(mid_list=None, action_type=5):
             if mid and mid not in mid_list:
                 mid_list.append(mid)
     print(f"[提示] 共有 {len(mid_list)} 个不同的 B 站用户需要拉黑  用户数量为{len(config_map)}")
-    user_id_list = init_config().keys()
+    user_id_list = config_map.keys()
 
     for mid in mid_list:
         for uid, value in config_map.items():
@@ -988,8 +988,8 @@ def block_all_author(mid_list=None, action_type=5):
                 print(f"[跳过] 用户 {uid} 不能拉黑自己")
                 continue
 
-            if str(uid) in user_id_list and action_type == 5:
-                print(f"[跳过] 用户 {uid} 在配置文件中，跳过拉黑")
+            if str(mid) in user_id_list and action_type == 5:
+                print(f"[跳过] 用户 {mid} 在配置文件中，跳过拉黑")
                 continue
 
             print(f"[提示] 使用用户 {uid} 的账号尝试拉黑 {mid}")
