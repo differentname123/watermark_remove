@@ -1022,7 +1022,7 @@ def gen_subtitle_box_and_cover_subtitle(video_path, owner_asr_info, output_dir):
     logger.info(f"开始生成遮挡字幕视频: {cover_video_path} final_box: {final_box}")
     cover_subtitle(video_path, cover_video_path, top_left, bottom_right, time_ranges=time_ranges)
     if is_valid_target_file_simple(cover_video_path, video_size * 0.1):
-        raise ValueError(f"生成遮挡字幕视频失败: {cover_video_path}")
+        raise ValueError(f"生成遮挡字幕视频失败: {cover_video_path} 文件大小Mb为 {os.path.getsize(cover_video_path) / (1024 * 1024):.2f}，小于原始文件的10%")
     logger.info(f"完成生成遮挡字幕视频: {cover_video_path} 耗时: {time.time() - start_time:.2f} 秒")
 
     return cover_video_path, [top_left, bottom_right]
