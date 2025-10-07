@@ -43,11 +43,11 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 # mama_total_cookie = get_config("mama_bilibili_total_cookie")
 # config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT, mama_total_cookie)
 group_info = {
-    'fun': ['ruru', 'qiqi', 'jj', 'xiaosu', 'chabian', 'dan', 'yiyi', 'qiqixiao', 'yang',
-            'xiaodan', 'ruruxiao', 'qiqixiao', 'qiqi', 'dahao', 'lin', 'xiaohao', 'xue', 'jj', 'ruru'
+    'fun': ['ruru', 'jj', 'xiaosu', 'chabian', 'dan', 'yiyi', 'qiqixiao', 'yang',
+            'xiaodan', 'ruruxiao', 'qiqixiao', 'dahao', 'lin', 'xiaohao', 'xue', 'jj', 'ruru'
             ],
     'sport': ['nana', 'jun'],
-    'game': ['cai', 'tao', 'taoxiao', 'ning', 'xiaoxue', 'yan', 'hong', 'junxiao', 'mama', 'jie']
+    'game': ['cai', 'tao', 'taoxiao', 'ning', 'xiaoxue', 'yan', 'hong', 'junxiao', 'mama', 'jie', 'qiqi']
 }
 
 
@@ -900,10 +900,11 @@ def auto_upload():
                 if userName in users:
                     user_type = group
                     break
+            start_time = time.time()
             watermark_path = get_watermark_path(user_type, userName)
             add_transparent_watermark(final_output_path, watermark_path, output_watermark_path)
             if os.path.exists(output_watermark_path) and os.path.getsize(output_watermark_path) > 0:
-                print(f"✅ 水印增加成功，保存为 {output_watermark_path}")
+                print(f"✅ 水印增加成功，保存为 {output_watermark_path} 耗时 {time.time() - start_time:.2f} 秒")
                 final_output_path = output_watermark_path
         except Exception as e:
             print(f"⚠️ 水印增加失败，继续使用原视频：{e}")

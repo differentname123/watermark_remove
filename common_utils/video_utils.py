@@ -2957,3 +2957,64 @@ def add_transparent_watermark(
     except subprocess.CalledProcessError as e:
         print("ffmpeg 或 ffprobe 在执行过程中返回了一个错误：")
         print(e.stderr)
+
+
+def check_video_integrity(video_path: str) -> (bool, str):
+    """
+    使用 ffmpeg 检查视频文件的完整性。
+
+    这个函数会尝试解码视频的每一帧，但不生成输出文件。
+    如果 ffmpeg 在处理过程中遇到任何错误，函数会将其捕获并认为视频已损坏。
+
+    Args:
+        video_path (str): 要检查的视频文件的路径。
+
+    Returns:
+        tuple[bool, str]:
+            - 第一个元素 (bool): True 表示视频正常，False 表示视频有问题。
+            - 第二个元素 (str): 描述检查结果或具体的错误信息。
+    """
+    # 1. 检查文件是否存在
+    if not os.path.exists(video_path):
+        return False, f"文件不存在: {video_path}"
+
+    # 2. 构建 ffmpeg 命令
+    # -v error: 只在发生错误时打印日志
+    # -i: 输入文件
+    # -f null -: 不生成输出文件，只进行解码测试
+    command = [
+        'ffmpeg',
+        '-v', 'error',
+        '-i', video_path,
+        '-f', 'null',
+        '-'
+    ]
+
+    try:
+        # 3. 执行命令并捕获输出
+        # 使用 subprocess.run 来执行命令
+        # capture_output=True 捕获 stdout 和 stderr
+        # text=True 将输出解码为文本
+        result = subprocess.run(
+            command,
+            check=False,  # 我们自己检查返回码，所以这里不让它抛出异常
+            capture_output=True,
+            text=True,
+            encoding='utf-8' # 显式指定编码
+        )
+
+        # 4. 分析结果
+        # 如果 returncode 不为 0，或者 stderr 中有内容，说明 ffmpeg 报告了错误
+        if result.returncode != 0 or result.stderr:
+            error_message = result.stderr.strip()
+            if not error_message:
+                 error_message = "FFmpeg 进程以非零状态码退出，但没有提供具体的错误信息。"
+            return False, f"视频文件损坏或存在问题。FFmpeg 错误:\n{error_message}"
+        else:
+            # 成功执行且没有错误输出
+            return True, "视频文件完整，检查通过。"
+
+    except FileNotFoundError:
+        return False, "命令执行失败: 'ffmpeg' 未找到。请确保 ffmpeg 已安装并在系统的 PATH 环境变量中。"
+    except Exception as e:
+        return False, f"执行检查时发生未知错误: {e}"

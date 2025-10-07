@@ -5,6 +5,7 @@ import subprocess
 import shlex
 import tempfile
 import time
+import traceback
 from pathlib import Path
 
 # --- 依赖：librosa, soundfile, numpy, edge_tts ---
@@ -112,7 +113,7 @@ def generate_audio_and_get_duration_sync(
         pitch: str = '+10Hz',
 ) -> float | None:
     """
-    【重构版本】生成、处理并保存高质量音频。
+    【重构版本】生成、处理并保存高质量音频（带重试机制）。
 
     流程:
     0. 如果文本为空，则直接生成1秒静音并返回。
@@ -121,30 +122,22 @@ def generate_audio_and_get_duration_sync(
     3. 将处理后的音频保存为临时的 WAV 文件（无损格式，适合处理）。
     4. 使用 ffmpeg 的 loudnorm 对 WAV 文件进行响度归一化。
     5. 返回最终音频的时长。
+    *  新增: 如果在步骤1-4中发生任何异常，将重试最多3次，每次重试前等待5秒。
     """
     start_time = time.time()
-    # ==================== 新增代码块: 处理空文本 ====================
-    # 如果 text 是 None，或者去除首尾空白后为空字符串
+    # ==================== 处理空文本 (无变化) ====================
     if not text or not text.strip():
         print(f"ⓘ 文本为空，正在为 '{output_filename}' 生成 1 秒静音。")
         try:
             duration_seconds = 1.0
-            sample_rate = 24000  # 为静音选择一个合理的默认采样率, edge-tts 通常使用 24kHz
-
-            # 创建一个持续1秒、全为0的音频数组 (代表静音)
+            sample_rate = 24000
             silent_audio = np.zeros(int(sample_rate * duration_seconds), dtype=np.float32)
-
-            # 确保输出目录存在
             output_path = Path(output_filename)
             output_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # 直接保存为最终的音频文件
             sf.write(str(output_path), silent_audio, sample_rate)
-
             print(f"✓ 成功生成静音文件: {output_filename}")
             return duration_seconds
         except Exception as e:
-            import traceback
             print(f"❌ 在生成静音文件时发生错误: {e}")
             traceback.print_exc()
             return None
@@ -161,49 +154,68 @@ def generate_audio_and_get_duration_sync(
         raw_mp3 = temp_dir / "raw.mp3"
         trimmed_wav = temp_dir / "trimmed.wav"
 
-        # 1. 生成原始音频
-        async def _generate_task():
-            communicate = edge_tts.Communicate(text, voice_name, volume='+100%', rate=rate, pitch=pitch)
-            await communicate.save(str(raw_mp3))
+        # ==================== 新增: 重试逻辑 ====================
+        max_retries = 3
+        retry_delay_seconds = 5
 
-        try:
-            asyncio.run(_generate_task())
+        for attempt in range(max_retries):
+            try:
+                # 1. 生成原始音频
+                async def _generate_task():
+                    communicate = edge_tts.Communicate(text, voice_name, volume='+100%', rate=rate, pitch=pitch)
+                    await communicate.save(str(raw_mp3))
 
-            # 2. 加载音频并进行静音切除
-            y, sr = librosa.load(str(raw_mp3), sr=None)
+                # 在新的尝试中，确保异步事件循环是干净的
+                # asyncio.run() 每次都会创建并关闭一个新的事件循环，所以这里没问题
+                asyncio.run(_generate_task())
 
-            if trim_silence:
-                y_trimmed, index = librosa.effects.trim(y, top_db=25)
-                if len(y) - len(y_trimmed) > sr * 0.1:  # 如果切除超过0.1秒
-                    y = y_trimmed
-                else:
-                    print("ⓘ 未检测到明显静音，跳过切除。")
+                # 2. 加载音频并进行静音切除
+                y, sr = librosa.load(str(raw_mp3), sr=None)
 
-                # 在结尾增加一点静音缓冲，防止声音戛然而止
-                pad_samples = int(sr * 0.2)
-                y = np.concatenate([y, np.zeros(pad_samples)])
+                if trim_silence:
+                    y_trimmed, index = librosa.effects.trim(y, top_db=25)
+                    # 只有在切除的长度有意义时才使用
+                    if len(y) - len(y_trimmed) > sr * 0.1:
+                        y = y_trimmed
+                    else:
+                        print("ⓘ 未检测到明显静音，跳过切除。")
 
-            # 3. 保存为临时的 WAV 文件
-            sf.write(str(trimmed_wav), y, sr)
+                    # 在结尾增加一点静音缓冲，防止声音戛然而止
+                    pad_samples = int(sr * 0.2)
+                    y = np.concatenate([y, np.zeros(pad_samples)])
 
-            # 4. 进行响度归一化
-            # 确保输出目录存在
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            success = process_audio_with_loudnorm(str(trimmed_wav), str(output_path), target_loudness)
-            print(f'音频生成完成：{_get_volume_info(output_path)}  {text} (耗时 {time.time() - start_time:.2f} 秒)')
+                # 3. 保存为临时的 WAV 文件
+                sf.write(str(trimmed_wav), y, sr)
 
-            if success:
-                # 重新加载最终文件以获取准确时长
+                # 4. 进行响度归一化
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                success = process_audio_with_loudnorm(str(trimmed_wav), str(output_path), target_loudness)
+
+                if not success:
+                    # 如果 loudnorm 明确返回失败，我们可以主动引发异常来触发重试
+                    raise RuntimeError("ffmpeg loudnorm 处理失败。")
+
+                print(
+                    f'✓ 音频生成完成：{_get_volume_info(output_path)}  "{text}" (耗时 {time.time() - start_time:.2f} 秒)')
+
+                # 5. 成功，返回最终时长
                 y_final, sr_final = librosa.load(str(output_path), sr=None)
                 return librosa.get_duration(y=y_final, sr=sr_final)
-            else:
-                return None
 
-        except Exception as e:
-            import traceback
-            print(f"❌ 在主流程中发生严重错误: {e}")
-            traceback.print_exc()
-            return None
+            except Exception as e:
+                print(f"❌ 尝试 {attempt + 1}/{max_retries} 失败: {e}")
+                if attempt < max_retries - 1:
+                    print(f"ⓘ 等待 {retry_delay_seconds} 秒后重试...")
+                    time.sleep(retry_delay_seconds)
+                else:
+                    print(f"❌ 所有 {max_retries} 次尝试均失败。")
+                    traceback.print_exc()
+                    return None  # 在所有重试失败后返回 None
+        # ===============================================================
+
+    # 理论上代码不会执行到这里，因为循环要么成功返回，要么在最后一次失败时返回。
+    # 但为了代码健壮性，在函数末尾保留一个返回。
+    return None
 
 
 # ================================================================

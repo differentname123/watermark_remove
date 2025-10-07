@@ -426,7 +426,7 @@ def valid_all_api_keys():
             print(f"[SUCCESS] Key '{key_name}' 有效，模型响应: {response.text[:30]}...")
             success_key_list.append(key_name)
         except Exception as e:
-            results[key_name] = f"无效（{e.__class__.__name__}: {e})"
+            results[key_name] = f"无效 {api_key}（{e.__class__.__name__}: {e})"
             print(f"[FAIL] Key '{key_name}' 无效: {e}")
             failed_key_list.append(key_name)
     print("\n=== API Key 测试结果 ===")
@@ -438,7 +438,7 @@ def valid_all_api_keys():
     print("成功的 Key 列表:", success_key_list)
 
 if __name__ == "__main__":
-    # valid_all_api_keys()
+    valid_all_api_keys()
 
     print("\n" + "=" * 20 + " 开始测试 " + "=" * 20)
 

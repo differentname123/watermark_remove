@@ -1011,14 +1011,17 @@ def gen_subtitle_box_and_cover_subtitle(video_path, owner_asr_info, output_dir):
     top_left, bottom_right, vid_w, vid_h = adjust_subtitle_box(video_path, final_box)
 
     cover_video_path = os.path.join(output_dir, 'subtitle_covered.mp4')
-    if is_valid_target_file_simple(cover_video_path, 10):
+    # 获取原始文件的大小，单位是字节
+    video_size = os.path.getsize(video_path)
+
+    if is_valid_target_file_simple(cover_video_path, video_size * 0.1):
         logger.info(f"已存在遮挡字幕的视频: {cover_video_path}")
         return cover_video_path, [top_left, bottom_right]
 
     start_time = time.time()
     logger.info(f"开始生成遮挡字幕视频: {cover_video_path} final_box: {final_box}")
     cover_subtitle(video_path, cover_video_path, top_left, bottom_right, time_ranges=time_ranges)
-    if not is_valid_target_file_simple(cover_video_path, 100):
+    if is_valid_target_file_simple(cover_video_path, video_size * 0.1):
         raise ValueError(f"生成遮挡字幕视频失败: {cover_video_path}")
     logger.info(f"完成生成遮挡字幕视频: {cover_video_path} 耗时: {time.time() - start_time:.2f} 秒")
 
@@ -1288,6 +1291,7 @@ def gen_new_video(video_path):
     # 扫描输出目录，列出所有生成的文件，包括子目录的
     all_generated_files = scan_generated_files(output_dir)
     # 排除掉all_files中的文件
+    all_files.append(log_file_path)
     generated_files = [f for f in all_generated_files if f not in all_files and not f.endswith('.log')]
 
 
@@ -1296,5 +1300,8 @@ def gen_new_video(video_path):
 
 
 if __name__ == '__main__':
-    gen_new_video_script_robus('7479808197696425256.mp4')
-    gen_new_video_robus('7479808197696425256.mp4')
+    video_path = '7553266464359271730.mp4'
+    # print(check_video_integrity(video_path))
+
+    # gen_new_video_script_robus(video_path)
+    gen_new_video_robus(video_path)
