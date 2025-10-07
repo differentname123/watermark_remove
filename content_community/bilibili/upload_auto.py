@@ -494,13 +494,14 @@ def _preprocess_media_steps(
         try:
 
             final_video_path, final_video_script = gen_new_video_robus(video_path)
-            if is_valid_target_file_simple(final_video_path) and has_author_voice:
+            if is_valid_target_file_simple(final_video_path):
                 print(f"✅ 重制视频成功，保存为 {final_video_path}")
                 video_path = final_video_path
-                title = final_video_script.get('title')
-                best_scheme['标题'] = title if title else best_scheme.get('标题', '欢迎来看我的视频！')
-                cover_text = final_video_script.get('cover_text')
-                best_scheme['封面']['配文'] = cover_text if cover_text else best_scheme.get('封面', {}).get('配文', '欢迎来看我的视频！')
+                if has_author_voice:
+                    title = final_video_script.get('title')
+                    best_scheme['标题'] = title if title else best_scheme.get('标题', '欢迎来看我的视频！')
+                    cover_text = final_video_script.get('cover_text')
+                    best_scheme['封面']['配文'] = cover_text if cover_text else best_scheme.get('封面', {}).get('配文', '欢迎来看我的视频！')
             else:
                 upload_log_global[key] = upload_log_global.get(key, {})
                 upload_log_global[key]['status'] = 'error'
