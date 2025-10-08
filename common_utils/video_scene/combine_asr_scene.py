@@ -1059,6 +1059,16 @@ def gen_new_video_script_robus(video_path, params={}):
                 print("正在重试...")
                 time.sleep(2)  # 等待一段时间后再重试
 
+def is_contain_owner_speaker(owner_asr_info):
+    """
+    检查是否包含owner的文本
+    """
+    for asr_info in owner_asr_info:
+        speaker = asr_info.get('speaker', 'unknown')
+        final_text = asr_info.get('final_text', '').strip()
+        if speaker == 'owner' and final_text:
+            return True
+    return False
 
 def gen_new_video_script(video_path, params={}):
     """
@@ -1110,6 +1120,8 @@ def gen_new_video_script(video_path, params={}):
 
     # 进行新文案的生成
     logger.info("开始生成新视频脚本...")
+    # 检查has_author_voice是否包含owner的文本
+    has_author_voice = is_contain_owner_speaker(owner_asr_info)
     start_time = time.time()
     new_video_script = gen_video_script(logical_scene_info, owner_asr_info, output_dir, has_author_voice=has_author_voice)
     logger.info(f"新视频脚本生成完成。耗时: {time.time() - start_time:.2f} 秒")
@@ -1276,7 +1288,7 @@ def gen_new_video(video_path):
 
 
 if __name__ == '__main__':
-    video_path = '7553266464359271730.mp4'
+    video_path = '7558521660698119481.mp4'
     # print(check_video_integrity(video_path))
 
     # gen_new_video_script_robus(video_path)

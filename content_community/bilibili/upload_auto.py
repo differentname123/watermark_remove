@@ -45,10 +45,10 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 # config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT, mama_total_cookie)
 group_info = {
     'fun': ['ruru', 'jj', 'xiaosu', 'chabian', 'dan', 'yiyi', 'qiqixiao', 'yang',
-            'xiaodan', 'ruruxiao', 'qiqixiao', 'dahao', 'lin', 'xiaohao', 'xue', 'jj', 'ruru'
+            'xiaodan', 'qiqixiao', 'dahao', 'lin', 'xiaohao', 'xue', 'jj', 'ruru'
             ],
     'sport': ['nana', 'jun'],
-    'game': ['cai', 'tao', 'taoxiao', 'ning', 'xiaoxue', 'yan', 'hong', 'junxiao', 'mama', 'jie', 'qiqi']
+    'game': ['cai', 'tao', 'taoxiao', 'ning', 'xiaoxue', 'yan', 'hong', 'junxiao', 'mama', 'jie', 'qiqi', 'junda', 'ruruxiao']
 }
 
 
@@ -58,6 +58,7 @@ accounts = {
     'tao': 'tao',
     'taoxiao': 'taoxiao',
     'junxiao': 'junxiao',
+    'junda': 'junda',
     'ruru': 'ruru',
     'nana': 'nana',
     'jie': 'jie',
@@ -728,7 +729,7 @@ def gen_clean_files(video_path_list):
     """
     # 遍历视频
     cleaner_file_list = []
-    file_names = ['hudong.json', 'title_schemes.json', 'new_video_script.json', 'final_scene_info.json', 'speech_asr_with_owner.json']
+    file_names = ['hudong.json', 'title_schemes.json', 'new_video_script.json', 'final_scene_info.json', 'speech_asr_with_owner.json', 'log.txt']
 
     all_files = []
     for video_path in video_path_list:
