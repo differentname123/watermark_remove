@@ -729,7 +729,7 @@ def gen_clean_files(video_path_list):
     """
     # 遍历视频
     cleaner_file_list = []
-    file_names = ['hudong.json', 'title_schemes.json', 'new_video_script.json', 'final_scene_info.json', 'speech_asr_with_owner.json', 'log.txt', 'logical_scene_info.json']
+    file_names = ['hudong.json', 'title_schemes.json', 'new_video_script.json', 'final_scene_info.json', 'speech_asr_with_owner.json', 'log.txt', 'logical_scene_info.json', 'final_subtitle_box.json']
 
     all_files = []
     for video_path in video_path_list:
