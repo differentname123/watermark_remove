@@ -381,7 +381,7 @@ def auto_replay_refactored(user_name: str):
         all_records_file = f"{BASE_DIR}/{user_name}_replay_video_info.json"
         all_records = read_json(all_records_file)
         # 只保留send_time在7天内的数据
-        seven_days_ago = time.time() - 7 * 24 * 60 * 60
+        seven_days_ago = time.time() - 2 * 24 * 60 * 60
         all_records = {k: v for k, v in all_records.items() if v.get('send_time', 0) >= seven_days_ago}
 
         config_map = init_config()
