@@ -278,27 +278,6 @@ def extract_audio_from_video(video_path: str, audio_output_path: str):
     ]
     subprocess.run(cmd, check=True)
 
-
-def probe_video(path):
-    """用 ffprobe 返回字典：{width, height, fps}"""
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,r_frame_rate",
-        "-of", "json",
-        path
-    ]
-    # 注意：ffprobe 已经使用了 -v error，所以它本身就很安静，无需修改。
-    out = subprocess.check_output(cmd)
-    info = json.loads(out)["streams"][0]
-    num, den = map(int, info["r_frame_rate"].split("/"))
-    return {
-        "width": info["width"],
-        "height": info["height"],
-        "fps": num / den
-    }
-
-
 def probe_duration(path):
     """返回视频时长（秒）"""
     out = subprocess.check_output([
@@ -310,72 +289,37 @@ def probe_duration(path):
     return float(out)
 
 
-def add_image_to_video_end(
-        video_path: str,
-        image_path: str,
-        output_path: str,
-        image_duration: float = 1.0,
-        max_retries: int = 3
-) -> None:
+def probe_video(path: str) -> dict:
     """
-    将任意图片拼接到视频末尾，自动适配尺寸和比例，避免 concat 失败。
-
-    :param video_path: 输入视频路径
-    :param image_path: 输入图片路径
-    :param output_path: 输出视频路径
-    :param image_duration: 图片显示时长
-    :param max_retries: 失败时的最大重试次数
-    :raises RuntimeError: 所有尝试失败后抛出异常
+    使用 ffprobe 获取视频的详细信息（宽、高、帧率、SAR、时长）。
     """
-    # 获取视频元信息
-    meta = probe_video(video_path)
-    video_dur = probe_duration(video_path)
-    total_dur = video_dur + image_duration
-    width, height, fps = meta["width"], meta["height"], meta["fps"]
+    if not shutil.which("ffprobe"):
+        raise FileNotFoundError("ffprobe command not found. Please install FFmpeg.")
 
-    # 为图片设置通用滤镜：缩放 + 设置像素宽高比（SAR）+ 补黑边
-    # 这样可以兼容任何图片尺寸，且统一 SAR
-    filter_complex = (
-        f"[1:v]scale=w={width}:h={height}:force_original_aspect_ratio=decrease,"
-        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,"
-        f"setsar=1,fps={fps:.2f},format=yuv420p[img];"
-        "[0:v][img]concat=n=2:v=1:a=0[v]"
-    )
-
-    base_cmd = [
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-i", video_path,
-        "-loop", "1", "-t", str(image_duration), "-i", image_path,
-        "-filter_complex", filter_complex,
-        "-map", "[v]",
-        "-map", "0:a?",
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
-        "-af", "apad",
-        "-t", str(total_dur)
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,r_frame_rate,sample_aspect_ratio,duration",
+        "-of", "json",
+        path
     ]
+    try:
+        proc = subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8')
+        info = json.loads(proc.stdout)["streams"][0]
 
-    input_size = os.path.getsize(video_path)
+        # 解析帧率 "30000/1001" -> float
+        num, den = map(int, info["r_frame_rate"].split("/"))
+        fps = num / den if den != 0 else 0
 
-    for attempt in range(1, max_retries + 1):
-        try:
-            cmd = base_cmd + [output_path]
-            subprocess.run(cmd, check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"[警告] 第 {attempt} 次合成失败：{e}")
-        else:
-            if os.path.exists(output_path):
-                output_size = os.path.getsize(output_path)
-                if output_size >= input_size * 0.8:
-                    return
-                else:
-                    print(f"[警告] 第 {attempt} 次输出文件过小：{output_size}，重试中...")
-            else:
-                print(f"[警告] 第 {attempt} 次没有生成输出文件，重试中...")
-
-    raise RuntimeError(f"多次尝试后仍未生成有效视频（共 {max_retries} 次）")
-
+        return {
+            "width": int(info["width"]),
+            "height": int(info["height"]),
+            "fps": fps,
+            "sar": info.get("sample_aspect_ratio", "1:1"),
+            "duration": float(info.get("duration", "0"))
+        }
+    except (subprocess.CalledProcessError, json.JSONDecodeError, IndexError, KeyError) as e:
+        raise RuntimeError(f"Failed to probe video file: {path}. Error: {e}")
 
 def cover_video_area(
         video_path: str,
@@ -707,7 +651,7 @@ def cover_subtitle(
     """
     start_time = time.time()
     try:
-        cover_video_area_blur_optimized(
+        cover_video_area_blur_super_robust(
             video_path=video_path,
             output_path=output_path,
             top_left=top_left,
@@ -811,6 +755,112 @@ def cover_video_area_blur_optimized(
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         raise RuntimeError(f"FFmpeg failed:\n{proc.stderr}")
+    print(f"[SUCCESS] Output saved to {output_path}")
+
+
+def cover_video_area_blur_super_robust(
+        video_path: str,
+        output_path: str,
+        top_left,
+        bottom_right,
+        time_ranges=None,
+        blur_strength: int = 15,
+        crf: int = 28,
+        preset: str = "veryfast"
+):
+    """
+    为一个视频的指定区域应用模糊，并进行大量的预检查和参数修正以确保成功。
+    """
+    # --- 步骤 1: 检查环境依赖 ---
+    if not shutil.which("ffmpeg"):
+        raise FileNotFoundError("ffmpeg command not found. Please install FFmpeg.")
+
+    # --- 步骤 2: 获取视频元数据 ---
+    try:
+        video_info = probe_video(video_path)
+        video_w, video_h = video_info["width"], video_info["height"]
+        print(f"Probed video: {video_w}x{video_h}, duration: {video_info['duration']:.2f}s")
+    except RuntimeError as e:
+        # 如果探测失败，直接中止
+        raise RuntimeError(f"Could not process video, probing failed. Reason: {e}")
+
+    # --- 步骤 3: 验证和修正坐标 ---
+    x1_orig, y1_orig = top_left
+    x2_orig, y2_orig = bottom_right
+
+    # 将坐标钳位在 [0, video_dimension] 范围内
+    x1 = max(0, x1_orig)
+    y1 = max(0, y1_orig)
+    x2 = min(video_w, x2_orig)
+    y2 = min(video_h, y2_orig)
+
+    if (x1, y1, x2, y2) != (x1_orig, y1_orig, x2_orig, y2_orig):
+        print(f"[INFO] Original coordinates ({x1_orig},{y1_orig})-({x2_orig},{y2_orig}) were out of bounds.")
+        print(f"[INFO] Clamped to valid area: ({x1},{y1})-({x2},{y2})")
+
+    # --- 步骤 4: 计算和修正裁剪尺寸 ---
+    w, h = x2 - x1, y2 - y1
+
+    # 确保宽高为偶数，这是很多编码器（特别是yuv420p）的要求
+    if w % 2 != 0:
+        w -= 1
+        print(f"[INFO] Adjusted width to be even: {w + 1} -> {w}")
+    if h % 2 != 0:
+        h -= 1
+        print(f"[INFO] Adjusted height to be even: {h + 1} -> {h}")
+
+    # --- 步骤 5: 最终有效性检查 ---
+    if w <= 0 or h <= 0:
+        raise ValueError(
+            f"The specified or corrected area has non-positive dimensions (w={w}, h={h}). "
+            "This can happen if the requested area is completely outside the video frame. Aborting."
+        )
+
+    # --- 步骤 6: 构建滤镜图，并安全地处理 boxblur 参数 ---
+    enable_expr = _build_enable_expr(time_ranges)
+
+    # **核心修复：解决 boxblur 的参数问题**
+    # luma_radius (亮度模糊) 可以是 blur_strength
+    # chroma_radius (色度模糊) 必须被限制在一个较小的范围内
+    luma_radius = blur_strength
+    chroma_radius = min(blur_strength, 9)  # 9 是一个非常安全的值
+    power = 2  # 模糊迭代次数，2通常效果不错
+    boxblur_params = f"{luma_radius}:{power}:{chroma_radius}:{power}"
+
+    # 也可以考虑直接换成 gblur，它没有这个问题，参数更简单
+    # gblur_params = f"gblur=sigma={blur_strength}"
+
+    vf = (
+        f"[0:v]split=2[orig][crop];"
+        f"[crop]crop={w}:{h}:{x1}:{y1},boxblur={boxblur_params}[blurred];"
+        f"[orig][blurred]overlay={x1}:{y1}{enable_expr}"
+    )
+
+    print(f"Final crop area: x={x1}, y={y1}, w={w}, h={h}")
+    print(f"Using boxblur with params: {boxblur_params}")
+
+    # --- 步骤 7: 执行 FFmpeg 命令 ---
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-i", video_path,
+        "-filter_complex", vf,
+        "-c:a", "copy",
+        "-c:v", "libx264",
+        "-preset", preset,
+        "-crf", str(crf),
+        "-pix_fmt", "yuv420p",
+        output_path
+    ]
+
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+    if proc.returncode != 0:
+        error_message = (
+            f"FFmpeg failed with return code {proc.returncode}\n"
+            f"Command: {' '.join(cmd)}\n"
+            f"Stderr:\n{proc.stderr}\n"
+        )
+        raise RuntimeError(error_message)
+
     print(f"[SUCCESS] Output saved to {output_path}")
 
 
@@ -3018,3 +3068,176 @@ def check_video_integrity(video_path: str) -> (bool, str):
         return False, "命令执行失败: 'ffmpeg' 未找到。请确保 ffmpeg 已安装并在系统的 PATH 环境变量中。"
     except Exception as e:
         return False, f"执行检查时发生未知错误: {e}"
+
+
+def reduce_video_size_robust(
+        input_path: str,
+        output_path: str,
+        target_width: int = 1024,
+        crf: int = 28,
+        target_fps: int = 30,
+        force_fps: bool = False,
+        faststart: bool = True
+) -> bool:
+    """
+    使用 FFmpeg 稳健地降低视频分辨率、质量（并在需要时降帧）。
+
+    - 只有在探测到输入帧率 > target_fps 时才降帧（除非 force_fps=True 强制降帧）。
+    - 保持“尝试复制音频 -> 失败则移除音频”的策略。
+    - 返回 True 表示成功，False 表示失败。
+    """
+    # 检查 ffmpeg/ffprobe
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        print("错误: FFmpeg/ffprobe 未找到。请确保已安装并加入 PATH。")
+        return False
+
+    if not os.path.exists(input_path):
+        print(f"错误: 输入文件未找到: {input_path}")
+        return False
+
+    print(f"开始处理: {input_path}")
+
+    # 探测视频信息
+    w, h, fps, sar = probe_video_new(input_path)
+    if w is None or h is None:
+        print("[warn] 无法探测视频宽高，继续但请注意可能出现问题。")
+    else:
+        print(f"[probe] 宽x高: {w}x{h}, SAR: {sar}, fps: {fps}")
+
+    reduce_fps = False
+    if force_fps:
+        # 强制降帧到 target_fps（如果 fps 为 None 仍会强制）
+        reduce_fps = True
+        print(f"[fps] force_fps=True，输出将使用 {target_fps} fps（即使输入未知或更低）。")
+    else:
+        if fps is None:
+            print("[fps] 无法探测输入帧率，默认不修改帧率（若希望强制降帧，请设置 force_fps=True）。")
+            reduce_fps = False
+        else:
+            reduce_fps = fps > float(target_fps)
+            if reduce_fps:
+                print(f"[fps] 检测到输入帧率 {fps:.6g} > {target_fps}，将降帧到 {target_fps} fps。")
+            else:
+                print(f"[fps] 输入帧率 {fps:.6g} <= {target_fps}，保持原帧率。")
+
+    # 构建 vf 过滤器（把 scale 和 fps 合并到同一个 -vf）
+    vf_parts = []
+    if target_width != -1:
+        vf_parts.append(f"scale={target_width}:-1")
+    if reduce_fps:
+        vf_parts.append(f"fps={target_fps}")
+    vf_arg = []
+    if vf_parts:
+        vf_arg = ["-vf", ",".join(vf_parts)]
+
+    # 基础命令
+    base_command = [
+        "ffmpeg", "-i", input_path,
+        *vf_arg,
+        "-c:v", "libx264",
+        "-crf", str(crf),
+        "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",  # 提高兼容性（可选）
+    ]
+    if faststart:
+        base_command += ["-movflags", "+faststart"]
+
+    # 1) 尝试复制音频
+    print("\n[尝试 1/2] 复制音频流...")
+    command_with_audio = base_command + ["-c:a", "copy", "-y", output_path]
+    try:
+        print(f"[cmd] {' '.join(command_with_audio)}")
+        p = subprocess.Popen(command_with_audio, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
+        out, err = p.communicate()
+        if p.returncode == 0:
+            print(f"成功：输出文件已保存为 {output_path}")
+            return True
+        else:
+            print("[尝试1] 失败，FFmpeg stderr:\n", err)
+    except Exception as e:
+        print(f"[尝试1] 执行命令出错: {e}")
+
+    # 2) 失败则去除音频再试
+    print("\n[尝试 2/2] 移除音频后重试...")
+    command_no_audio = base_command + ["-an", "-y", output_path]
+    try:
+        print(f"[cmd] {' '.join(command_no_audio)}")
+        p = subprocess.Popen(command_no_audio, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
+        out, err = p.communicate()
+        if p.returncode == 0:
+            print(f"成功（无音频）：输出文件已保存为 {output_path}")
+            return True
+        else:
+            print("[尝试2] 也失败了，FFmpeg stderr:\n", err)
+            return False
+    except Exception as e:
+        print(f"[尝试2] 执行命令出错: {e}")
+        return False
+
+
+def reduce_and_replace_video(video_path: str, **kwargs) -> bool:
+    """
+    就地减小视频文件的大小。
+
+    此函数会尝试压缩指定的视频文件。只有在压缩成功 **并且**
+    生成的新文件严格小于原始文件时，才会用新文件替换原始文件。
+    如果压缩失败或文件没有变小，原始文件将保持不变。
+
+    Args:
+        video_path (str): 要处理的视频文件的路径。
+        **kwargs: 传递给 `reduce_video_size_robust` 的其他参数,
+                  例如 target_width, crf, target_fps 等。
+
+    Returns:
+        bool: 如果成功减小并替换了文件，则返回 True，否则返回 False。
+    """
+    if not os.path.exists(video_path):
+        print(f"错误: 文件不存在: {video_path}")
+        return False
+
+    # 1. 创建一个唯一的临时文件名
+    path_obj = Path(video_path)
+    temp_path = str(path_obj.with_suffix(f".temp_compression{path_obj.suffix}"))
+
+    print("-" * 50)
+    print(f"开始为 '{path_obj.name}' 尝试就地压缩...")
+
+    try:
+        # 2. 调用核心压缩函数，输出到临时文件
+        success = reduce_video_size_robust(
+            input_path=video_path,
+            output_path=temp_path,
+            **kwargs
+        )
+
+        # 3. 如果 FFmpeg 处理失败，直接返回 False
+        if not success:
+            print(f"压缩过程失败，原始文件 '{video_path}' 保持不变。")
+            return False
+
+        # 4. FFmpeg 成功，现在比较文件大小
+        original_size = os.path.getsize(video_path)
+        new_size = os.path.getsize(temp_path)
+
+        # 转换为 MB 以便阅读
+        original_size_mb = original_size / (1024 * 1024)
+        new_size_mb = new_size / (1024 * 1024)
+
+        # 5. 只有新文件更小时才替换
+        if new_size < original_size:
+            print(f"压缩有效！大小从 {original_size_mb:.2f} MB 减小到 {new_size_mb:.2f} MB。")
+            shutil.move(temp_path, video_path)
+            print(f"成功：原始文件 '{video_path}' 已被替换。")
+            # shutil.move 已经重命名，temp_path 不再存在，finally 块不会出错
+            return True
+        else:
+            print(f"压缩后文件未变小（或变大）。原始大小: {original_size_mb:.2f} MB, 新大小: {new_size_mb:.2f} MB。")
+            print(f"保留原始文件 '{video_path}'。")
+            return False
+
+    finally:
+        # 6. 清理：无论发生什么，都尝试删除临时文件
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+            print(f"临时文件已清理: {temp_path}")
+        print("-" * 50)

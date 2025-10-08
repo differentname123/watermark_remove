@@ -25,7 +25,7 @@ from common_utils.common_utils import get_config, format_seconds_to_mmss, read_j
     scan_generated_files
 from common_utils.video_scene.combine_asr_scene import gen_new_video_robus
 from common_utils.video_scene.combine_asr_scene_online import video_remake
-from common_utils.video_utils import add_image_to_video_end, get_video_duration_seconds, create_enhanced_cover, \
+from common_utils.video_utils import get_video_duration_seconds, create_enhanced_cover, \
     merge_videos_ffmpeg, apply_all_subtle_tweaks, _get_video_resolution, process_video_with_template, probe_duration, \
     add_transparent_watermark
 from common_utils.video_utils_cut import text_image_to_video_with_subtitles, gen_ending_video
