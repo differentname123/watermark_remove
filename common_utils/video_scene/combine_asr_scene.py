@@ -546,7 +546,7 @@ def process_scenes_improved(logical_scene_info, owner_asr_info):
         asr_end = asr_item.get("end")
 
         best_scene_number = None
-        max_overlap = -1
+        max_overlap = 0
 
         # 3. 为当前ASR记录计算与所有场景的重叠时间，找到重叠最长的场景
         for scene in processed_scene_list:
@@ -1022,7 +1022,7 @@ def gen_subtitle_box_and_cover_subtitle(video_path, owner_asr_info, output_dir):
     logger.info(f"开始生成遮挡字幕视频: {cover_video_path} final_box: {final_box}")
     cover_subtitle(video_path, cover_video_path, top_left, bottom_right, time_ranges=time_ranges)
     if is_valid_target_file_simple(cover_video_path, video_size * 0.1):
-        raise ValueError(f"生成遮挡字幕视频失败: {cover_video_path} 文件大小Mb为 {os.path.getsize(cover_video_path) / (1024 * 1024):.2f}，小于原始文件的10%")
+        raise ValueError(f"生成遮挡字幕视频失败: {cover_video_path} 文件大小Mb为 {os.path.getsize(cover_video_path) / (1024 * 1024):.2f}，小于原始文件的10% 原始文件大小Mb为 {video_size / (1024 * 1024):.2f}")
     logger.info(f"完成生成遮挡字幕视频: {cover_video_path} 耗时: {time.time() - start_time:.2f} 秒")
 
     return cover_video_path, [top_left, bottom_right]
@@ -1288,8 +1288,8 @@ def gen_new_video(video_path):
 
 
 if __name__ == '__main__':
-    video_path = '7558521660698119481.mp4'
+    video_path = '7554671279631011111.mp4'
     # print(check_video_integrity(video_path))
 
-    # gen_new_video_script_robus(video_path)
-    gen_new_video_robus(video_path)
+    gen_new_video_script_robus(video_path)
+    # gen_new_video_robus(video_path)
