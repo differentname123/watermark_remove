@@ -412,8 +412,7 @@ def redub_video_with_ffmpeg(video_path: str,
 
             encoding_cmd = [
                 "-c:v", "libx264", "-preset", "veryfast",
-                "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
-                "-shortest", temp_output_path
+                "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", temp_output_path
             ]
 
             cmd = base_cmd + map_args + encoding_cmd

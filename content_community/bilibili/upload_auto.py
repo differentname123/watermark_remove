@@ -944,6 +944,9 @@ def auto_upload():
         # 尝试移除all_files_to_cleanup中的video_path
 
         all_files_to_cleanup = gen_clean_files(origin_video_path_list)
+        # 排除final_output_path
+        all_files_to_cleanup = [f for f in all_files_to_cleanup if f != final_output_path]
+
 
         future = account_executor.submit(upload_worker, upload_params, video_id_key, updated_entry, all_files_to_cleanup, task_stage_times, userName)
         futures.append(future)
