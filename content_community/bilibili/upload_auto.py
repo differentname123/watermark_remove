@@ -944,8 +944,9 @@ def auto_upload():
         # 尝试移除all_files_to_cleanup中的video_path
 
         all_files_to_cleanup = gen_clean_files(origin_video_path_list)
-        # 排除final_output_path
-        all_files_to_cleanup = [f for f in all_files_to_cleanup if f != final_output_path]
+        # 排除final_output_path，需要按照filename进行排除不能够直接使用路径
+        all_files_to_cleanup = [f for f in all_files_to_cleanup if os.path.basename(f) != os.path.basename(final_output_path)]
+        print(f"🧹 预处理完成，准备清理 {len(all_files_to_cleanup)} 个临时文件。排除{final_output_path}")
 
 
         future = account_executor.submit(upload_worker, upload_params, video_id_key, updated_entry, all_files_to_cleanup, task_stage_times, userName)

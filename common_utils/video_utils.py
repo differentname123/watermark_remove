@@ -3073,17 +3073,17 @@ def check_video_integrity(video_path: str) -> (bool, str):
 def reduce_video_size_robust(
         input_path: str,
         output_path: str,
-        target_width: int = 1024,
+        target_width: int = 1280,
         crf: int = 28,
         target_fps: int = 30,
         force_fps: bool = False,
         faststart: bool = True
 ) -> bool:
     """
-    使用 FFmpeg 稳健地降低视频分辨率、质量（并在需要时降帧）。
-
-    - 只有在探测到输入帧率 > target_fps 时才降帧（除非 force_fps=True 强制降帧）。
-    - 保持“尝试复制音频 -> 失败则移除音频”的策略。
+    使用 FFmpeg 优化地处理视频。
+    - 只有当输入文件 > 20MB 时才进行处理，否则直接复制。
+    - 只有当目标宽度 < 原始宽度时，才进行等比缩放（避免放大）。
+    - 如果无法复制音频，操作将直接失败，不会产生静音视频。
     - 返回 True 表示成功，False 表示失败。
     """
     # 检查 ffmpeg/ffprobe
@@ -3095,83 +3095,92 @@ def reduce_video_size_robust(
         print(f"错误: 输入文件未找到: {input_path}")
         return False
 
+    # 检查文件大小，小于等于20MB则直接复制
+    size_threshold_mb = 10
+    threshold_bytes = size_threshold_mb * 1024 * 1024
+    file_size_bytes = os.path.getsize(input_path)
+
+    if file_size_bytes <= threshold_bytes:
+        print(
+            f"文件大小 {(file_size_bytes / (1024 * 1024)):.2f} MB <= 阈值 {size_threshold_mb} MB，不进行压缩，直接复制。")
+        try:
+            shutil.copy2(input_path, output_path)
+            print(f"成功：文件已复制到 {output_path}")
+            return True
+        except Exception as e:
+            print(f"错误：复制文件时失败: {e}")
+            return False
+
+    print(f"文件大小 {(file_size_bytes / (1024 * 1024)):.2f} MB > 阈值 {size_threshold_mb} MB，开始压缩...")
     print(f"开始处理: {input_path}")
 
     # 探测视频信息
     w, h, fps, sar = probe_video_new(input_path)
     if w is None or h is None:
-        print("[warn] 无法探测视频宽高，继续但请注意可能出现问题。")
+        print("[warn] 无法探测视频宽高，将按设定缩放，但请注意可能发生放大。")
     else:
         print(f"[probe] 宽x高: {w}x{h}, SAR: {sar}, fps: {fps}")
 
+    # 帧率处理逻辑 (保持不变)
     reduce_fps = False
-    if force_fps:
-        # 强制降帧到 target_fps（如果 fps 为 None 仍会强制）
+    if force_fps or (fps is not None and fps > float(target_fps)):
         reduce_fps = True
-        print(f"[fps] force_fps=True，输出将使用 {target_fps} fps（即使输入未知或更低）。")
-    else:
-        if fps is None:
-            print("[fps] 无法探测输入帧率，默认不修改帧率（若希望强制降帧，请设置 force_fps=True）。")
-            reduce_fps = False
-        else:
-            reduce_fps = fps > float(target_fps)
-            if reduce_fps:
-                print(f"[fps] 检测到输入帧率 {fps:.6g} > {target_fps}，将降帧到 {target_fps} fps。")
-            else:
-                print(f"[fps] 输入帧率 {fps:.6g} <= {target_fps}，保持原帧率。")
 
-    # 构建 vf 过滤器（把 scale 和 fps 合并到同一个 -vf）
+    # --- 修改 ---: 构建 vf 过滤器，集成智能缩放逻辑
     vf_parts = []
-    if target_width != -1:
-        vf_parts.append(f"scale={target_width}:-1")
+    # 只有当 target_width 有效，且我们知道原始宽度，并且目标宽度小于原始宽度时，才缩放。
+    if target_width != -1 and w is not None and target_width < w:
+        print(f"[scale] 目标宽度 {target_width} < 原始宽度 {w}，将进行等比缩放。")
+        # 使用 -2 确保输出高度为偶数，提高兼容性
+        vf_parts.append(f"scale={target_width}:-2")
+    else:
+        print("[scale] 目标宽度不小于原始宽度或无法探测，将保持原分辨率。")
+
     if reduce_fps:
         vf_parts.append(f"fps={target_fps}")
+        print(f"[fps] 检测到输入帧率 {fps:.6g} > {target_fps}，将降帧到 {target_fps} fps。")
+    else:
+        print(f"[fps] 输入帧率 {fps:.6g} <= {target_fps}，保持原帧率。")
+
     vf_arg = []
     if vf_parts:
         vf_arg = ["-vf", ",".join(vf_parts)]
 
-    # 基础命令
+    # 基础命令构建 (保持不变)
     base_command = [
         "ffmpeg", "-i", input_path,
         *vf_arg,
         "-c:v", "libx264",
         "-crf", str(crf),
         "-preset", "veryfast",
-        "-pix_fmt", "yuv420p",  # 提高兼容性（可选）
+        "-pix_fmt", "yuv420p",
     ]
     if faststart:
         base_command += ["-movflags", "+faststart"]
 
-    # 1) 尝试复制音频
-    print("\n[尝试 1/2] 复制音频流...")
+    # 严格的音频处理：只尝试一次，失败则直接返回 False
+    print("\n[处理中] 尝试转换视频并复制音频流...")
     command_with_audio = base_command + ["-c:a", "copy", "-y", output_path]
     try:
         print(f"[cmd] {' '.join(command_with_audio)}")
-        p = subprocess.Popen(command_with_audio, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
-        out, err = p.communicate()
+        p = subprocess.Popen(command_with_audio, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                             encoding='utf-8')
+        _, err = p.communicate()
         if p.returncode == 0:
             print(f"成功：输出文件已保存为 {output_path}")
             return True
         else:
-            print("[尝试1] 失败，FFmpeg stderr:\n", err)
-    except Exception as e:
-        print(f"[尝试1] 执行命令出错: {e}")
-
-    # 2) 失败则去除音频再试
-    print("\n[尝试 2/2] 移除音频后重试...")
-    command_no_audio = base_command + ["-an", "-y", output_path]
-    try:
-        print(f"[cmd] {' '.join(command_no_audio)}")
-        p = subprocess.Popen(command_no_audio, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
-        out, err = p.communicate()
-        if p.returncode == 0:
-            print(f"成功（无音频）：输出文件已保存为 {output_path}")
-            return True
-        else:
-            print("[尝试2] 也失败了，FFmpeg stderr:\n", err)
+            print("[失败] FFmpeg处理失败（可能是音频流不兼容无法复制）。操作已中止。")
+            print("FFmpeg stderr:\n", err)
+            if os.path.exists(output_path):
+                try:
+                    os.remove(output_path)
+                    print(f"[清理] 已删除失败的输出文件: {output_path}")
+                except OSError as e:
+                    print(f"[警告] 无法删除失败的输出文件: {e}")
             return False
     except Exception as e:
-        print(f"[尝试2] 执行命令出错: {e}")
+        print(f"[错误] 执行 FFmpeg 命令时出错: {e}")
         return False
 
 
