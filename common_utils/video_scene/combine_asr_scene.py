@@ -318,6 +318,7 @@ def gen_new_video_script_llm(scene_info, output_dir, has_author_voice=True):
     """
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
+    model_name = "gemini-2.5-pro"
 
     for temp in scene_info:
         # 去掉scene_start和scene_end字段
@@ -329,6 +330,7 @@ def gen_new_video_script_llm(scene_info, output_dir, has_author_voice=True):
     prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本.txt'
 
     if not has_author_voice:
+        model_name = "gemini-flash-latest"
         logger.info("使用无主人说话人版本的提示词")
         prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本纯重排场景.txt'
 
@@ -338,7 +340,6 @@ def gen_new_video_script_llm(scene_info, output_dir, has_author_voice=True):
     for attempt in range(1, max_retries + 1):
         try:
             logger.info(f"正在生成新的视频脚本 (尝试 {attempt}/{max_retries})")
-            model_name = "gemini-2.5-pro"
             # raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             raw = get_llm_content(prompt=full_prompt, model_name=model_name)
 
@@ -1291,9 +1292,9 @@ def gen_new_video(video_path):
 
 
 if __name__ == '__main__':
-    video_path = '7356103013104143643.mp4'
-    reduce_and_replace_video(video_path)
+    video_path = '7535307446349270315.mp4'
+    # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
 
-    # gen_new_video_script_robus(video_path)
-    # gen_new_video_robus(video_path)
+    gen_new_video_script_robus(video_path)
+    gen_new_video_robus(video_path)

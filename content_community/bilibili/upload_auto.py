@@ -757,9 +757,9 @@ def gen_clean_files(video_path_list):
 
 def check_type(updated_entry):
     user_name = updated_entry.get('userName', 'other')
-    danmu_info = updated_entry.get('danmu_info', {})
+    danmu_info = updated_entry.get('hudong', {}).get('danmu_info', {})
     video_topic = danmu_info.get('视频分析', {}).get('题材', '')
-
+    video_id_list = updated_entry.get('video_id_list')
     video_type = 'fun'
     if video_topic:
         if '游戏' in video_topic:
@@ -775,7 +775,7 @@ def check_type(updated_entry):
             user_type = group
             break
     if user_type != video_type:
-        print(f"⚠️ 用户 {user_name} 的类型 {user_type} 与视频题材 {video_topic} 的类型 {video_type} 不匹配，跳过上传。")
+        print(f"⚠️ 用户 {user_name} 的类型 {user_type} 与视频题材 {video_topic} 的类型 {video_type} 不匹配，跳过上传。{video_id_list}")
         return False
     return True
 

@@ -277,7 +277,7 @@ def gen_final_property_replay(video_info, all_replay_info):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            raw = get_llm_content(prompt=prompt, model_name="gemini-2.5-flash")
+            raw = get_llm_content(prompt=prompt, model_name="gemini-flash-latest")
             video_info = string_to_object(raw)
             return video_info
         except Exception as e:
