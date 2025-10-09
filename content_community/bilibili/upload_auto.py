@@ -437,6 +437,10 @@ def _basic_task_checks(key: str, value: Dict[str, Any], video_id_key) -> Tuple[b
     best_scheme = value.get('best_scheme') or get_best_plan_by_potential(value.get('title_schemes', {}))
     if not best_scheme:
         return True, f"⏭️ 跳过 {key}：无法选取投稿方案。"
+
+    if not check_type(value):
+        return True, f"⏭️ 跳过 {key}：userName 题材不匹配 {value.get('userName')}"
+
     return False, ""
 
 def _select_config_for_user(userName: str) -> Tuple[str, Any]:
@@ -751,7 +755,29 @@ def gen_clean_files(video_path_list):
 
 
 
+def check_type(updated_entry):
+    user_name = updated_entry.get('userName', 'other')
+    danmu_info = updated_entry.get('danmu_info', {})
+    video_topic = danmu_info.get('视频分析', {}).get('题材', '')
 
+    video_type = 'fun'
+    if video_topic:
+        if '游戏' in video_topic:
+            video_type = 'game'
+        elif '运动' in video_topic or '体育' in video_topic:
+            video_type = 'sport'
+        elif '搞笑' in video_topic or '趣味' in video_topic or '娱乐' in video_topic:
+            video_type = 'fun'
+
+    user_type = 'fun'
+    for group, users in group_info.items():
+        if user_name in users:
+            user_type = group
+            break
+    if user_type != video_type:
+        print(f"⚠️ 用户 {user_name} 的类型 {user_type} 与视频题材 {video_topic} 的类型 {video_type} 不匹配，跳过上传。")
+        return False
+    return True
 
 def auto_upload():
     """

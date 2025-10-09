@@ -1291,9 +1291,9 @@ def gen_new_video(video_path):
 
 
 if __name__ == '__main__':
-    video_path = '7558707437039111458.mp4'
-    # reduce_and_replace_video(video_path)
+    video_path = '7356103013104143643.mp4'
+    reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
 
     # gen_new_video_script_robus(video_path)
-    gen_new_video_robus(video_path)
+    # gen_new_video_robus(video_path)
