@@ -891,11 +891,14 @@ def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_bo
     final_with_bgm_path = final_output_path.replace('.mp4', '_with_bgm.mp4')
     final_video_script = choose_script(fused_new_video_script_info, need_different=True)
     need_merge_video_file_list = []
+    video_duration = probe_duration(video_path)
 
     new_scene_list = final_video_script['场景顺序与新文案']
     for fused_new_scene in new_scene_list:
         scene_start = fused_new_scene.get('scene_start')
+        scene_start = max(0, scene_start)
         scene_end = fused_new_scene.get('scene_end')
+        scene_end = min(scene_end, int(video_duration * 1000))
         name_key = f"new_scene_{fused_new_scene.get('new_scene_number')}_original_scene_{fused_new_scene.get('original_scene_number')}"
 
         new_narration_script_list = fused_new_scene.get('new_narration_script_list', [])
@@ -1288,9 +1291,9 @@ def gen_new_video(video_path):
 
 
 if __name__ == '__main__':
-    video_path = '7356103013104143643.mp4'
-    reduce_and_replace_video(video_path)
+    video_path = '7558707437039111458.mp4'
+    # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
 
-    gen_new_video_script_robus(video_path)
+    # gen_new_video_script_robus(video_path)
     gen_new_video_robus(video_path)
