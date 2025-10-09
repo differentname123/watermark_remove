@@ -507,14 +507,14 @@ def _preprocess_media_steps(
                 upload_log_global[key] = upload_log_global.get(key, {})
                 upload_log_global[key]['status'] = 'error'
                 save_json(UPLOAD_LOG_FILE, upload_log_global)
-                print(f"❌ 重制视频失败")
+                print(f"❌ 重制失败")
             stage_times['重制视频'] = time.time() - t0
         except Exception as e:
             stage_times['重制视频'] = time.time() - t0
             upload_log_global[key] = upload_log_global.get(key, {})
             upload_log_global[key]['status'] = 'error'
             save_json(UPLOAD_LOG_FILE, upload_log_global)
-            print(f"❌ 重制视频失败：{e}")
+            print(f"❌ 重制失败：{e}")
 
     # # ---------- 预处理：在尾部插入引导图片 ----------
     # new_video_path = current_video_path.replace('.mp4', '_new.mp4')

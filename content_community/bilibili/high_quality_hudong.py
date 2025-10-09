@@ -1473,6 +1473,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
 
 
     comment_list = hudong_info.get('comment_list', [])
+    comment_list = comment_list[:10]
     comment_used_list = hudong_info.get('comment_used', [])
     comment_used_list.extend(exist_comment_text)
     commenter_list = list(commenter_map.values())
