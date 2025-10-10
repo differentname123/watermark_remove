@@ -1472,22 +1472,22 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
 
 
 
-    comment_list = hudong_info.get('comment_list', [])
-    comment_list = comment_list[:10]
-    comment_used_list = hudong_info.get('comment_used', [])
-    comment_used_list.extend(exist_comment_text)
-    commenter_list = list(commenter_map.values())
-    post_comments_once(
-        commenter_list=commenter_list,
-        comment_list=comment_list,
-        bvid=bvid,
-        max_success_comment_count=max_success_comment_count,
-        comment_used_list=comment_used_list,
-        path_exists=path_exists,
-        max_workers=5,
-        jitter=(0.4, 1.0)
-    )
-    hudong_info['comment_used'] = comment_used_list
+    # comment_list = hudong_info.get('comment_list', [])
+    # comment_list = comment_list[:10]
+    # comment_used_list = hudong_info.get('comment_used', [])
+    # comment_used_list.extend(exist_comment_text)
+    # commenter_list = list(commenter_map.values())
+    # post_comments_once(
+    #     commenter_list=commenter_list,
+    #     comment_list=comment_list,
+    #     bvid=bvid,
+    #     max_success_comment_count=max_success_comment_count,
+    #     comment_used_list=comment_used_list,
+    #     path_exists=path_exists,
+    #     max_workers=5,
+    #     jitter=(0.4, 1.0)
+    # )
+    # hudong_info['comment_used'] = comment_used_list
     if hudong_info.get('last_processed_date') == today:
         last_count = int(hudong_info.get('last_processed_date_count', 0) or 0)
         hudong_info['last_processed_date_count'] = last_count + 1

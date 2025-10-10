@@ -41,7 +41,7 @@ def build_api_key_map():
 class ApiKeyManager:
     """
     一个线程安全和进程安全的API密钥管理器。
-    - 每次请求时动态排序密钥。
+    - 每次请求时根据特定模型的使用次数动态排序密钥。
     - 使用文件锁来处理并发读写。
     """
 
@@ -65,34 +65,41 @@ class ApiKeyManager:
         """初始化统计文件，如果不存在或为空。"""
         with self.lock:
             if not os.path.exists(self.stats_file) or os.path.getsize(self.stats_file) == 0:
-                initial_stats = {key: 0 for key in self.api_key_map.keys()}
+                # 新结构：每个key对应一个空字典，用于存放模型使用次数
+                initial_stats = {key: {} for key in self.api_key_map.keys()}
                 with open(self.stats_file, 'w') as f:
                     json.dump(initial_stats, f, indent=4)
 
-    def get_ordered_keys(self):
+    def get_ordered_keys(self, model_name: str):
         """
-        【核心】获取根据使用次数动态排序的密钥名称列表。
+        【核心】获取根据【特定模型】使用次数动态排序的密钥名称列表。
         此操作是线程和进程安全的。
         """
         with self.lock:
             try:
                 with open(self.stats_file, 'r') as f:
                     stats = json.load(f)
-                # 确保所有当前的 key 都在统计数据中
-                for key in self.api_key_map.keys():
-                    if key not in stats:
-                        stats[key] = 0
-            except (FileNotFoundError, json.JSONDecodeError):
-                stats = {key: 0 for key in self.api_key_map.keys()}
+                # 检查是否是旧格式（值为整数），如果是，则重置
+                if stats and isinstance(next(iter(stats.values()), None), int):
+                   raise TypeError("Old stats format detected. Resetting.")
+            except (FileNotFoundError, json.JSONDecodeError, TypeError) as e:
+                print(f"[WARN] Failed to read or parse stats file ({e}), re-initializing.")
+                stats = {key: {} for key in self.api_key_map.keys()}
 
-        # 根据使用次数（值）对密钥（键）进行排序
-        sorted_keys = sorted(stats.keys(), key=lambda k: stats.get(k, 0))
-        print(f"[INFO] API 密钥将按以下动态顺序尝试: {sorted_keys}")
+            # 确保所有当前的 key 都在统计数据中
+            for key in self.api_key_map.keys():
+                if key not in stats or not isinstance(stats[key], dict):
+                    stats[key] = {}
+
+        # 根据特定模型的使用次数（值）对密钥（键）进行排序
+        # stats.get(k, {}) 确保键存在，.get(model_name, 0) 获取模型次数，默认为0
+        sorted_keys = sorted(stats.keys(), key=lambda k: stats.get(k, {}).get(model_name, 0))
+        print(f"[INFO] 针对模型 '{model_name}'，API 密钥将按以下动态顺序尝试: {sorted_keys}")
         return sorted_keys
 
-    def record_success(self, key_name):
+    def record_success(self, key_name: str, model_name: str):
         """
-        【核心】为一个成功的API调用记录次数。
+        【核心】为一个成功的API调用记录指定模型的次数。
         此操作是线程和进程安全的“读取-修改-写入”原子操作。
         """
         with self.lock:
@@ -100,16 +107,25 @@ class ApiKeyManager:
             try:
                 with open(self.stats_file, 'r') as f:
                     stats = json.load(f)
-            except (FileNotFoundError, json.JSONDecodeError):
-                stats = {key: 0 for key in self.api_key_map.keys()}
+                # 同样，检查并处理旧格式
+                if stats and isinstance(next(iter(stats.values()), None), int):
+                    raise TypeError("Old stats format detected. Resetting.")
+            except (FileNotFoundError, json.JSONDecodeError, TypeError) as e:
+                print(f"[WARN] Failed to read or parse stats file ({e}), re-initializing.")
+                stats = {key: {} for key in self.api_key_map.keys()}
 
             # 2. 修改数据
-            stats[key_name] = stats.get(key_name, 0) + 1
+            # 确保 key 存在且其值为字典
+            if key_name not in stats or not isinstance(stats.get(key_name), dict):
+                stats[key_name] = {}
+
+            # 增加特定模型的计数
+            stats[key_name][model_name] = stats[key_name].get(model_name, 0) + 1
 
             # 3. 写回文件
             with open(self.stats_file, 'w') as f:
                 json.dump(stats, f, indent=4)
-            print(f"[INFO] 密钥 '{key_name}' 使用次数已更新为: {stats[key_name]} 当前时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
+            print(f"[INFO] 密钥 '{key_name}' 模型 '{model_name}' 使用次数已更新为: {stats[key_name][model_name]} 当前时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
 
 
 
@@ -157,7 +173,9 @@ def analyze_videos_gemini(
         video_paths = []
 
     last_error = None
-    ordered_keys = api_key_manager.get_ordered_keys()
+    # 指定要使用的模型
+    model_name = "gemini-2.5-pro"
+    ordered_keys = api_key_manager.get_ordered_keys(model_name=model_name)
 
     for key_name in ordered_keys:
         api_key = API_KEY_MAP.get(key_name)
@@ -194,15 +212,15 @@ def analyze_videos_gemini(
                 prompt_parts.append(vf)             # 插入视频对象
 
             # 3. 调用 Gemini-2.5-Pro 生成内容
-            print(f"[INFO] 使用 API Key “{key_name}” 调用 Gemini 模型生成内容…")
-            model = genai_flash.GenerativeModel(model_name="gemini-2.5-pro")
+            print(f"[INFO] 使用 API Key “{key_name}” 调用 Gemini 模型 {model_name} 生成内容…")
+            model = genai_flash.GenerativeModel(model_name=model_name)
             response = model.generate_content(
                 prompt_parts,
                 request_options={"timeout": timeout}
             )
 
             # 4. 记录成功并清理上传文件
-            api_key_manager.record_success(key_name)
+            api_key_manager.record_success(key_name, model_name=model_name)
             for _, vf in uploaded:
                 try:
                     print(f"[INFO] 删除临时文件 {vf.name} …")
@@ -240,7 +258,7 @@ def get_llm_content_gemini_flash_video(
     model_name: str = "gemini-2.5-flash"
 ) -> str:
     last_error = None
-    ordered_keys = api_key_manager.get_ordered_keys()
+    ordered_keys = api_key_manager.get_ordered_keys(model_name=model_name)
 
     for key_name in ordered_keys:
         api_key = API_KEY_MAP.get(key_name)
@@ -254,7 +272,8 @@ def get_llm_content_gemini_flash_video(
         video_file = None
         try:
             print(f"[INFO] 使用 API Key “{key_name}” prompt length: {len(prompt)} 上传视频… {model_name}， {video_path}")
-            api_key_manager.record_success(key_name)
+            # 传入模型名称以记录
+            api_key_manager.record_success(key_name, model_name=model_name)
             video_file = genai_flash.upload_file(path=video_path)
 
             # 等待处理
@@ -304,7 +323,8 @@ def get_llm_content_gemini_flash_video(
 
 def get_llm_content_gemini2flash(prompt: str = '你好，Gemini！请介绍一下你自己。') -> str:
     last_error = None
-    ordered_keys = api_key_manager.get_ordered_keys()
+    model_name = "gemini-2.5-flash"
+    ordered_keys = api_key_manager.get_ordered_keys(model_name=model_name)
     for key_name in ordered_keys:
         api_key = API_KEY_MAP.get(key_name)
         if not api_key: continue
@@ -313,9 +333,9 @@ def get_llm_content_gemini2flash(prompt: str = '你好，Gemini！请介绍一�
             client = genai.Client(api_key=api_key)
             contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
             config = types.GenerateContentConfig(response_mime_type="text/plain")
-            response = client.models.generate_content(model="gemini-2.5-flash", contents=contents, config=config)
+            response = client.models.generate_content(model=model_name, contents=contents, config=config)
 
-            api_key_manager.record_success(key_name)  # 成功，记录
+            api_key_manager.record_success(key_name, model_name=model_name)  # 成功，记录
             return response.text
         except (ga_exceptions.PermissionDenied, ga_exceptions.ResourceExhausted, ga_exceptions.GoogleAPICallError) as e:
             last_error = e
@@ -328,12 +348,13 @@ def get_llm_content_sub(prompt: str = '你好，Gemini！请介绍一下你自�
                         model_name: str = "gemini-2.5-flash") -> str:
     print(f"[INFO] 使用模型: {model_name}")
     last_error = None
-    ordered_keys = api_key_manager.get_ordered_keys()
+    ordered_keys = api_key_manager.get_ordered_keys(model_name=model_name)
     for key_name in ordered_keys:
         api_key = API_KEY_MAP.get(key_name)
         if not api_key: continue
         try:
-            api_key_manager.record_success(key_name)  # 成功，记录
+            # 传入模型名称以记录
+            api_key_manager.record_success(key_name, model_name=model_name)
 
             print(f"[INFO] 正在使用名为 '{key_name}' 的 API Key... prompt length: {len(prompt)}")
             client = genai.Client(api_key=api_key)
@@ -374,12 +395,14 @@ def get_llm_content(prompt: str = '你好，Gemini！请介绍一下你自己。
 @with_proxy
 def analyze_images_gemini(prompt='每张图片的内容是什么', image_paths=['a.jpg']) -> str:
     last_error = None
-    ordered_keys = api_key_manager.get_ordered_keys()
+    model_name = "gemini-2.5-pro"
+    ordered_keys = api_key_manager.get_ordered_keys(model_name=model_name)
     for key_name in ordered_keys:
         api_key = API_KEY_MAP.get(key_name)
         if not api_key: continue
         try:
-            api_key_manager.record_success(key_name)  # 成功，记录
+            # 传入模型名称以记录
+            api_key_manager.record_success(key_name, model_name=model_name)
 
             print(f"[INFO] 正在使用名为 '{key_name}' 的 API Key 尝试分析图片... prompt length: {len(prompt)}, 图片数量: {len(image_paths)}")
             genai_flash.configure(api_key=api_key)
@@ -389,7 +412,7 @@ def analyze_images_gemini(prompt='每张图片的内容是什么', image_paths=[
                 prompt_parts.append(f"{os.path.basename(path)}:")
                 prompt_parts.append(Image.open(path))
 
-            model = genai_flash.GenerativeModel(model_name="gemini-2.5-pro")
+            model = genai_flash.GenerativeModel(model_name=model_name)
             response = model.generate_content(prompt_parts, request_options={"timeout": 600})
 
             return response.text
@@ -409,7 +432,9 @@ def valid_all_api_keys():
     """
     failed_key_list = []
     success_key_list = []
-    ordered_keys = api_key_manager.get_ordered_keys()
+    # 测试时，我们基于最常用或基础的模型（如flash）来排序
+    test_model = "gemini-2.5-flash"
+    ordered_keys = api_key_manager.get_ordered_keys(model_name=test_model)
     results = {}
     for key_name in ordered_keys:
         api_key = API_KEY_MAP.get(key_name)
@@ -421,7 +446,7 @@ def valid_all_api_keys():
             client = genai.Client(api_key=api_key)
             contents = [types.Content(role="user", parts=[types.Part.from_text(text="你好")])]
             config = types.GenerateContentConfig(response_mime_type="text/plain")
-            response = client.models.generate_content(model="gemini-2.5-flash", contents=contents, config=config)
+            response = client.models.generate_content(model=test_model, contents=contents, config=config)
             results[key_name] = "有效"
             print(f"[SUCCESS] Key '{key_name}' 有效，模型响应: {response.text[:30]}...")
             success_key_list.append(key_name)
@@ -438,27 +463,17 @@ def valid_all_api_keys():
     print("成功的 Key 列表:", success_key_list)
 
 if __name__ == "__main__":
+
     valid_all_api_keys()
 
-    print("\n" + "=" * 20 + " 开始测试 " + "=" * 20)
 
+    print("\n" + "=" * 20 + " 开始测试 " + "=" * 20)
     print("[TEST] 正在测试 get_llm_content (这将触发第一次动态排序)")
     start_time = time.time()
+    # model_name 参数现在会影响密钥的选择顺序
     result = get_llm_content(prompt="再给我讲个笑话吧", model_name="gemini-2.5-flash")
     if result:
         print("\n[RESULT] 模型输出：\n", result)
     else:
         print(f"\n[FAIL] 内容生成失败{result}")
     print(f"[INFO] 执行时间: {time.time() - start_time:.2f} 秒")
-    #
-    # # 再次调用，观察排序是否根据上次成功结果发生变化
-    # print("\n[TEST] 再次测试 get_llm_content (观察密钥顺序是否变化)")
-    # start_time = time.time()
-    # result = get_llm_content(prompt="再给我讲个笑话吧", model_name="gemini-2.5-flash")
-    # if result:
-    #     print("\n[RESULT] 模型输出：\n", result)
-    # else:
-    #     print(f"\n[FAIL] 内容生成失败{result}")
-    # print(f"[INFO] 执行时间: {time.time() - start_time:.2f} 秒")
-    #
-    # print("\n" + "=" * 20 + " 测试结束 " + "=" * 20)
