@@ -1093,7 +1093,7 @@ def gen_new_video_script(video_path, params={}):
 
     # 获取场景分割信息
     logical_scene_info = gen_logical_scene(video_path, output_dir)
-    logger.info(f"场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info'))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene'))}")
+    logger.info(f"{basename} 场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info'))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene'))}")
 
 
     # 生成asr信息
