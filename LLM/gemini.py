@@ -159,7 +159,7 @@ def with_proxy(func):
 def analyze_videos_gemini(
     prompt: str = '视频中的内容是什么',
     video_paths: list[str] = [],
-    timeout: int = 600
+    timeout: int = 1200
 ) -> str:
     """
     针对一组视频文件，调用 Gemini-2.5-Pro 分析其内容并返回合并后的文本回复。
@@ -288,7 +288,7 @@ def get_llm_content_gemini_flash_video(
             model = genai_flash.GenerativeModel(model_name=model_name)
             response = model.generate_content(
                 [video_file, prompt],
-                request_options={"timeout": 600}
+                request_options={"timeout": 1200}
             )
 
             return response.text
@@ -413,7 +413,7 @@ def analyze_images_gemini(prompt='每张图片的内容是什么', image_paths=[
                 prompt_parts.append(Image.open(path))
 
             model = genai_flash.GenerativeModel(model_name=model_name)
-            response = model.generate_content(prompt_parts, request_options={"timeout": 600})
+            response = model.generate_content(prompt_parts, request_options={"timeout": 1200})
 
             return response.text
         except (ga_exceptions.PermissionDenied, ga_exceptions.ResourceExhausted, ga_exceptions.GoogleAPICallError) as e:

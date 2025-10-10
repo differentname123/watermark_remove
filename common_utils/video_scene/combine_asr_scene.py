@@ -881,7 +881,7 @@ def choose_script(new_video_script, need_different=False):
 
 
 @timeit_print
-def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_box, output_dir):
+def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_box, output_dir, has_author_voice):
     """
     生成新视频的文本脚本
     """
@@ -917,9 +917,13 @@ def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_bo
     merge_videos_ffmpeg(need_merge_video_file_list, output_path=final_output_path)
     tags = final_video_script.get('tags', [])
     bgm_path = get_bgm_path(tags, logger)
+    rate = 1
+    if not has_author_voice:
+        rate = 0.5
+        print("没有作者声音，降低BGM音量")
     if bgm_path and os.path.exists(bgm_path):
         # logger.info(f"正在为视频添加背景音乐: {bgm_path}")
-        add_bgm_to_video(final_output_path, bgm_path, str(final_with_bgm_path), auto_compute=True)
+        add_bgm_to_video(final_output_path, bgm_path, str(final_with_bgm_path), auto_compute=True, rate=rate)
         return final_with_bgm_path, final_video_script
     return final_output_path, final_video_script
 
@@ -1274,6 +1278,8 @@ def gen_new_video(video_path):
     owner_asr_info = read_json(owner_asr_path)
     fixed_owner_asr_info = correct_owner_timestamps(owner_asr_info)
     save_json(fixed_owner_asr_path, fixed_owner_asr_info)
+    has_author_voice = is_contain_owner_speaker(owner_asr_info)
+
 
 
     logger.info("开始处理字幕区域并生成遮罩...")
@@ -1284,7 +1290,7 @@ def gen_new_video(video_path):
     # 综合三个信息
     fused_new_video_script_info = fuse_all_info(fixed_owner_asr_info, final_scene_info, new_video_script)
     save_json(fuse_all_info_path, fused_new_video_script_info)
-    final_video_path, final_video_script = gen_new_video_by_script(subtitle_video_path, fused_new_video_script_info, subtitle_box, output_dir)
+    final_video_path, final_video_script = gen_new_video_by_script(subtitle_video_path, fused_new_video_script_info, subtitle_box, output_dir, has_author_voice)
     logger.info("最终视频生成完成。")
 
     return final_video_path, final_video_script

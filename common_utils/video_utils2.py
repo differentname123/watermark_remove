@@ -69,7 +69,7 @@ def _probe_has_audio(path):
     return "audio" in result.stdout
 
 
-def add_bgm_to_video(video_path: str, bgm_path: str, output_path: str, volume_percentage: int = 20, auto_compute=False):
+def add_bgm_to_video(video_path: str, bgm_path: str, output_path: str, volume_percentage: int = 20, auto_compute=False, rate=1):
     """
     为视频添加背景音乐(BGM)。
 
@@ -112,6 +112,7 @@ def add_bgm_to_video(video_path: str, bgm_path: str, output_path: str, volume_pe
         video_volume = get_average_volume(video_path)
         volume_percentage = bgm_volume / video_volume * 100
         volume_percentage *= 0.6
+        volume_percentage *= rate
         if volume_percentage > 100:
             volume_percentage = 100
 

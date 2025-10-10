@@ -78,7 +78,7 @@ accounts = {
     # 'xiaohao': 'xiaohao',
     'dan': 'dan',
     'ning': 'ning',
-    'dahao': 'dahao',
+    # 'dahao': 'dahao',
     'yang': 'yang',
     'ruruxiao': 'ruruxiao',
     'qiqixiao': 'qiqixiao',
