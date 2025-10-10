@@ -840,6 +840,7 @@ def filter_danmu(danmu_list, duration):
         new_item = item.copy()
         ts = new_item.get('建议时间戳')
         seconds = time_to_ms(ts) / 1000
+        seconds = int(seconds) if seconds is not None else None
 
         # 如果时间戳无法解析或超出范围，则随机分配
         if seconds is None or seconds < 0 or seconds > total_seconds:
@@ -1013,6 +1014,8 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads, all_emo
         danmu_list = [{'建议时间戳': '00:01', '推荐弹幕内容': danmu_praises_general_quality}]
     danmu_list = filter_danmu(danmu_list, duration)
     total_seconds = time_to_ms(duration) / 1000
+    total_seconds = int(total_seconds)
+
     title_schemes = target_value.get('title_schemes', {})
     interaction_prompts, supplementary_notes = extract_guides(title_schemes)  # 提取互动引导和补充信息（如果有）
     if len(interaction_prompts) == 0:
@@ -1213,7 +1216,7 @@ def send_danmaku_thread_function(owner_commenter, owner_danmu_list, max_success_
                     time.sleep(random.uniform(5, 10))
                 else:
                     print(
-                        f"{success_owner_danmu_count} 主人弹幕发送流程失败！{danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']}")
+                        f"{success_owner_danmu_count} 主人弹幕发送流程失败！{danmu_text} BVID: {bvid} name {owner_commenter.all_params['name']} danmaku_time_ms: {danmaku_time_ms}")
                     time.sleep(random.uniform(10, 15))
 
             # 在处理完一个弹幕包后稍作等待
