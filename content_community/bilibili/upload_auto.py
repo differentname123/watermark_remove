@@ -22,14 +22,12 @@ import traceback
 import datetime as dt
 
 from common_utils.common_utils import get_config, format_seconds_to_mmss, read_json, is_valid_target_file_simple, \
-    scan_generated_files
+    scan_generated_files, ms_to_time
 from common_utils.video_scene.combine_asr_scene import gen_new_video_robus
-from common_utils.video_scene.combine_asr_scene_online import video_remake
 from common_utils.video_utils import get_video_duration_seconds, create_enhanced_cover, \
     merge_videos_ffmpeg, apply_all_subtle_tweaks, _get_video_resolution, process_video_with_template, probe_duration, \
     add_transparent_watermark
 from common_utils.video_utils_cut import text_image_to_video_with_subtitles, gen_ending_video
-from content_community.app.remake_video import remake_video_robust
 
 config_map = {}
 
@@ -115,6 +113,81 @@ def load_json(path: str, default):
         print(f"⚠️  警告：文件 {path} JSON 解析失败，原因：{e}。将使用默认值。")
         return default
 
+
+def analyze_user_uploads_by_day(metadata_cache_with_uploads):
+    """
+    根据上传元数据，统计每个用户在当天、一小时内的投稿数量以及最近的投稿时间。
+
+    "当天" 指从今天凌晨0点到当前时间。
+
+    Args:
+        metadata_cache_with_uploads (dict):
+            一个字典，结构类似于从您的JSON文件加载的数据。
+            键是唯一的视频ID，值是包含 "userName" 和 "upload_info" 的对象。
+
+    Returns:
+        dict:
+            一个包含统计结果的字典。
+            键是用户名 (userName)，
+            值是另一个字典，包含以下信息：
+            - 'uploads_today' (int): 用户在当天的投稿总数（从0点开始）。
+            - 'uploads_last_hour' (int): 用户在过去一小时内的投稿总数。
+            - 'latest_upload_time' (str): 用户最近一次投稿的时间，格式为 "YYYY-MM-DD HH:MM:SS"。
+    """
+    user_timestamps = {}
+
+    # 步骤 1: 遍历所有记录，按用户名收集所有投稿时间戳
+    if isinstance(metadata_cache_with_uploads, list) and len(metadata_cache_with_uploads) > 0:
+        # 兼容示例中可能出现的 [ { "id": {...} } ] 格式
+        metadata_cache_with_uploads = metadata_cache_with_uploads[0]
+
+    for video_id, data in metadata_cache_with_uploads.items():
+        user_name = data.get("userName")
+        if not user_name:
+            continue
+
+        try:
+            timestamp = data["upload_info"]["timestamp"]
+        except (KeyError, TypeError):
+            continue
+
+        if user_name not in user_timestamps:
+            user_timestamps[user_name] = []
+        user_timestamps[user_name].append(timestamp)
+
+    # 步骤 2: 计算每个用户的统计数据
+    stats_result = {}
+
+    # 获取当前时间和今天凌晨0点的时间戳
+    now = datetime.datetime.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    today_start_timestamp = today_start.timestamp()
+    one_hour_ago_timestamp = now.timestamp() - 3600  # 3600 秒 = 1 小时
+
+    for user_name, timestamps in user_timestamps.items():
+        if not timestamps:
+            continue
+
+        # 计算当天和过去一小时内的投稿数量
+        # 当天：时间戳 >= 今天凌晨0点的时间戳
+        uploads_today = sum(1 for ts in timestamps if ts >= today_start_timestamp)
+        # 一小时内：时间戳 > 一小时前的时间戳
+        uploads_in_last_hour = sum(1 for ts in timestamps if ts > one_hour_ago_timestamp)
+
+        # 找到最近的投稿时间戳并格式化
+        latest_timestamp = max(timestamps)
+        latest_time_str = datetime.datetime.fromtimestamp(latest_timestamp).strftime('%Y-%m-%d %H:%M:%S')
+
+        # 保存结果
+        stats_result[user_name] = {
+            "uploads_today": uploads_today,
+            "uploads_last_hour": uploads_in_last_hour,
+            "latest_upload_time": latest_time_str,
+            "latest_timestamp": latest_timestamp,
+        }
+
+    return stats_result
 
 def get_watermark_path(user_type, user_name):
     """
@@ -287,7 +360,7 @@ upload_lock = threading.Lock()
 upload_log_global = {}
 
 # ---------- upload_worker：在 per-account executor 中执行的完整上传与后处理逻辑 ----------
-def upload_worker(upload_params, key, updated_entry, files_to_cleanup, stage_times, userName):
+def upload_worker(upload_params, key, updated_entry, files_to_cleanup, stage_times, userName, video_duration_str):
     """
     后台上传任务（在各自账号的单线程 executor 中运行，保证同账号串行）；
     完整地执行上传重试、结果处理、metadata 更新、临时文件清理与日志持久化。
@@ -351,7 +424,12 @@ def upload_worker(upload_params, key, updated_entry, files_to_cleanup, stage_tim
         updated_entry["upload_info"] = {
             "upload_params": upload_params,
             "upload_result": result,
+            "timestamp": time.time(),
         }
+
+        # 更新duration
+        if 'metadata' in updated_entry and isinstance(updated_entry['metadata'], list) and updated_entry['metadata']:
+            updated_entry['metadata'][0]['duration'] = video_duration_str
 
         # 安全地写入全局 upload_log 并持久化（加锁）
         with upload_lock:
@@ -361,7 +439,7 @@ def upload_worker(upload_params, key, updated_entry, files_to_cleanup, stage_tim
                 # 打印阶段耗时汇总
                 if stage_times:
                     stage_lines = [f"{k}: {v:.2f} 秒" for k, v in stage_times.items()]
-                    print(f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE}。阶段耗时：{' | '.join(stage_lines)} {userName} {datetime.datetime.now().isoformat()}")
+                    print(f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE}。阶段耗时：{' | '.join(stage_lines)} {userName} {key} {datetime.datetime.now().isoformat()}")
                 else:
                     print(f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE} {userName}.")
             except Exception as e:
@@ -806,6 +884,7 @@ def auto_upload():
     new_uploads_made = False
     error_count = 0
     processed_video_id = []
+    latest_user = ''
     # 遍历所有权威元数据任务
     for key, value in metadata_cache.items():
         if key in processed_video_id:
@@ -813,7 +892,8 @@ def auto_upload():
         userName = value.get('userName', 'other')
         today_start = dt.datetime.combine(dt.date.today(), dt.time.min).timestamp()
 
-
+        user_uploads_info = analyze_user_uploads_by_day(upload_log_global)
+        # print(f"\n用户投稿信息汇总：{user_uploads_info}\n")
 
         start_time = time.time()
         best_score_max = float('-inf')
@@ -858,11 +938,13 @@ def auto_upload():
 
         # 选择 config（保留原逻辑）
         if userName not in config_map.keys():
-            print(f"⚠️ 跳过 {userName} 用户上传 请检查配置数据。")
+            print(f"⚠️ 跳过 {userName} 用户上传 请检查配置数据。{video_id}")
             userName = 'base'
             continue
         config = config_map.get(userName, config_map['base'])
 
+
+        # 检查用户今日上传数量
         try:
             bvid_file_data = read_json(bvid_file_path)
         except Exception as e:
@@ -870,10 +952,34 @@ def auto_upload():
             bvid_file_data = {}
         user_videos = bvid_file_data.get(userName, [])
         recent_videos = [v for v in user_videos if v.get('created') and v['created'] >= today_start]
-        print(f"🔍 处理 {key} (用户: {userName}) 今日已上传 {len(recent_videos)} 个视频，时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
-        if len(recent_videos) >= 20:
-            print(f"⚠️ 跳过 {userName} 用户上传：今日已上传 {len(recent_videos)} 个视频，达到上限。")
+        remote_upload_count = len(recent_videos)
+
+
+        user_info = user_uploads_info.setdefault(userName, {
+            'uploads_today': 0,
+            'uploads_last_hour': 0,
+            'latest_upload_time': "无记录",
+            'latest_timestamp': None
+        })
+
+        # 现在你可以安全地直接访问了，因为user_info保证有这些键
+        uploads_today = user_info.get('uploads_today', 0)
+        uploads_last_hour = user_info['uploads_last_hour']
+        latest_upload_time = user_info['latest_upload_time']
+        latest_timestamp = user_info['latest_timestamp']
+
+        print(f"🔍 处理 {key} (用户: {userName}) 今日已本地上传 {(uploads_today)} 个视频， 实际平台数据：{remote_upload_count}  最近一小时上传个数为: {uploads_last_hour}，最近上传时间为：{latest_upload_time}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+        if (uploads_today) >= 25 or remote_upload_count >= 20:
+            print(f"⚠️ 跳过 {userName} 用户上传：今日已本地上传 {(uploads_today)} 个视频， 实际平台数据：{remote_upload_count} ，达到上限。")
             continue
+        if latest_timestamp and (time.time() - latest_timestamp) < 1200 and uploads_last_hour >= 1:
+            print(f"⚠️ 跳过 {userName} 用户上传：距离上次上传少于 20 分钟。 上次上传时间：{latest_upload_time}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+            continue
+        if userName == latest_user:
+            print(f"⚠️ 跳过 {userName} 用户上传：与上一个上传用户相同，避免连续上传。")
+            continue
+        latest_user = userName
+
         video_path_list = []
         origin_video_path_list = []
         best_scheme_final = None
@@ -959,7 +1065,9 @@ def auto_upload():
 
         # 构建上传参数（title/description/tags/topic 等）
         upload_params = _build_upload_params(value, best_scheme_final, best_cover_path, final_output_path, config, userName)
+        video_duration = probe_duration(final_output_path)
 
+        video_duration_str = ms_to_time(video_duration * 1000)
         # ---------- 非阻塞提交上传（按账号串行） ----------
         print(f"🚀 准备为用户 {userName} 后台投稿 {key} (ID: {video_id_key}) - 《{upload_params.get('title')}》（按账号串行）")
 
@@ -975,7 +1083,7 @@ def auto_upload():
         print(f"🧹 预处理完成，准备清理 {len(all_files_to_cleanup)} 个临时文件。排除{final_output_path}")
 
 
-        future = account_executor.submit(upload_worker, upload_params, video_id_key, updated_entry, all_files_to_cleanup, task_stage_times, userName)
+        future = account_executor.submit(upload_worker, upload_params, video_id_key, updated_entry, all_files_to_cleanup, task_stage_times, userName, video_duration_str)
         futures.append(future)
         new_uploads_made = True
 

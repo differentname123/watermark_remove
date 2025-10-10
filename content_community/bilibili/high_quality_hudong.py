@@ -20,7 +20,7 @@ from queue import Queue, Empty
 
 from content_community.bilibili.bili_utils import update_bili_user_sign
 from content_community.bilibili.get_comment import get_bilibili_comments
-from common_utils.common_utils import get_config, init_config, merge_json_files
+from common_utils.common_utils import get_config, init_config, merge_json_files, time_to_ms
 # 评论相关代码保留，但暂时不使用
 from content_community.bilibili.comment import BilibiliCommenter
 from content_community.bilibili.get_danmu import gen_proper_comment
@@ -778,52 +778,6 @@ danmu_praises_general_quality = [
 ]
 
 
-def time_str_to_seconds(time_str: str) -> int | None:
-    """
-    将 "HH:MM:SS" 或 "MM:SS" 格式的时间字符串转换为总秒数。
-
-    Args:
-        time_str: "时:分:秒" 或 "分:秒" 格式的字符串。
-
-    Returns:
-        一个整数，表示总秒数。
-        如果输入格式无效，则返回 None。
-    """
-    try:
-        # 确保输入是字符串类型
-        if not isinstance(time_str, str):
-            raise TypeError("输入必须是字符串")
-
-        parts = time_str.split(':')
-        num_parts = len(parts)
-
-        if num_parts == 3:  # 格式为 HH:MM:SS
-            h = int(parts[0])
-            m = int(parts[1])
-            s = int(parts[2])
-            # 检查分钟和秒是否在有效范围内（可选，但推荐）
-            if m >= 60 or s >= 60:
-                raise ValueError("分钟或秒的值不能大于等于60")
-            return h * 3600 + m * 60 + s
-
-        elif num_parts == 2:  # 格式为 MM:SS
-            m = int(parts[0])
-            s = int(parts[1])
-            # 检查秒是否在有效范围内（可选）
-            if s >= 60:
-                raise ValueError("秒的值不能大于等于60")
-            return m * 60 + s
-
-        else:
-            # 如果部分数量不是2或3，则格式错误
-            raise ValueError("时间格式应为 'HH:MM:SS' 或 'MM:SS'")
-
-    except (ValueError, TypeError) as e:
-        # 捕获所有可能的错误，例如 int() 转换失败或我们主动抛出的错误
-        print(f"错误: 无法解析时间字符串 '{time_str}'。详情: {e}")
-        return None
-
-
 def filter_danmu(danmu_list, duration):
     """
     过滤和调整弹幕列表。
@@ -874,7 +828,8 @@ def filter_danmu(danmu_list, duration):
         "一句走心话，整天都舒服了"
     ]
 
-    total_seconds = time_str_to_seconds(duration)
+    total_seconds = time_to_ms(duration) / 1000
+    total_seconds = int(total_seconds)
     if total_seconds is None or total_seconds <= 0:
         return danmu_list
 
@@ -884,7 +839,7 @@ def filter_danmu(danmu_list, duration):
         # 为了不修改原始列表，创建一个副本进行操作
         new_item = item.copy()
         ts = new_item.get('建议时间戳')
-        seconds = time_str_to_seconds(ts)
+        seconds = time_to_ms(ts) / 1000
 
         # 如果时间戳无法解析或超出范围，则随机分配
         if seconds is None or seconds < 0 or seconds > total_seconds:
@@ -1047,7 +1002,7 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads, all_emo
         comment_list = []
 
     try:
-        danmu_info = target_value.get('danmu_info') or {}
+        danmu_info = target_value.get('hudong', {}).get('danmu_info', {})
         if danmu_info:
             danmu_list = parse_and_group_danmaku(danmu_info)
         else:
@@ -1057,7 +1012,7 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads, all_emo
         # logger.error(f"处理弹幕列表时出错: {e}")
         danmu_list = [{'建议时间戳': '00:01', '推荐弹幕内容': danmu_praises_general_quality}]
     danmu_list = filter_danmu(danmu_list, duration)
-    total_seconds = time_str_to_seconds(duration)
+    total_seconds = time_to_ms(duration) / 1000
     title_schemes = target_value.get('title_schemes', {})
     interaction_prompts, supplementary_notes = extract_guides(title_schemes)  # 提取互动引导和补充信息（如果有）
     if len(interaction_prompts) == 0:

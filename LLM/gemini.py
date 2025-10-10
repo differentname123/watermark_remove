@@ -255,12 +255,14 @@ def analyze_videos_gemini(
 def get_llm_content_gemini_flash_video(
     prompt: str = '视频中的内容是什么',
     video_path: str = 'test.mp4',
-    model_name: str = "gemini-2.5-flash"
+    model_name: str = "gemini-flash-latest",
+    max_attempts: int = 1  # <--- 修改点 1: 增加一个控制尝试次数的参数，默认为 1
 ) -> str:
     last_error = None
     ordered_keys = api_key_manager.get_ordered_keys(model_name=model_name)
 
-    for key_name in ordered_keys:
+    # <--- 修改点 2: 使用列表切片来限制循环次数
+    for key_name in ordered_keys[:max_attempts]:
         api_key = API_KEY_MAP.get(key_name)
         if not api_key:
             continue
@@ -272,11 +274,9 @@ def get_llm_content_gemini_flash_video(
         video_file = None
         try:
             print(f"[INFO] 使用 API Key “{key_name}” prompt length: {len(prompt)} 上传视频… {model_name}， {video_path}")
-            # 传入模型名称以记录
             api_key_manager.record_success(key_name, model_name=model_name)
             video_file = genai_flash.upload_file(path=video_path)
 
-            # 等待处理
             while video_file.state.name == "PROCESSING":
                 print("等待视频处理完成…")
                 time.sleep(10)
@@ -296,28 +296,22 @@ def get_llm_content_gemini_flash_video(
         except (ga_exceptions.PermissionDenied,
                 ga_exceptions.ResourceExhausted,
                 ga_exceptions.GoogleAPICallError) as e:
-            # traceback.print_exc()
-
             last_error = e
             print(f"[WARN] Key “{key_name}” 调用失败：{e}，切换下一个…{video_path}")
             # 继续到下一个 key
 
         except Exception as e:
-            # traceback.print_exc()
-            # 未知错误直接返回，或者根据需求也可以继续尝试下一个
             return f"处理过程中发生未知错误: {e}"
 
         finally:
-            # 无论成功还是失败，都尝试删掉已经上传的文件
             if video_file is not None:
                 try:
                     print(f"[INFO] 删除临时文件 {video_file.name}…")
                     genai_flash.delete_file(video_file.name)
                 except Exception as de:
-                    # 如果删除也失败了，打印日志但不中断流程
                     print(f"[ERROR] 删除文件 {video_file.name} 失败：{de}")
 
-    return f"所有 API Key 均尝试失败。最后一次错误：{last_error} {video_path}"
+    return f"所有 API Key 均尝试失败 ({max_attempts}次)。最后一次错误：{last_error} {video_path}"
 
 
 
