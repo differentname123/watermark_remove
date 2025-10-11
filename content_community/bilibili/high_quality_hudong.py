@@ -1327,6 +1327,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     print(f"获得到已有评论：{len(exist_comment_text)} 条，已有弹幕：{len(exist_danmu_text)} 条。| BVID: {bvid}")
     owner_commenter = commenter_map.get(uid, None)
     other_commenters = [c for k, c in commenter_map.items() if k != uid]
+    comment_commenters = [c for k, c in commenter_map.items() if k in ['196823511', '3632304865937878']]
     share_video = hudong_info.get("share_video", False)
     triple_like_video = hudong_info.get("triple_like_video", False)
     if not share_video or not triple_like_video:
@@ -1430,22 +1431,22 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
 
 
 
-    # comment_list = hudong_info.get('comment_list', [])
-    # comment_list = comment_list[:10]
-    # comment_used_list = hudong_info.get('comment_used', [])
-    # comment_used_list.extend(exist_comment_text)
-    # commenter_list = list(commenter_map.values())
-    # post_comments_once(
-    #     commenter_list=commenter_list,
-    #     comment_list=comment_list,
-    #     bvid=bvid,
-    #     max_success_comment_count=max_success_comment_count,
-    #     comment_used_list=comment_used_list,
-    #     path_exists=path_exists,
-    #     max_workers=5,
-    #     jitter=(0.4, 1.0)
-    # )
-    # hudong_info['comment_used'] = comment_used_list
+    comment_list = hudong_info.get('comment_list', [])
+    comment_list = comment_list[:10]
+    comment_used_list = hudong_info.get('comment_used', [])
+    comment_used_list.extend(exist_comment_text)
+    commenter_list = list(commenter_map.values())
+    post_comments_once(
+        commenter_list=comment_commenters,
+        comment_list=comment_list,
+        bvid=bvid,
+        max_success_comment_count=max_success_comment_count,
+        comment_used_list=comment_used_list,
+        path_exists=path_exists,
+        max_workers=5,
+        jitter=(0.4, 1.0)
+    )
+    hudong_info['comment_used'] = comment_used_list
     if hudong_info.get('last_processed_date') == today:
         last_count = int(hudong_info.get('last_processed_date_count', 0) or 0)
         hudong_info['last_processed_date_count'] = last_count + 1
@@ -1553,7 +1554,7 @@ def fun():
             name = config_map[uid].get('name', uid)
             # if uid in ['3546965562362625']:
             #     continue
-            if name in ['xiaoxue', 'qiqixiao', 'jj', 'junxiao']:
+            if name in ['xiaoxue', 'qiqixiao', 'jj', 'junxiao', 'hao', 'xue']:
                 continue
 
             if NEED_UPDATE_SIGN:

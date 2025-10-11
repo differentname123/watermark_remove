@@ -21,13 +21,13 @@ import time
 import traceback
 import datetime as dt
 
-from common_utils.common_utils import get_config, format_seconds_to_mmss, read_json
-from common_utils.video_scene.combine_asr_scene_online import video_remake
+from common_utils.common_utils import get_config, format_seconds_to_mmss, read_json, is_valid_target_file_simple, \
+    scan_generated_files, ms_to_time
+from common_utils.video_scene.combine_asr_scene import gen_new_video_robus
 from common_utils.video_utils import get_video_duration_seconds, create_enhanced_cover, \
     merge_videos_ffmpeg, apply_all_subtle_tweaks, _get_video_resolution, process_video_with_template, probe_duration, \
     add_transparent_watermark
 from common_utils.video_utils_cut import text_image_to_video_with_subtitles, gen_ending_video
-from content_community.app.remake_video import remake_video_robust
 
 config_map = {}
 
@@ -42,20 +42,21 @@ config_map['base'] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 # mama_total_cookie = get_config("mama_bilibili_total_cookie")
 # config_map['mama'] = (mama_SESSDATA, mama_BILI_JCT, mama_total_cookie)
 group_info = {
-    'fun': ['ruru', 'jie', 'hong', 'qiqi', 'yan', 'jj', 'xiaosu', 'chabian', 'dan', 'yiyi', 'qiqixiao', 'yang',
-            'xiaodan',
-            'xiaoxue', 'ruruxiao', 'qiqixiao', 'hong', 'qiqi', 'yan', 'mama', 'dahao',
-            'mama', 'lin', 'xiaohao', 'xue', 'jj', 'cai', 'ruru'
+    'fun': ['ruru', 'jj', 'chabian', 'dan', 'yiyi', 'qiqixiao', 'yang',
+            'xiaodan', 'qiqixiao', 'dahao', 'lin', 'xiaohao', 'xue', 'jj', 'ruru'
             ],
     'sport': ['nana', 'jun'],
-    'game': ['cai', 'tao', 'ning']
+    'game': ['cai', 'tao', 'taoxiao', 'ning', 'xiaoxue', 'yan', 'hong', 'junxiao', 'mama', 'jie', 'qiqi', 'junda', 'ruruxiao', 'xiaosu']
 }
 
 
-video_recommend_user_list = ['nana']
+video_recommend_user_list = ["cai","yang","dahao","ruru","yiyi","lin","mama","hong","yan","jie","qiqi","xiaosu","jun","jj","qiqixiao","xiaoxue"]
 # 定义需要处理的账号名及其对应的config_map键名（区分大小写）
 accounts = {
     'tao': 'tao',
+    'taoxiao': 'taoxiao',
+    'junxiao': 'junxiao',
+    'junda': 'junda',
     'ruru': 'ruru',
     'nana': 'nana',
     'jie': 'jie',
@@ -75,7 +76,7 @@ accounts = {
     # 'xiaohao': 'xiaohao',
     'dan': 'dan',
     'ning': 'ning',
-    'dahao': 'dahao',
+    # 'dahao': 'dahao',
     'yang': 'yang',
     'ruruxiao': 'ruruxiao',
     'qiqixiao': 'qiqixiao',
@@ -112,6 +113,81 @@ def load_json(path: str, default):
         print(f"⚠️  警告：文件 {path} JSON 解析失败，原因：{e}。将使用默认值。")
         return default
 
+
+def analyze_user_uploads_by_day(metadata_cache_with_uploads):
+    """
+    根据上传元数据，统计每个用户在当天、一小时内的投稿数量以及最近的投稿时间。
+
+    "当天" 指从今天凌晨0点到当前时间。
+
+    Args:
+        metadata_cache_with_uploads (dict):
+            一个字典，结构类似于从您的JSON文件加载的数据。
+            键是唯一的视频ID，值是包含 "userName" 和 "upload_info" 的对象。
+
+    Returns:
+        dict:
+            一个包含统计结果的字典。
+            键是用户名 (userName)，
+            值是另一个字典，包含以下信息：
+            - 'uploads_today' (int): 用户在当天的投稿总数（从0点开始）。
+            - 'uploads_last_hour' (int): 用户在过去一小时内的投稿总数。
+            - 'latest_upload_time' (str): 用户最近一次投稿的时间，格式为 "YYYY-MM-DD HH:MM:SS"。
+    """
+    user_timestamps = {}
+
+    # 步骤 1: 遍历所有记录，按用户名收集所有投稿时间戳
+    if isinstance(metadata_cache_with_uploads, list) and len(metadata_cache_with_uploads) > 0:
+        # 兼容示例中可能出现的 [ { "id": {...} } ] 格式
+        metadata_cache_with_uploads = metadata_cache_with_uploads[0]
+
+    for video_id, data in metadata_cache_with_uploads.items():
+        user_name = data.get("userName")
+        if not user_name:
+            continue
+
+        try:
+            timestamp = data["upload_info"]["timestamp"]
+        except (KeyError, TypeError):
+            continue
+
+        if user_name not in user_timestamps:
+            user_timestamps[user_name] = []
+        user_timestamps[user_name].append(timestamp)
+
+    # 步骤 2: 计算每个用户的统计数据
+    stats_result = {}
+
+    # 获取当前时间和今天凌晨0点的时间戳
+    now = datetime.datetime.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    today_start_timestamp = today_start.timestamp()
+    one_hour_ago_timestamp = now.timestamp() - 3600  # 3600 秒 = 1 小时
+
+    for user_name, timestamps in user_timestamps.items():
+        if not timestamps:
+            continue
+
+        # 计算当天和过去一小时内的投稿数量
+        # 当天：时间戳 >= 今天凌晨0点的时间戳
+        uploads_today = sum(1 for ts in timestamps if ts >= today_start_timestamp)
+        # 一小时内：时间戳 > 一小时前的时间戳
+        uploads_in_last_hour = sum(1 for ts in timestamps if ts > one_hour_ago_timestamp)
+
+        # 找到最近的投稿时间戳并格式化
+        latest_timestamp = max(timestamps)
+        latest_time_str = datetime.datetime.fromtimestamp(latest_timestamp).strftime('%Y-%m-%d %H:%M:%S')
+
+        # 保存结果
+        stats_result[user_name] = {
+            "uploads_today": uploads_today,
+            "uploads_last_hour": uploads_in_last_hour,
+            "latest_upload_time": latest_time_str,
+            "latest_timestamp": latest_timestamp,
+        }
+
+    return stats_result
 
 def get_watermark_path(user_type, user_name):
     """
@@ -284,7 +360,7 @@ upload_lock = threading.Lock()
 upload_log_global = {}
 
 # ---------- upload_worker：在 per-account executor 中执行的完整上传与后处理逻辑 ----------
-def upload_worker(upload_params, key, updated_entry, files_to_cleanup, stage_times, userName):
+def upload_worker(upload_params, key, updated_entry, files_to_cleanup, stage_times, userName, video_duration_str):
     """
     后台上传任务（在各自账号的单线程 executor 中运行，保证同账号串行）；
     完整地执行上传重试、结果处理、metadata 更新、临时文件清理与日志持久化。
@@ -308,7 +384,7 @@ def upload_worker(upload_params, key, updated_entry, files_to_cleanup, stage_tim
             result = upload_to_bilibili(**upload_params)
             break
         except Exception as e:
-            print(f"❌ 上传接口异常 (第 {attempt} 次重试) user={userName} key={key}：{e}")
+            print(f"❌ 上传接口异常 (第 {attempt} 次重试) user={userName} key={key}：{e} {upload_params}")
             if attempt < max_retries:
                 # 等候一会再试（与原逻辑一致）
                 time.sleep(60)
@@ -348,7 +424,12 @@ def upload_worker(upload_params, key, updated_entry, files_to_cleanup, stage_tim
         updated_entry["upload_info"] = {
             "upload_params": upload_params,
             "upload_result": result,
+            "timestamp": time.time(),
         }
+
+        # 更新duration
+        if 'metadata' in updated_entry and isinstance(updated_entry['metadata'], list) and updated_entry['metadata']:
+            updated_entry['metadata'][0]['duration'] = video_duration_str
 
         # 安全地写入全局 upload_log 并持久化（加锁）
         with upload_lock:
@@ -358,7 +439,7 @@ def upload_worker(upload_params, key, updated_entry, files_to_cleanup, stage_tim
                 # 打印阶段耗时汇总
                 if stage_times:
                     stage_lines = [f"{k}: {v:.2f} 秒" for k, v in stage_times.items()]
-                    print(f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE}。阶段耗时：{' | '.join(stage_lines)} {userName} {datetime.datetime.now().isoformat()}")
+                    print(f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE}。阶段耗时：{' | '.join(stage_lines)} {userName} {key} {datetime.datetime.now().isoformat()}")
                 else:
                     print(f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE} {userName}.")
             except Exception as e:
@@ -417,8 +498,8 @@ def _basic_task_checks(key: str, value: Dict[str, Any], video_id_key) -> Tuple[b
     不做任何副作用，只用于上游决定是否跳过。
     """
     status = value.get('status', '未处理')
-    if status == 'error':
-        return True, f"⚠️ 跳过 {key}：之前处理失败，已标记"
+    if status != 'complete':
+        return True, f"⚠️ 跳过 {key}：当前状态为{status} 不为 complete"
     if video_id_key in upload_log_global and upload_log_global[video_id_key].get("upload_info"):
         return True, f"⏭️ 跳过 {key}：已记录上传成功"
     metadata = value.get('metadata')
@@ -434,6 +515,10 @@ def _basic_task_checks(key: str, value: Dict[str, Any], video_id_key) -> Tuple[b
     best_scheme = value.get('best_scheme') or get_best_plan_by_potential(value.get('title_schemes', {}))
     if not best_scheme:
         return True, f"⏭️ 跳过 {key}：无法选取投稿方案。"
+
+    if not check_type(value):
+        return True, f"⏭️ 跳过 {key}：userName 题材不匹配 {value.get('userName')}"
+
     return False, ""
 
 def _select_config_for_user(userName: str) -> Tuple[str, Any]:
@@ -454,7 +539,7 @@ def _preprocess_media_steps(
     value: Dict[str, Any],
     best_scheme: Dict[str, Any],
     userName: str
-) -> Tuple[str, str, Dict[str, float], List[str]]:
+):
     """
     执行视频 / 封面等一系列预处理步骤（复刻原逻辑的顺序与异常处理）。
     返回：
@@ -488,18 +573,30 @@ def _preprocess_media_steps(
         # 反转has_author_voice
         no_owner = not has_author_voice
         creative_guidance = generation_options.get('creative_guidance', '')
-        print(f"🔄 重制视频 {video_path}... userName: {userName} 是否不包含作者语音{no_owner} 创作指导：{creative_guidance} 视频名称{full_title} duration{duration}")
+        print(f"🔄 重制视频 {video_path}... userName: {userName} 是否不包含作者语音{no_owner} 创作指导：{creative_guidance} 视频名称：{full_title} duration{duration}")
         try:
 
-            video_remake_half(video_path, no_owner)
-            return
+            final_video_path, final_video_script = gen_new_video_robus(video_path)
+            if is_valid_target_file_simple(final_video_path):
+                print(f"✅ 重制视频成功，保存为 {final_video_path}")
+                video_path = final_video_path
+                if has_author_voice:
+                    title = final_video_script.get('title')
+                    best_scheme['标题'] = title if title else best_scheme.get('标题', '欢迎来看我的视频！')
+                    cover_text = final_video_script.get('cover_text')
+                    best_scheme['封面']['配文'] = cover_text if cover_text else best_scheme.get('封面', {}).get('配文', '欢迎来看我的视频！')
+            else:
+                upload_log_global[key] = upload_log_global.get(key, {})
+                upload_log_global[key]['status'] = 'error'
+                save_json(UPLOAD_LOG_FILE, upload_log_global)
+                print(f"❌ 重制失败")
             stage_times['重制视频'] = time.time() - t0
         except Exception as e:
             stage_times['重制视频'] = time.time() - t0
             upload_log_global[key] = upload_log_global.get(key, {})
             upload_log_global[key]['status'] = 'error'
             save_json(UPLOAD_LOG_FILE, upload_log_global)
-            print(f"❌ 重制视频失败：{e}")
+            print(f"❌ 重制失败：{e}")
 
     # # ---------- 预处理：在尾部插入引导图片 ----------
     # new_video_path = current_video_path.replace('.mp4', '_new.mp4')
@@ -624,15 +721,7 @@ def _preprocess_media_steps(
         traceback.print_exc()
         print(f"⚠️  封面处理失败：{e}")
 
-    files_to_cleanup = [
-        video_path,
-        new_video_path,
-        temp_video_path,
-        tweak_video_path,
-        addPrologue_video_path,
-        template_video_path,
-    ]
-    return video_path, cover_path, stage_times, files_to_cleanup
+    return video_path, cover_path, stage_times
 
 def _build_upload_params(
     metadata_entry: Dict[str, Any],
@@ -702,6 +791,72 @@ def _build_upload_params(
     }
     return upload_params
 
+def full_video_info(video_info):
+    """
+    将视频信息补充完整，主要是互动信息和标题信息
+    """
+    hudong_path = video_info.get('hudong_path')
+    if is_valid_target_file_simple(hudong_path):
+        hudong_info = read_json(hudong_path)
+        video_info['hudong'] = hudong_info
+    titles_path = video_info.get('titles_path')
+    if is_valid_target_file_simple(titles_path):
+        titles_info = read_json(titles_path)
+        video_info['title_schemes'] = titles_info
+    return video_info
+
+def gen_clean_files(video_path_list):
+    """
+    根据 video_path_list 生成需要清理的文件列表
+    """
+    # 遍历视频
+    cleaner_file_list = []
+    file_names = ['hudong.json', 'title_schemes.json', 'new_video_script.json', 'final_scene_info.json', 'speech_asr_with_owner.json', 'log.txt', 'logical_scene_info.json', 'final_subtitle_box.json']
+
+    all_files = []
+    for video_path in video_path_list:
+        # 获取目录
+        dir_name = os.path.dirname(video_path)
+        file_name = os.path.basename(video_path)
+        file_names.append(file_name)
+        all_sub_files = scan_generated_files(dir_name)
+        all_files.extend(all_sub_files)
+    # 对all_files进行去重
+    all_files = list(set(all_files))
+
+    # 剔除文件名是file_names中的文件
+    for f in all_files:
+        if os.path.basename(f) not in file_names:
+            cleaner_file_list.append(f)
+    print(f"🧹 生成清理文件列表，共 {len(cleaner_file_list)} 个文件。")
+    return cleaner_file_list
+
+
+
+def check_type(updated_entry):
+    user_name = updated_entry.get('userName', 'other')
+    danmu_info = updated_entry.get('hudong', {}).get('danmu_info', {})
+    video_topic = danmu_info.get('视频分析', {}).get('题材', '')
+    video_id_list = updated_entry.get('video_id_list')
+    video_type = 'fun'
+    if video_topic:
+        if '游戏' in video_topic:
+            video_type = 'game'
+        elif '运动' in video_topic or '体育' in video_topic:
+            video_type = 'sport'
+        elif '搞笑' in video_topic or '趣味' in video_topic or '娱乐' in video_topic:
+            video_type = 'fun'
+
+    user_type = 'fun'
+    for group, users in group_info.items():
+        if user_name in users:
+            user_type = group
+            break
+    if user_type != video_type:
+        print(f"⚠️ 用户 {user_name} 的类型 {user_type} 与视频题材 {video_topic} 的类型 {video_type} 不匹配，跳过上传。{video_id_list}")
+        return False
+    return True
+
 def auto_upload():
     """
     非阻塞版 auto_upload（主线程负责预处理，投稿提交到每个账号的单线程 executor）：
@@ -710,11 +865,7 @@ def auto_upload():
       以确保同一用户同一时刻只会有一个上传任务在运行。
     """
     global upload_log_global
-    try:
-        bvid_file_data = read_json(bvid_file_path)
-    except Exception as e:
-        print(f"❌ 读取 {bvid_file_path} 失败：{e}")
-        bvid_file_data = {}
+
 
 
     temp_set: Set[str] = set()  # 临时集合，记录被跳过/需持久化的任务
@@ -733,21 +884,24 @@ def auto_upload():
     new_uploads_made = False
     error_count = 0
     processed_video_id = []
+    latest_user = ''
     # 遍历所有权威元数据任务
     for key, value in metadata_cache.items():
         if key in processed_video_id:
             continue
         userName = value.get('userName', 'other')
-        user_videos = bvid_file_data.get(userName, [])
         today_start = dt.datetime.combine(dt.date.today(), dt.time.min).timestamp()
 
-
+        user_uploads_info = analyze_user_uploads_by_day(upload_log_global)
+        # print(f"\n用户投稿信息汇总：{user_uploads_info}\n")
 
         start_time = time.time()
         best_score_max = float('-inf')
         should_skip = False
         # 先把一些变量初始化（与原脚本一致）
         updated_entry = copy.deepcopy(value)
+        updated_entry = full_video_info(updated_entry)
+
         video_id_list = value.get('video_id_list', [key])
         # 排序video_id_list
         video_id_list = sorted(video_id_list)
@@ -756,6 +910,7 @@ def auto_upload():
 
         for video_id in video_id_list:
             value_info = metadata_cache.get(video_id, {})
+            value_info = full_video_info(value_info)
             # 基本检查（同原逻辑）
             should_skip, reason = _basic_task_checks(video_id, value_info, video_id_key)
             if should_skip:
@@ -783,22 +938,57 @@ def auto_upload():
 
         # 选择 config（保留原逻辑）
         if userName not in config_map.keys():
-            print(f"⚠️ 跳过 {userName} 用户上传 请检查配置数据。")
+            print(f"⚠️ 跳过 {userName} 用户上传 请检查配置数据。{video_id}")
             userName = 'base'
             continue
         config = config_map.get(userName, config_map['base'])
+
+
+        # 检查用户今日上传数量
+        try:
+            bvid_file_data = read_json(bvid_file_path)
+        except Exception as e:
+            print(f"❌ 读取 {bvid_file_path} 失败：{e}")
+            bvid_file_data = {}
+        user_videos = bvid_file_data.get(userName, [])
         recent_videos = [v for v in user_videos if v.get('created') and v['created'] >= today_start]
-        print(f"🔍 处理 {key} (用户: {userName}) 今日已上传 {len(recent_videos)} 个视频，时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
-        if len(recent_videos) >= 30:
-            print(f"⚠️ 跳过 {userName} 用户上传：今日已上传 {len(recent_videos)} 个视频，达到上限。")
+        remote_upload_count = len(recent_videos)
+
+
+        user_info = user_uploads_info.setdefault(userName, {
+            'uploads_today': 0,
+            'uploads_last_hour': 0,
+            'latest_upload_time': "无记录",
+            'latest_timestamp': None
+        })
+
+        # 现在你可以安全地直接访问了，因为user_info保证有这些键
+        uploads_today = user_info.get('uploads_today', 0)
+        uploads_last_hour = user_info['uploads_last_hour']
+        latest_upload_time = user_info['latest_upload_time']
+        latest_timestamp = user_info['latest_timestamp']
+
+        print(f"🔍 处理 {key} (用户: {userName}) 今日已本地上传 {(uploads_today)} 个视频， 实际平台数据：{remote_upload_count}  最近一小时上传个数为: {uploads_last_hour}，最近上传时间为：{latest_upload_time}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+        if (uploads_today) >= 25 or remote_upload_count >= 20:
+            print(f"⚠️ 跳过 {userName} 用户上传：今日已本地上传 {(uploads_today)} 个视频， 实际平台数据：{remote_upload_count} ，达到上限。")
             continue
+        if latest_timestamp and (time.time() - latest_timestamp) < 1200 and uploads_last_hour >= 1:
+            print(f"⚠️ 跳过 {userName} 用户上传：距离上次上传少于 20 分钟。 上次上传时间：{latest_upload_time}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+            continue
+        if userName == latest_user:
+            print(f"⚠️ 跳过 {userName} 用户上传：与上一个上传用户相同，避免连续上传。")
+            continue
+        latest_user = userName
+
         video_path_list = []
+        origin_video_path_list = []
         best_scheme_final = None
         best_cover_path = None
-        all_files_to_cleanup = []
         comment_list_all = []
         for video_id in video_id_list:
             video_info = metadata_cache.get(video_id, {})
+            video_info = full_video_info(video_info)
+            origin_video_path_list.append(video_info.get('video_path'))
             comment_list = video_info.get('hudong', {}).get('comment_list', [])
             comment_list_all.extend(comment_list)
             # 选择最佳投稿方案
@@ -815,8 +1005,7 @@ def auto_upload():
             print(f"\n⏳ {userName} 开始处理任务 {key}，视频ID列表：{video_id_list}，时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
             # 执行一系列的媒体预处理与封面处理
             try:
-                _preprocess_media_steps(video_id, video_info, best_scheme, userName)
-                continue
+                video_path, cover_path, stage_times = _preprocess_media_steps(video_id, video_info, best_scheme, userName)
                 if score > best_score_max:
                     best_score_max = score
                     best_scheme_final = best_scheme
@@ -825,7 +1014,6 @@ def auto_upload():
                     video_path_list.insert(0, video_path)
                 else:
                     video_path_list.append(video_path)
-                all_files_to_cleanup.extend(files_to_cleanup)
             except Exception as e:
                 # 严格保持原脚本在异常处的行为：记录错误并继续
                 print(f"⚠️ 处理媒体过程中出现异常：{e} {video_id} {userName}")
@@ -833,7 +1021,6 @@ def auto_upload():
                 error_count += 1
                 break
         final_output_path = video_path.replace('.mp4', '_final.mp4')
-        all_files_to_cleanup.append(final_output_path)
         # 将comment_list_all 按照第二个元素降序排序
         comment_list_all = sorted(comment_list_all, key=lambda x: x[1], reverse=True)
         comment_list_all = comment_list_all[:30]
@@ -842,24 +1029,6 @@ def auto_upload():
         merge_videos_ffmpeg(video_path_list, output_path=final_output_path)
         if os.path.exists(final_output_path) and os.path.getsize(final_output_path) > 0:
             duration = probe_duration(final_output_path)
-
-            # # ---------- 预处理：在尾部插入引导图片 ----------
-            # new_video_path = final_output_path.replace('.mp4', '_new.mp4')
-            # if duration < 6000:
-            #     try:
-            #         t0 = time.time()
-            #         image_duration = int(duration / 100)
-            #         image_duration = max(1, image_duration)
-            #         print(
-            #             f"🔄 尾部插图处理：视频时长 {duration} 秒，插图持续 {image_duration} 秒。 文件路径：{final_output_path} -> {new_video_path}")
-            #         final_jpg_path = f'{userName}_final.jpg'
-            #         if not os.path.exists(final_jpg_path):
-            #             final_jpg_path = 'final.jpg'
-            #             print(f"⚠️ 尾部插图文件 {final_jpg_path} 不存在，使用默认图片。")
-            #         add_image_to_video_end(final_output_path, final_jpg_path, new_video_path, image_duration)
-            #         final_output_path = new_video_path
-            #     except Exception as e:
-            #         print(f"⚠️ 尾部插图失败，继续使用原视频：{e}")
 
             # ---------- 预处理：在尾部插入引导视频 ----------
             new_video_path = final_output_path.replace('.mp4', '_new.mp4')
@@ -885,21 +1054,20 @@ def auto_upload():
                 if userName in users:
                     user_type = group
                     break
+            start_time = time.time()
             watermark_path = get_watermark_path(user_type, userName)
             add_transparent_watermark(final_output_path, watermark_path, output_watermark_path)
             if os.path.exists(output_watermark_path) and os.path.getsize(output_watermark_path) > 0:
-                print(f"✅ 水印增加成功，保存为 {output_watermark_path}")
+                print(f"✅ 水印增加成功，保存为 {output_watermark_path} 耗时 {time.time() - start_time:.2f} 秒")
                 final_output_path = output_watermark_path
         except Exception as e:
             print(f"⚠️ 水印增加失败，继续使用原视频：{e}")
 
-        all_files_to_cleanup.append(output_watermark_path)
-        all_files_to_cleanup.append(final_output_path)
-        all_files_to_cleanup.append(new_video_path)
-        all_files_to_cleanup.append(temp_ending_video_path)
         # 构建上传参数（title/description/tags/topic 等）
         upload_params = _build_upload_params(value, best_scheme_final, best_cover_path, final_output_path, config, userName)
+        video_duration = probe_duration(final_output_path)
 
+        video_duration_str = ms_to_time(video_duration * 1000)
         # ---------- 非阻塞提交上传（按账号串行） ----------
         print(f"🚀 准备为用户 {userName} 后台投稿 {key} (ID: {video_id_key}) - 《{upload_params.get('title')}》（按账号串行）")
 
@@ -907,7 +1075,15 @@ def auto_upload():
 
         # 获取该账号的 executor（默认每账号单线程）
         account_executor = account_executors[userName]
-        future = account_executor.submit(upload_worker, upload_params, video_id_key, updated_entry, all_files_to_cleanup, task_stage_times, userName)
+        # 尝试移除all_files_to_cleanup中的video_path
+
+        all_files_to_cleanup = gen_clean_files(origin_video_path_list)
+        # 排除final_output_path，需要按照filename进行排除不能够直接使用路径
+        all_files_to_cleanup = [f for f in all_files_to_cleanup if os.path.basename(f) != os.path.basename(final_output_path)]
+        print(f"🧹 预处理完成，准备清理 {len(all_files_to_cleanup)} 个临时文件。排除{final_output_path}")
+
+
+        future = account_executor.submit(upload_worker, upload_params, video_id_key, updated_entry, all_files_to_cleanup, task_stage_times, userName, video_duration_str)
         futures.append(future)
         new_uploads_made = True
 

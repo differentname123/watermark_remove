@@ -1055,11 +1055,16 @@ def gen_new_video_script_robus(video_path, params={}):
     """
     最多尝试3次生成新的视频方案
     """
+    basename = os.path.basename(video_path).split('.mp4')[0]
+    output_dir = os.path.join(base_output_dir, basename)
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
             return gen_new_video_script(video_path, params)
         except Exception as e:
+            logger.error(f"尝试 {attempt} 失败: {e} traceback: {traceback.format_exc()}")
             print(f"尝试 {attempt} 失败: {e} traceback: {traceback.format_exc()}")
             if attempt == max_attempts:
                 raise
@@ -1237,11 +1242,16 @@ def gen_new_video_robus(video_path):
     """
     最多尝试3次生成新的视频
     """
+    basename = os.path.basename(video_path).split('.mp4')[0]
+    output_dir = os.path.join(base_output_dir, basename)
+    log_file_path = os.path.join(output_dir, 'log.txt')
+    logger = setup_logger(log_file_path)
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
             return gen_new_video(video_path)
         except Exception as e:
+            logger.error(f"尝试 {attempt} 失败: {e} traceback: {traceback.format_exc()}")
             print(f"尝试 {attempt} 失败: {e} traceback: {traceback.format_exc()}")
             if attempt == max_attempts:
                 raise
@@ -1298,9 +1308,9 @@ def gen_new_video(video_path):
 
 
 if __name__ == '__main__':
-    video_path = '7535307446349270315.mp4'
+    video_path = '7559543632789802303.mp4'
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
 
     gen_new_video_script_robus(video_path)
-    gen_new_video_robus(video_path)
+    print(f"结果 {gen_new_video_robus(video_path)}")
