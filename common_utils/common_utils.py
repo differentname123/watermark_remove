@@ -1532,6 +1532,36 @@ def split_text(text: str, max_len: int) -> List[str]:
 
     return parts
 
+def distribute_by_counts(accounts, allocation, default=None):
+    """
+    按顺序分配：
+    - accounts: 可迭代（例如 list(accounts.keys())）
+    - allocation: [(count, proxy), ...], count 可为 None 表示“剩下的全部”
+    - default: allocation 没覆盖到时的填充值
+    返回：与 accounts 等长的 proxy 列表
+    """
+    n = len(accounts)
+    proxies = []
+    assigned = 0
+    for count, proxy in allocation:
+        if count is None:
+            proxies += [proxy] * (n - assigned)
+            assigned = n
+            break
+        if count <= 0:
+            continue
+        take = min(count, n - assigned)
+        proxies += [proxy] * take
+        assigned += take
+        if assigned >= n:
+            break
+    if assigned < n:
+        proxies += [default] * (n - assigned)
+    return proxies
+
+
+
+
 def init_config():
     config_map = {}
 
@@ -1579,28 +1609,24 @@ def init_config():
     # - 中间5个账户为 None
     # - 剩下的账户使用 last_proxy
     proxy_A = {"http": "http://115.190.54.74:8888", "https": "http://115.190.54.74:8888"}
-    no_proxy = {"http": None,"https": None}
+    no_proxy = {"http": None, "https": None}
     proxy_B = {"http": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"}
 
     account_items = list(accounts.items())
-    n = len(account_items)
+    keys = [k for k, _ in account_items]
 
-    # n: 账户数量
-    proxies_values = [proxy_A] * n
+    # 一个常见策略：前5个 no_proxy，接2个 proxy_B，剩下用 proxy_A
+    proxies_values = distribute_by_counts(
+        keys,
+        allocation=[
+            (10, proxy_A),
+            (5, proxy_B),
+            (None, no_proxy),  # None 表示“其余全部”
+        ],
+        default=None
+    )
 
-    # 前五个设为 no_proxy
-    for i in range(min(5, n)):
-        proxies_values[i] = no_proxy
-
-    # 第6个位置（索引 5）若存在，设为 proxy_B
-    if n > 5:
-        proxies_values[5] = proxy_B
-
-    # 第7个位置（索引 6）若存在，设为 proxy_B
-    if n > 6:
-        proxies_values[6] = proxy_B
-
-    for idx in range(n):
+    for idx in range(len(account_items)):
         uid, name = account_items[idx]
         sessdata = get_config(f"{name}_bilibili_sessdata_cookie")
         bili_jct = get_config(f"{name}_bilibili_csrf_token")

@@ -15,10 +15,12 @@ import time
 import traceback
 import logging  # 1. 引入 logging 模块
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from pathlib import Path
 
 from LLM.gemini import get_llm_content, get_llm_content_gemini_flash_video
 from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time, read_file_to_str, string_to_object, \
     timeit_print, is_valid_target_file_simple
+from common_utils.image_utils import save_frames_around_timestamp
 from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box_target_number
 from common_utils.split_audio import separate_with_cli
 from common_utils.split_scenes import split_scenes_json
@@ -33,6 +35,42 @@ from content_community.app.remake_video import adjust_subtitle_box
 
 base_output_dir = "W:/project/python_project/watermark_remove/douyin_video"
 
+
+def delete_all_mp4_in_dir(directory: str):
+    """
+    删除指定目录及其所有子目录下的所有 .mp4 文件 (使用 pathlib)。
+    会打印每个文件的删除结果。
+    """
+    dir_path = Path(directory)
+    if not dir_path.is_dir():
+        print(f"❌ 目录不存在或不是一个有效目录：{directory}")
+        return
+
+    print(f"🔍 开始在目录及其子目录中搜索 .mp4 文件：{directory}")
+
+    # 使用 rglob 递归查找所有 .mp4 文件（不区分大小写，需要一点技巧）
+    # glob 模式默认区分大小写，所以我们查找 .mp4 和 .MP4
+    mp4_files = list(dir_path.rglob('*.mp4')) + list(dir_path.rglob('*.MP4'))
+    # 如果还需要 .Mp4 等，可以写更复杂的逻辑，但通常这两种就够了
+
+    if not mp4_files:
+        print(f"⚠️ 在 {directory} 及其子目录中没有找到 .mp4 文件。")
+        return
+    # 去重
+    mp4_files = list(set(mp4_files))
+
+    print(f"🔍 共找到 {len(mp4_files)} 个 .mp4 文件，开始删除...")
+
+    deleted_count = 0
+    for file_path in mp4_files:
+        try:
+            file_path.unlink()  # pathlib 使用 .unlink() 来删除文件
+            print(f"✅ 已删除：{file_path}")
+            deleted_count += 1
+        except Exception as e:
+            print(f"❌ 删除失败：{file_path}，错误：{e}")
+
+    print(f"🧹 删除操作完成，共成功删除 {deleted_count} 个文件。")
 
 # 2. 新增 setup_logger 函数，这是日志系统的核心
 def setup_logger(log_file):
@@ -1059,6 +1097,155 @@ def gen_subtitle_box_and_cover_subtitle(video_path, owner_asr_info, output_dir):
 
     return cover_video_path, [top_left, bottom_right]
 
+def merge_scene_timestamps(scene_dict, min_count=3, count_by_threshold=True):
+    """
+    合并不同阈值下的场景时间点。
+
+    行为说明：
+      - kept_sorted: 返回**未过滤**的时间戳及其出现次数，类型为列表 [(timestamp_str, count), ...]，
+                    并按真实时间升序排序。
+      - pairs: 仍然基于满足 min_count 的时间戳构建相邻配对区间，格式为
+               {'场景1': {'start': s, 'end': e, 'duration': ms}, ...}
+
+    参数:
+      scene_dict: 嵌套字典，外层 key 为阈值（例如 40,50,60），内层为场景名 -> [start, end]
+      min_count: 只把出现次数 >= min_count 的时间戳用于构建 pairs（默认 3）
+      count_by_threshold: True 时在每个阈值内先去重再计数（推荐），
+                          False 时把所有出现次数都计入（同阈值重复会被计多次）
+
+    返回:
+      (kept_sorted, pairs)
+        - kept_sorted: [(timestamp_str, count), ...] （未过滤，按时间升序）
+        - pairs: dict，键为 '场景1','场景2',...，值为 {'start','end','duration'}
+    """
+    from collections import Counter
+
+    counts = Counter()
+
+    for thr, scenes in scene_dict.items():
+        ts_list = []
+        for scene_name, bounds in scenes.items():
+            if not bounds:
+                continue
+            # 期望 bounds = [start, end]
+            ts_list.extend(time_to_ms(t) for t in bounds if isinstance(t, str) and t.strip())
+        if count_by_threshold:
+            for ts in set(ts_list):
+                counts[ts] += 1
+        else:
+            for ts in ts_list:
+                counts[ts] += 1
+
+    # kept_sorted: 未过滤，包含每个时间戳的出现次数，按时间升序
+    kept_sorted = sorted(counts.items(), key=lambda kv: time_to_ms(kv[0]))  # [(ts, count), ...]
+
+    # 下面为构建 pairs：仍然只使用出现次数 >= min_count 的时间戳（按时间排序）
+    filtered_ts = [ts for ts, c in counts.items() if c >= min_count]
+    filtered_sorted = sorted(filtered_ts, key=time_to_ms)
+
+    pairs = {}
+    n = len(filtered_sorted)
+    if n == 0:
+        return kept_sorted, pairs
+    if n == 1:
+        start = filtered_sorted[0]
+        end = filtered_sorted[0]
+        td = time_to_ms(end) - time_to_ms(start)
+        pairs['场景1'] = {
+            'start': start,
+            'end': end,
+            'duration': td
+        }
+        return kept_sorted, pairs
+
+    for i in range(n - 1):
+        key = f"场景{i + 1}"
+        start = filtered_sorted[i]
+        end = filtered_sorted[i + 1]
+        td = time_to_ms(end) - time_to_ms(start)
+        pairs[key] = {
+            'start': start,
+            'end': end,
+            'duration': td
+        }
+
+    return kept_sorted, pairs
+
+
+def get_scene(video_path, output_dir):
+    # --- 新增的配置项 ---
+    initial_thresholds = [30,40, 50,60, 70]  # 初始阈值列表
+    min_final_scenes = 20  # 最终期望的最小场景数
+    adjustment_step = 10  # 每次调整的步长
+    max_attempts = 3  # 最多尝试次数
+
+    # --- 将你原有的逻辑放入一个循环中 ---
+    thresholds = list(initial_thresholds)  # 创建一个可修改的副本
+    kept_sorted = []  # 初始化一个空列表
+    all_scene_info_dict = {}
+    merged_timestamps_path = os.path.join(output_dir, 'merged_timestamps.json')
+
+    if is_valid_target_file_simple(merged_timestamps_path, 1):
+        kept_sorted = read_json(merged_timestamps_path)
+        print(f"检测到已存在的合并时间戳文件，直接加载返回，场景数量为: {len(kept_sorted)} {kept_sorted}")
+        return kept_sorted
+
+
+    for attempt in range(max_attempts):
+        print(f"--- 第 {attempt + 1}/{max_attempts} 次尝试 ---")
+        print(f"当前使用的阈值列表: {thresholds}")
+
+        # 你的核心逻辑基本不变，只是把固定的 [30, 50, 70] 换成了可变的 thresholds
+        for high_threshold in thresholds:
+            start_time = time.time()
+            scene_info_file = os.path.join(output_dir, 'scenes', f'scenes_{high_threshold}', 'scene_info.json')
+
+
+            if is_valid_target_file_simple(scene_info_file):
+                all_scene_info_dict[high_threshold] = read_json(scene_info_file)
+                continue
+
+            scene_info_dict = split_scenes_json(
+                video_path,
+                high_threshold=high_threshold,
+                min_scene_len=25,
+            )
+            print(
+                f"阈值为 {high_threshold} 场景信息字典已生成。共 {len(scene_info_dict)} 个场景。 耗时: {time.time() - start_time:.2f} 秒\n")
+
+            save_json(scene_info_file, scene_info_dict)
+            all_scene_info_dict[high_threshold] = scene_info_dict
+
+        # 合并逻辑不变
+        kept_sorted, pairs = merge_scene_timestamps(all_scene_info_dict, min_count=3)
+        print(f"场景识别合并完成: 本次尝试生成场景数量为: {len(kept_sorted)}")
+
+        # --- 新增的核心判断逻辑 ---
+        if len(kept_sorted) >= min_final_scenes:
+            print(f"成功！生成的场景数量 ({len(kept_sorted)}) 满足要求 (>= {min_final_scenes})。")
+            break  # 达到目标，跳出重试循环
+        else:
+            print(f"警告：生成的场景数量 ({len(kept_sorted)}) 过少，不满足要求 (>= {min_final_scenes})。")
+            # 如果不是最后一次尝试，则降低阈值准备重试
+            if attempt < max_attempts - 1:
+                print(f"准备降低阈值后重试...")
+                # 将列表中的每个阈值都减小，并确保不低于某个下限（例如10）
+                thresholds = [max(10, t - adjustment_step) for t in thresholds]
+                # 如果阈值已经降到最低无法再降，也提前退出
+                if all(t == 10 for t in thresholds):
+                    print("阈值已降至最低，无法继续。")
+                    break
+            else:
+                print("已达到最大尝试次数，将使用当前结果。")
+
+    # 循环结束后的收尾工作（保存文件等）
+    print(f"\n--- 最终处理结果 ---")
+    print(f"最终场景数量为: {len(kept_sorted)} {kept_sorted}")
+    save_json(
+        merged_timestamps_path,
+        kept_sorted)
+
+    return kept_sorted
 
 @timeit_print
 def gen_logical_scene(video_path, output_dir):
@@ -1073,6 +1260,10 @@ def gen_logical_scene(video_path, output_dir):
     else:
         logical_scene_info = gen_logical_scene_llm(video_path=video_path)
         save_json(output_file_logical_scene_info_path, logical_scene_info)
+        kept_sorted = get_scene(video_path, output_dir)
+        logical_scene_info = fix_logical_scene_info(video_path, kept_sorted, logical_scene_info, output_dir, max_delta_ms=1000)
+        save_json(output_file_logical_scene_info_path, logical_scene_info)
+
     return logical_scene_info
 
 def gen_new_video_script_robus(video_path, params={}):
@@ -1106,6 +1297,41 @@ def is_contain_owner_speaker(owner_asr_info):
         if speaker == 'owner' and final_text:
             return True
     return False
+
+def fix_logical_scene_info(video_path, scenes, logical_scene_info, output_dir, max_delta_ms=1000):
+    """
+    将 logical_scene_info 中的每个 scene 的 start/end 对齐到最近的 camera shot（容差 max_delta_ms 毫秒内）。
+    打印每个时间戳调整前后的对比。返回修改后的 logical_scene_info。
+    """
+
+    camera_ts = [t for t in (c[0] for c in scenes) if t is not None]
+    if not camera_ts:
+        print("⚠️ 无有效 camera_shot 时间戳，跳过调整。")
+        return logical_scene_info
+
+    for i, scene in enumerate(logical_scene_info.get('new_scene_info', [])):
+        for key in ('start', 'end'):
+            orig = scene.get(key)
+            ms = orig
+            if ms is None:
+                print(f"[Scene {i}] {key}: 无法解析原始时间 ({orig})，跳过。")
+                continue
+
+            closest = min(camera_ts, key=lambda x: abs(x - ms))
+            diff = abs(closest - ms)
+            if diff <= max_delta_ms:
+                scene[key] = int(closest)
+                print(f"[Scene {i}] {key}: {orig} -> {closest} （差 {diff} ms，已调整）")
+                save_frames_around_timestamp(video_path, ms_to_time(orig), 5, str(os.path.join(output_dir, 'orig', str(orig))))
+                save_frames_around_timestamp(video_path, ms_to_time(closest), 5, str(os.path.join(output_dir,'closest', str(closest))))
+            else:
+                print(f"[Scene {i}] {key}: 保持不变 {orig} （最近 {closest}, 差 {diff} ms > {max_delta_ms} ms）")
+
+    return logical_scene_info
+
+
+
+
 
 def gen_new_video_script(video_path, params={}):
     """
@@ -1342,9 +1568,11 @@ def gen_new_video(video_path):
 
 
 if __name__ == '__main__':
-    video_path = '7244839033149345084.mp4'
+    video_path = '7559831216170601778.mp4'
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
 
     gen_new_video_script_robus(video_path)
     gen_new_video_robus(video_path)
+
+    # delete_all_mp4_in_dir(base_output_dir)
