@@ -319,23 +319,41 @@ def gen_new_video_script_llm(scene_info, output_dir, has_author_voice=True):
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
     model_name = "gemini-2.5-pro"
+    need_pop_list = ['scene_start', 'scene_end', 'sequence_info', 'narrative_function']
+    cut_type = 'all'
+    other_prompt = ''
 
-    for temp in scene_info:
-        # 去掉scene_start和scene_end字段
-        temp.pop('scene_start', None)
-        temp.pop('scene_end', None)
 
     retry_delay = 10
     max_retries = 3
     prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本.txt'
 
     if not has_author_voice:
+        cut_type = 'no_owner_voice'
+        # 删除need_pop_list中的'narrative_function'
+        need_pop_list.remove('narrative_function')
         model_name = "gemini-flash-latest"
         logger.info("使用无主人说话人版本的提示词")
         prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本纯重排场景.txt'
 
+        # 检查scene_info的第一个场景和最后一个场景的sequence_info的is_adjustable字段
+        if len(scene_info) > 0:
+            if 'sequence_info' in scene_info[0] and isinstance(scene_info[0]['sequence_info'], dict):
+                first_is_adjustable = scene_info[0]['sequence_info'].get('is_adjustable', True)
+                if not first_is_adjustable:
+                    other_prompt += f"\n注意：第一个场景的位置不能够改变。"
+            if 'sequence_info' in scene_info[-1] and isinstance(scene_info[-1]['sequence_info'], dict):
+                last_is_adjustable = scene_info[-1]['sequence_info'].get('is_adjustable', True)
+                if not last_is_adjustable:
+                    other_prompt += f"\n注意：最后一个场景的位置不能够改变。"
+
+    for temp in scene_info:
+        for key in need_pop_list:
+            if key in temp:
+                temp.pop(key)
+
     prompt = read_file_to_str(prompt_file_path)
-    full_prompt = f'{prompt}\n{scene_info}'
+    full_prompt = f'{prompt}\n{scene_info}\n{other_prompt}'
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
@@ -344,9 +362,13 @@ def gen_new_video_script_llm(scene_info, output_dir, has_author_voice=True):
             raw = get_llm_content(prompt=full_prompt, model_name=model_name)
 
             new_video_script = string_to_object(raw)
-            check_result = check_new_video_script(new_video_script, scene_info, logger)
+            check_result = check_new_video_script(new_video_script, scene_info, logger, has_author_voice)
             if not check_result:
                 raise ValueError("生成的视频脚本检查未通过")
+
+            # 为new_video_script每个方案增加cut_type字段
+            for detail_new_video_script in new_video_script:
+                detail_new_video_script['cut_type'] = cut_type
             return new_video_script
         except Exception as e:
             logger.error(f"生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
@@ -535,7 +557,9 @@ def process_scenes_improved(logical_scene_info, owner_asr_info):
             "narration_script_list": [],
             "original_script_list": [],
             "visual_description": scene_data.get("visual_description"),
-            "scene_potential": scene_data.get("scene_potential")
+            "scene_potential": scene_data.get("scene_potential"),
+            "narrative_function": scene_data.get("reason"),
+            "sequence_info": scene_data.get("sequence_info")
         }
         processed_scene_list.append(new_scene)
         # 键为场景编号，值为列表中的场景对象引用
@@ -881,7 +905,7 @@ def choose_script(new_video_script, need_different=False):
 
 
 @timeit_print
-def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_box, output_dir, has_author_voice):
+def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_box, output_dir, has_overall_bgm):
     """
     生成新视频的文本脚本
     """
@@ -918,9 +942,9 @@ def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_bo
     tags = final_video_script.get('tags', [])
     bgm_path = get_bgm_path(tags, logger)
     rate = 1
-    if not has_author_voice:
-        rate = 0.5
-        print("没有作者声音，降低BGM音量")
+    if has_overall_bgm:
+        rate = 0.25
+        print("有原始bgm，降低BGM音量")
     if bgm_path and os.path.exists(bgm_path):
         # logger.info(f"正在为视频添加背景音乐: {bgm_path}")
         add_bgm_to_video(final_output_path, bgm_path, str(final_with_bgm_path), auto_compute=True, rate=rate)
@@ -1094,15 +1118,15 @@ def gen_new_video_script(video_path, params={}):
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
 
-    has_author_voice = params.get('has_author_voice', True)
-
-    # 获取场景分割信息
-    logical_scene_info = gen_logical_scene(video_path, output_dir)
-    logger.info(f"{basename} 场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info'))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene'))}")
+    has_author_voice = params.get('has_author_voice', False)
 
 
     # 生成asr信息
     owner_asr_info = gen_asr(video_path, output_dir, has_author_voice)
+
+    # 获取场景分割信息
+    logical_scene_info = gen_logical_scene(video_path, output_dir)
+    logger.info(f"{basename} 场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info'))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene'))}")
 
     # # --- 多进程并行执行 ---
     #
@@ -1127,14 +1151,16 @@ def gen_new_video_script(video_path, params={}):
     # # --- 并行执行结束 ---
 
     # 后续处理
-    logger.info(
-        f"场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info', []))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene', []))}")
+    logger.info(f"场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info', []))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene', []))}")
 
 
     # 进行新文案的生成
     logger.info("开始生成新视频脚本...")
     # 检查has_author_voice是否包含owner的文本
-    has_author_voice = is_contain_owner_speaker(owner_asr_info)
+    fact_has_author_voice = is_contain_owner_speaker(owner_asr_info)
+    # 只要has_author_voice和fact_has_author_voice有一个为False，就设置为False
+    has_author_voice = has_author_voice and fact_has_author_voice
+
     start_time = time.time()
     new_video_script = gen_video_script(logical_scene_info, owner_asr_info, output_dir, has_author_voice=has_author_voice)
     logger.info(f"新视频脚本生成完成。耗时: {time.time() - start_time:.2f} 秒")
@@ -1274,6 +1300,8 @@ def gen_new_video(video_path):
     output_file_final_path = os.path.join(output_dir, 'new_video_script.json')
     final_scene_info_path = os.path.join(output_dir, 'final_scene_info.json')
     owner_asr_path = os.path.join(output_dir, 'speech_asr_with_owner.json')
+    logical_scene_info_path = os.path.join(output_dir, 'logical_scene_info.json')
+
     all_files = [output_file_final_path, final_scene_info_path, owner_asr_path]
     fuse_all_info_path = os.path.join(output_dir, 'fuse_all_info.json')
     fixed_owner_asr_path = os.path.join(output_dir, 'fixed_owner_asr.json')
@@ -1285,22 +1313,28 @@ def gen_new_video(video_path):
 
     final_scene_info = read_json(final_scene_info_path)
     new_video_script = read_json(output_file_final_path)
+
+    cut_type = new_video_script[0].get('cut_type', 'all')
     owner_asr_info = read_json(owner_asr_path)
     fixed_owner_asr_info = correct_owner_timestamps(owner_asr_info)
     save_json(fixed_owner_asr_path, fixed_owner_asr_info)
-    has_author_voice = is_contain_owner_speaker(owner_asr_info)
+    logical_scene_info = read_json(logical_scene_info_path)
+    has_overall_bgm = logical_scene_info.get('has_overall_bgm', True)
 
 
-
-    logger.info("开始处理字幕区域并生成遮罩...")
-    subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, owner_asr_info, output_dir)
-    logger.info("字幕处理完成。")
+    if cut_type == 'all':
+        logger.info("开始处理字幕区域并生成遮罩...")
+        subtitle_video_path, subtitle_box = gen_subtitle_box_and_cover_subtitle(video_path, owner_asr_info, output_dir)
+        logger.info("字幕处理完成。")
+    else:
+        subtitle_video_path = video_path
+        subtitle_box = None
 
     logger.info("开始根据新脚本生成最终视频...")
     # 综合三个信息
     fused_new_video_script_info = fuse_all_info(fixed_owner_asr_info, final_scene_info, new_video_script)
     save_json(fuse_all_info_path, fused_new_video_script_info)
-    final_video_path, final_video_script = gen_new_video_by_script(subtitle_video_path, fused_new_video_script_info, subtitle_box, output_dir, has_author_voice)
+    final_video_path, final_video_script = gen_new_video_by_script(subtitle_video_path, fused_new_video_script_info, subtitle_box, output_dir, has_overall_bgm)
     logger.info("最终视频生成完成。")
 
     return final_video_path, final_video_script
@@ -1308,9 +1342,9 @@ def gen_new_video(video_path):
 
 
 if __name__ == '__main__':
-    video_path = '7559543632789802303.mp4'
+    video_path = '7241908464317009189.mp4'
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
 
     gen_new_video_script_robus(video_path)
-    print(f"结果 {gen_new_video_robus(video_path)}")
+    gen_new_video_robus(video_path)

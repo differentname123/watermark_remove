@@ -577,10 +577,11 @@ def _preprocess_media_steps(
         try:
 
             final_video_path, final_video_script = gen_new_video_robus(video_path)
+            cut_type = final_video_script.get('cut_type', 'all')
             if is_valid_target_file_simple(final_video_path):
                 print(f"✅ 重制视频成功，保存为 {final_video_path}")
                 video_path = final_video_path
-                if has_author_voice:
+                if cut_type != 'no_owner_voice':
                     title = final_video_script.get('title')
                     best_scheme['标题'] = title if title else best_scheme.get('标题', '欢迎来看我的视频！')
                     cover_text = final_video_script.get('cover_text')
