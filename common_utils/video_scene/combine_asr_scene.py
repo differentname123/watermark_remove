@@ -362,7 +362,7 @@ def gen_new_video_script_llm(scene_info, output_dir, has_author_voice=True):
             raw = get_llm_content(prompt=full_prompt, model_name=model_name)
 
             new_video_script = string_to_object(raw)
-            check_result = check_new_video_script(new_video_script, scene_info, logger, has_author_voice)
+            check_result = check_new_video_script(new_video_script, scene_info, logger)
             if not check_result:
                 raise ValueError("生成的视频脚本检查未通过")
 
@@ -1342,7 +1342,7 @@ def gen_new_video(video_path):
 
 
 if __name__ == '__main__':
-    video_path = '7241908464317009189.mp4'
+    video_path = '7244839033149345084.mp4'
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
 
