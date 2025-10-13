@@ -936,6 +936,8 @@ def send_one_comment_per_user(config_map, bvid, like_video=False, delay=2, retri
         name = cfg.get('name', uid)
         if uid in  ['196823511', '3546972143225467', '3546717871934392']:
             continue
+        if name not in ['shuijun2']:
+            continue
         cookie = cfg.get('total_cookie')
         csrf = cfg.get('BILI_JCT') or cfg.get('csrf')
         if not cookie or not csrf:
@@ -943,7 +945,7 @@ def send_one_comment_per_user(config_map, bvid, like_video=False, delay=2, retri
             continue
         # 随机选择一条danmu_praises_general_quality
         comment = random.choice(danmu_praises_general_quality)
-        text = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 来自 {name} {comment}"
+        text = f"来自 {name} {comment}"
         try:
             commenter = BilibiliCommenter(total_cookie=cookie, csrf_token=csrf, all_params=cfg.get('all_params', {}))
         except Exception as e:

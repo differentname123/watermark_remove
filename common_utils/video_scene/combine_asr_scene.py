@@ -1568,7 +1568,7 @@ def gen_new_video(video_path):
 
 
 if __name__ == '__main__':
-    video_path = '7559831216170601778.mp4'
+    video_path = '7560286567462554914.mp4'
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
 
