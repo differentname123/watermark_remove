@@ -1322,8 +1322,8 @@ def fix_logical_scene_info(video_path, scenes, logical_scene_info, output_dir, m
             if diff <= max_delta_ms:
                 scene[key] = int(closest)
                 print(f"[Scene {i}] {key}: {orig} -> {closest} （差 {diff} ms，已调整）")
-                save_frames_around_timestamp(video_path, ms_to_time(orig), 5, str(os.path.join(output_dir, 'orig', str(orig))))
-                save_frames_around_timestamp(video_path, ms_to_time(closest), 5, str(os.path.join(output_dir,'closest', str(closest))))
+                # save_frames_around_timestamp(video_path, ms_to_time(orig), 5, str(os.path.join(output_dir, 'orig', str(orig))))
+                # save_frames_around_timestamp(video_path, ms_to_time(closest), 5, str(os.path.join(output_dir,'closest', str(closest))))
             else:
                 print(f"[Scene {i}] {key}: 保持不变 {orig} （最近 {closest}, 差 {diff} ms > {max_delta_ms} ms）")
 

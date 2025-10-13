@@ -1327,7 +1327,6 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     print(f"获得到已有评论：{len(exist_comment_text)} 条，已有弹幕：{len(exist_danmu_text)} 条。| BVID: {bvid}")
     owner_commenter = commenter_map.get(uid, None)
     other_commenters = [c for k, c in commenter_map.items() if k != uid]
-    # comment_commenters = [c for k, c in commenter_map.items() if k in ['196823511', '3632304865937878']]
     share_video = hudong_info.get("share_video", False)
     triple_like_video = hudong_info.get("triple_like_video", False)
     if not share_video or not triple_like_video:
@@ -1432,12 +1431,24 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
 
 
     comment_list = hudong_info.get('comment_list', [])
-    comment_list = comment_list[:5]
+    comment_list = comment_list[:3]
     comment_used_list = hudong_info.get('comment_used', [])
     comment_used_list.extend(exist_comment_text)
     commenter_list = list(commenter_map.values())
+    comment_commenters = [c for k, c in commenter_map.items() if k in ['196823511', '3546972143225467', '3546717871934392', '3632304865937878']]
+
+    # 随机选择commenter_list中的2个
+    if len(comment_commenters) >= 3:
+        selected_commenters = random.sample(commenter_list, 3)
+        for sc in selected_commenters:
+            if sc not in comment_commenters:
+                comment_commenters.append(sc)
+    # 去重commenter_list
+    comment_commenters = list({c.all_params['uid']: c for c in comment_commenters}.values())
+
+
     post_comments_once(
-        commenter_list=commenter_list,
+        commenter_list=comment_commenters,
         comment_list=comment_list,
         bvid=bvid,
         max_success_comment_count=max_success_comment_count,
@@ -1554,7 +1565,7 @@ def fun():
             name = config_map[uid].get('name', uid)
             # if uid in ['3546965562362625']:
             #     continue
-            if name in ['xiaoxue', 'qiqixiao', 'junxiao', 'hao', 'xue']:
+            if name in ['xiaoxue', 'qiqixiao', 'junxiao', 'hao', 'xue', 'shuijun1']:
                 continue
 
             if NEED_UPDATE_SIGN:
