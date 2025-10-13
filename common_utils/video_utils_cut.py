@@ -3,6 +3,10 @@ import random
 import shutil
 import subprocess
 import os
+import sys
+
+import cv2
+import numpy as np
 from PIL import Image
 import math  # 需要导入 math 模块以使用 PI
 
@@ -550,10 +554,225 @@ def gen_video(text, output_path, origin_video_path, voice_name="zh-CN-XiaoxiaoNe
         os.remove(with_audio_path)
     return str(output_path.resolve())
 
+
+def find_motion_bbox(video_path, start_frame=60, end_frame_offset=60, num_samples=20, motion_threshold=30, padding=10):
+    """
+    分析视频指定片段，通过均匀采样固定数量的帧来找到运动区域的边界框。
+
+    :param video_path: 视频文件路径
+    :param start_frame: 开始分析的绝对帧号 (默认为0)
+    :param end_frame_offset: 从视频末尾向前偏移的帧数。0表示分析到最后一帧。(默认为0)
+    :param num_samples: 在指定范围内均匀采样的帧数 (默认为20)
+    :param motion_threshold: 像素差异多大时算作运动
+    :param padding: 在计算出的边界框外围增加的像素边距
+    :return: (x, y, w, h) 的边界框元组，如果失败则返回 None
+    """
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"错误: 无法打开视频文件 {video_path}", file=sys.stderr)
+        return None
+
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+
+    print(f"视频信息: {frame_width}x{frame_height}, {total_frames} 帧, {fps:.2f} FPS")
+    if total_frames < 2:
+        print("错误: 视频文件帧数不足，无法进行分析。", file=sys.stderr)
+        cap.release()
+        return None
+
+    # --- 新逻辑: 计算实际的分析范围 ---
+    actual_end_frame = total_frames - end_frame_offset
+
+    # --- 参数有效性检查 ---
+    if start_frame < 0 or start_frame >= total_frames:
+        print(f"错误: 起始帧 {start_frame} 超出范围 (0-{total_frames - 1})。", file=sys.stderr)
+        return None
+    if actual_end_frame <= start_frame:
+        print(f"错误: 计算出的结束帧({actual_end_frame})必须大于起始帧({start_frame})。", file=sys.stderr)
+        return None
+    if num_samples < 2:
+        print(f"错误: 采样帧数 {num_samples} 必须至少为2。", file=sys.stderr)
+        return None
+
+    # --- 新逻辑: 使用 linspace 生成均匀分布的采样帧索引 ---
+    # np.linspace 包含端点，所以我们从 start_frame 到 actual_end_frame - 1
+    sample_indices = np.linspace(start_frame, actual_end_frame - 1, num=num_samples, dtype=int)
+    print(f"将在第 {start_frame} 帧到第 {actual_end_frame} 帧之间，均匀采样 {len(sample_indices)} 帧进行分析。")
+
+    motion_accumulator = np.zeros((frame_height, frame_width), dtype=np.uint8)
+
+    # --- 新逻辑: 处理第一个采样帧来初始化 prev_gray ---
+    cap.set(cv2.CAP_PROP_POS_FRAMES, sample_indices[0])
+    ret, prev_frame = cap.read()
+    if not ret:
+        print(f"错误: 无法读取帧 {sample_indices[0]}。", file=sys.stderr)
+        cap.release()
+        return None
+    prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+    prev_gray = cv2.GaussianBlur(prev_gray, (21, 21), 0)
+
+    # --- 新逻辑: 循环遍历剩余的采样帧 ---
+    for i, frame_index in enumerate(sample_indices[1:]):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+        ret, frame = cap.read()
+        if not ret:
+            print(f"\n警告: 无法读取帧 {frame_index}，跳过此帧。")
+            continue
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (21, 21), 0)
+
+        frame_delta = cv2.absdiff(prev_gray, gray)
+        thresh = cv2.threshold(frame_delta, motion_threshold, 255, cv2.THRESH_BINARY)[1]
+        thresh = cv2.dilate(thresh, None, iterations=2)
+
+        motion_accumulator = cv2.bitwise_or(motion_accumulator, thresh)
+        prev_gray = gray  # 更新 prev_gray 以便下次比较
+
+        # 进度条基于已处理的采样帧数
+        progress = ((i + 2) / len(sample_indices)) * 100
+        sys.stdout.write(f"\r正在分析... {progress:.2f}% (已处理 {i + 2}/{len(sample_indices)} 帧)")
+        sys.stdout.flush()
+
+    print("\n分析完成！")
+    cap.release()
+
+    points = cv2.findNonZero(motion_accumulator)
+    if points is None:
+        print("警告：在指定片段内未检测到任何运动。将返回整个视频区域。")
+        return 0, 0, frame_width, frame_height
+
+    # 后续处理与之前相同
+    x, y, w, h = cv2.boundingRect(points)
+    x = max(0, x - padding)
+    y = max(0, y - padding)
+    w = min(frame_width - x, w + 2 * padding)
+    h = min(frame_height - y, h + 2 * padding)
+    w = w + (w % 2)
+    h = h + (h % 2)
+    if x + w > frame_width: w = frame_width - x
+    if y + h > frame_height: h = frame_height - y
+
+    return ((x, y, w, h), frame_width, frame_height)
+
+
+def crop_video(input_path, output_path, bbox, crf=23):
+    """
+    使用 FFmpeg 调用来裁剪视频，并使用 CRF 控制输出质量和文件大小。
+
+    :param input_path: 输入视频路径
+    :param output_path: 输出视频路径
+    :param bbox: (x, y, w, h) 的边界框
+    :param crf: Constant Rate Factor (CRF)。范围 0-51，默认 23。
+                数值越小，质量越高，文件越大。
+    """
+    x, y, w, h = bbox
+    print(f"\n检测到的活动区域 (x, y, w, h): ({x}, {y}, {w}, {h})")
+
+    # 构建 FFmpeg 命令列表
+    command = [
+        'ffmpeg',
+        '-y',  # 自动覆盖输出文件
+        '-i', input_path,
+        '-vf', f'crop={w}:{h}:{x}:{y}',
+        '-c:v', 'libx264',  # 指定视频编码器为 H.264
+        '-crf', str(crf),   # 指定质量因子，23 是一个很好的平衡值
+        '-preset', 'medium',# 预设，影响编码速度和压缩率的平衡。'medium' 是默认值，通常无需更改。
+        '-c:a', 'copy',     # 直接复制音频流，不做重新编码
+        output_path
+    ]
+
+    print("\n将要执行的 FFmpeg 命令:")
+    # 为了清晰地打印命令
+    command_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in command)
+    print(command_str)
+    print("-" * 50)
+
+    try:
+        # 执行命令
+        print("正在执行裁剪，请稍候...")
+        # 使用 PIPE 捕获输出，可以在出错时提供更详细的信息
+        process = subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True # Python 3.7+
+        )
+        print(f"\n裁剪成功！输出文件已保存至: {output_path}")
+
+    except FileNotFoundError:
+        print("错误: 'ffmpeg' 命令未找到。", file=sys.stderr)
+        print("请确保 FFmpeg 已安装并配置在系统的 PATH 环境变量中。", file=sys.stderr)
+    except subprocess.CalledProcessError as e:
+        print(f"错误: FFmpeg 执行失败，返回码 {e.returncode}", file=sys.stderr)
+        print("\n--- FFmpeg 标准输出 ---", file=sys.stderr)
+        print(e.stdout, file=sys.stderr)
+        print("\n--- FFmpeg 错误输出 ---", file=sys.stderr)
+        print(e.stderr, file=sys.stderr)
+
+def process_and_crop_video(video_path, area_threshold_ratio=0.8, **kwargs):
+    """
+    分析视频中的运动区域，如果运动区域显著小于整个画面，则进行裁剪。
+
+    :param video_path: 待处理的视频文件路径
+    :param area_threshold_ratio: 面积阈值比例。当运动区域面积小于原面积的该比例时，触发裁剪。
+                                 例如, 0.8 表示小于80%。
+    :param kwargs: 传递给 find_motion_bbox 的其他参数，如 start_frame, num_samples 等。
+    :return: 元组 (was_cropped, final_path)。
+             was_cropped: 布尔值，True表示已裁剪，False表示未裁剪。
+             final_path: 最终视频文件的路径（可能是裁剪后的新路径，也可能是原始路径）。
+    """
+    print(f"--- 开始处理视频: {video_path} ---")
+
+    # 1. 查找运动边界框
+    analysis_result = find_motion_bbox(video_path, **kwargs)
+
+    if analysis_result is None:
+        print("分析失败，无法获取边界框。")
+        return (False, video_path)
+
+    bbox, original_w, original_h = analysis_result
+    x, y, w, h = bbox
+
+    # 2. 判断是否需要裁剪
+    original_area = original_w * original_h
+    crop_area = w * h
+
+    # 避免除以零的错误
+    if original_area == 0:
+        print("视频原始面积为0，无法计算比例。")
+        return (False, video_path)
+
+    current_ratio = crop_area / original_area
+    print(f"运动区域面积占总面积的 {current_ratio:.2%}")
+
+    # 条件：当前比例小于阈值，并且裁剪区域不等于整个视频（这是 find_motion_bbox 的回退情况）
+    if current_ratio < area_threshold_ratio and (w, h) != (original_w, original_h):
+        print(f"面积比例 ({current_ratio:.2%}) 小于阈值 ({area_threshold_ratio:.2%})，将执行裁剪。")
+
+        # 构造输出文件名，例如 a.mp4 -> a_crop.mp4
+        base, ext = os.path.splitext(video_path)
+        output_path = f"{base}_crop{ext}"
+
+        # 3. 执行裁剪
+        crop_video(video_path, output_path, bbox)
+
+        return (True, output_path)
+    else:
+        print(f"面积比例不小于阈值或与原尺寸相同，无需裁剪。")
+        return (False, video_path)
+
+
 # ... (示例使用部分保持不变) ...
 if __name__ == '__main__':
-    # 假设你有一张非16:9的图片，比如一张竖屏图 test_portrait.jpg
-    # 你可以自己创建或下载一张，例如 1080x1920 尺寸
+
+
+
+
     test_portrait_image = 'test4.jpg'
 
 

@@ -980,7 +980,8 @@ def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_bo
     tags = final_video_script.get('tags', [])
     bgm_path = get_bgm_path(tags, logger)
     rate = 1
-    if has_overall_bgm:
+    cut_type = final_video_script.get('cut_type', '未知')
+    if has_overall_bgm and cut_type != 'all':
         rate = 0.25
         print("有原始bgm，降低BGM音量")
     if bgm_path and os.path.exists(bgm_path):
@@ -1568,7 +1569,7 @@ def gen_new_video(video_path):
 
 
 if __name__ == '__main__':
-    video_path = '7560286567462554914.mp4'
+    video_path = '7030743791866744071.mp4'
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
 
@@ -1576,3 +1577,11 @@ if __name__ == '__main__':
     gen_new_video_robus(video_path)
 
     # delete_all_mp4_in_dir(base_output_dir)
+
+
+    # # 1. 分析视频获取边界框
+    # was_cropped, final_path = process_and_crop_video(video_path)
+    # print(f"\n处理结果:")
+    # print(f"是否裁剪: {was_cropped}")
+    # print(f"最终文件: {final_path}")
+    # print("-" * 30)
