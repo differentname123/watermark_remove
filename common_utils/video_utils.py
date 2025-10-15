@@ -2993,7 +2993,9 @@ def add_transparent_watermark(
             '-i', video_path,
             '-i', watermark_path,
             '-filter_complex', filter_complex,
-            '-loglevel', 'error',
+            '-c:v', 'libx264',  # 显式指定编码器
+            '-crf', '23',  # 近无差别质量；需要更好则减小（比如16或0）
+            '-preset', 'ultrafast',  # 均衡速度/质量；开发时可用 veryslow
             '-y',
             output_path
         ]
@@ -3265,3 +3267,178 @@ def reduce_and_replace_video(video_path: str, **kwargs) -> bool:
             os.remove(temp_path)
             print(f"临时文件已清理: {temp_path}")
         print("-" * 50)
+
+def get_human_readable_size(size_in_bytes):
+    """将字节大小转换为更易读的格式 (KB, MB, GB)"""
+    if size_in_bytes is None:
+        return "N/A"
+    power = 1024
+    n = 0
+    power_labels = {0: '', 1: 'K', 2: 'M', 3: 'G', 4: 'T'}
+    while size_in_bytes >= power and n < len(power_labels):
+        size_in_bytes /= power
+        n += 1
+    return f"{size_in_bytes:.2f} {power_labels[n]}B"
+
+
+def compress_video_in_place(
+        video_path: str,
+        codec: str = 'libx264',
+        crf: int = 23,
+        preset: str = 'medium'
+) -> bool:
+    """
+    对视频进行原地压缩，只有在压缩成功且文件变小时才覆盖原文件。
+
+    :param video_path: 待压缩的视频文件路径。
+    :param codec: 使用的视频编码器 ('libx264' 或 'libx265')。
+    :param crf: Constant Rate Factor (0-51)，数值越低质量越高。H.264建议23，H.265建议26。
+    :param preset: 编码速度预设（如 'ultrafast', 'fast', 'medium', 'slow', 'veryslow'）。
+                   速度越慢，压缩率越高。'medium' 是一个很好的平衡点。
+    :return: 如果成功压缩并替换了原文件，返回 True；否则返回 False。
+    """
+
+    input_path = Path(video_path)
+    if not input_path.is_file():
+        print(f"错误: 文件不存在 -> {video_path}")
+        return False
+
+    original_size = input_path.stat().st_size
+    print(f"🎬 开始处理: {input_path.name}")
+    print(f"   - 原始大小: {get_human_readable_size(original_size)}")
+    print(f"   - 使用配置: codec={codec}, crf={crf}, preset={preset}")
+
+    # --- 2. 创建一个安全的临时输出文件 ---
+    # 使用与原文件相同的目录和后缀，避免跨盘符移动的问题
+    with tempfile.NamedTemporaryFile(suffix=input_path.suffix, dir=input_path.parent, delete=False) as temp_file:
+        temp_output_path = Path(temp_file.name)
+
+    # --- 3. 构建并执行 FFmpeg 命令 ---
+    command = [
+        'ffmpeg',
+        '-i', str(input_path),  # 输入文件
+        '-c:v', codec,  # 视频编码器
+        '-crf', str(crf),  # 视频质量
+        '-preset', preset,  # 编码预设
+        '-c:a', 'aac',  # 音频编码器 (通用)
+        '-b:a', '128k',  # 音频比特率
+        '-y',  # 覆盖输出文件 (这里是覆盖临时文件)
+        str(temp_output_path)
+    ]
+
+    # 特殊处理：为 H.265 添加 tag，以提高在 Apple 设备上的兼容性
+    if codec == 'libx265':
+        command.extend(['-tag:v', 'hvc1'])
+
+    try:
+        print("   - 正在执行 FFmpeg 压缩... (这可能需要一些时间)")
+        # 使用 subprocess.run 来执行命令，并捕获输出
+        result = subprocess.run(
+            command,
+            check=True,  # 如果 FFmpeg 返回非零退出码（错误），则抛出异常
+            capture_output=True,
+            text=True,
+            encoding='utf-8'
+        )
+
+    except FileNotFoundError:
+        print("错误: FFmpeg 命令执行失败。请确认其已正确安装。")
+        temp_output_path.unlink()  # 清理临时文件
+        return False
+    except subprocess.CalledProcessError as e:
+        print("\n❌ FFmpeg 压缩失败!")
+        print(f"   - 错误码: {e.returncode}")
+        print(f"   - FFmpeg 输出:\n{e.stderr}")
+        temp_output_path.unlink()  # 清理临时文件
+        return False
+
+    # --- 4. 比较大小并决定是否替换 ---
+    new_size = temp_output_path.stat().st_size
+    print(f"   - 压缩后大小: {get_human_readable_size(new_size)}")
+
+    if new_size < original_size:
+        print(f"✅ 压缩成功，文件减小了 {get_human_readable_size(original_size - new_size)}。")
+        try:
+            # 安全地替换文件
+            shutil.move(str(temp_output_path), str(input_path))
+            print(f"   - 原文件已成功被覆盖: {input_path.name}")
+            return True
+        except Exception as e:
+            print(f"❌ 替换文件时发生错误: {e}")
+            temp_output_path.unlink()  # 替换失败也要清理
+            return False
+    else:
+        print("🟡 压缩后的文件并未减小，放弃替换。")
+        temp_output_path.unlink()  # 清理无用的临时文件
+        return False
+
+
+def compress_video_with_gpu(video_path: str, quality: int = 25) -> bool:
+    """
+    使用 NVIDIA GPU (h264_nvenc) 快速压缩视频。
+    只有在压缩成功且文件变小时，才会覆盖原始文件。
+
+    :param video_path: 视频文件的路径。
+    :param quality: 质量参数 (CQ)，范围 0-51。建议 23-28，数值越小质量越高。
+    :return: 如果成功压缩并替换，返回 True，否则返回 False。
+    """
+    # 1. 检查 FFmpeg 是否存在
+    if shutil.which('ffmpeg') is None:
+        print("❌ 错误：找不到 ffmpeg 命令。请确保已安装 FFmpeg 并将其添加至系统 PATH。")
+        return False
+
+    input_path = Path(video_path)
+    if not input_path.is_file():
+        print(f"❌ 错误：文件不存在 -> {video_path}")
+        return False
+
+    print(f"🚀 开始处理: '{input_path.name}'")
+    original_size_mb = input_path.stat().st_size / (1024 * 1024)
+    print(f"   - 原始大小: {original_size_mb:.2f} MB")
+
+    # 2. 创建一个安全的临时文件用于输出
+    # 使用 with 语句确保临时文件在完成后被正确处理
+    with tempfile.NamedTemporaryFile(suffix=input_path.suffix, delete=False) as temp_f:
+        temp_path = Path(temp_f.name)
+
+    # 3. 构建并执行 FFmpeg 命令
+    command = [
+        'ffmpeg',
+        '-i', str(input_path),      # 输入文件
+        '-c:v', 'h264_nvenc',      # 使用 NVIDIA H.264 硬件编码器
+        '-cq', str(quality),       # 设置恒定质量 (Constant Quality)
+        '-c:a', 'aac',             # 使用兼容性好的 AAC 音频编码器
+        '-y',                      # 覆盖输出文件（此处指临时文件）
+        str(temp_path)
+    ]
+
+    try:
+        print("   - 正在使用 GPU 加速压缩...")
+        # 执行命令，如果失败则会抛出异常
+        subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding='utf-8'
+        )
+    except subprocess.CalledProcessError as e:
+        print("❌ 压缩失败！")
+        # 打印 FFmpeg 的错误输出，方便排查问题
+        print(f"   - FFmpeg 错误信息:\n{e.stderr}")
+        temp_path.unlink() # 清理失败的临时文件
+        return False
+
+    # 4. 比较文件大小
+    new_size_bytes = temp_path.stat().st_size
+    if new_size_bytes < input_path.stat().st_size:
+        new_size_mb = new_size_bytes / (1024 * 1024)
+        print(f"✅ 压缩成功! 新大小: {new_size_mb:.2f} MB")
+        # 用压缩后的文件安全地替换原文件
+        shutil.move(str(temp_path), str(input_path))
+        print(f"   - '{input_path.name}' 已被成功覆盖。")
+        return True
+    else:
+        print("🟡 压缩后的文件没有变小，保留原文件。")
+        temp_path.unlink() # 清理无用的临时文件
+        return False

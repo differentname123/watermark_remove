@@ -849,7 +849,7 @@ def check_type(updated_entry):
             video_type = 'game'
         elif '运动' in video_topic or '体育' in video_topic:
             video_type = 'sport'
-        elif '搞笑' in video_topic or '趣味' in video_topic or '娱乐' in video_topic:
+        elif '搞笑' in video_topic or '趣味' in video_topic or '娱乐' in video_topic or '新闻' in video_topic:
             video_type = 'fun'
 
     user_type = 'fun'

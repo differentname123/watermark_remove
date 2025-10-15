@@ -25,7 +25,7 @@ from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box_target_n
 from common_utils.split_audio import separate_with_cli
 from common_utils.split_scenes import split_scenes_json
 from common_utils.video_utils import extract_audio_from_video, clip_video_ms, merge_videos_ffmpeg, probe_duration, \
-    cover_subtitle, reduce_video_size_robust, reduce_and_replace_video, probe_video_new
+    cover_subtitle, reduce_video_size_robust, reduce_and_replace_video, probe_video_new, compress_video_in_place
 from common_utils.video_utils2 import add_bgm_to_video
 
 import re
@@ -347,7 +347,7 @@ def check_new_video_script(new_video_script, scene_info, logger):
     return True
 
 
-def gen_new_video_script_llm(scene_info, output_dir, has_author_voice=True):
+def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, has_author_voice=True):
     """
     生成新的视频方案
     """
@@ -381,6 +381,8 @@ def gen_new_video_script_llm(scene_info, output_dir, has_author_voice=True):
                 last_is_adjustable = scene_info[-1]['sequence_info'].get('is_adjustable', True)
                 if not last_is_adjustable:
                     other_prompt += f"\n注意：最后一个场景的位置不能够改变。"
+        if no_is_adjustable:
+            other_prompt = f"\n注意：所有场景的顺序都不能够改变。"
 
     for temp in scene_info:
         for key in need_pop_list:
@@ -827,7 +829,7 @@ def process_narration_clips(start, end, data, min_duration=500):
     return final_clips
 
 @timeit_print
-def gen_video_script(logical_scene_info, owner_asr_info, output_dir, has_author_voice=False):
+def gen_video_script(logical_scene_info, owner_asr_info, output_dir, no_is_adjustable, has_author_voice=False):
     """
     生成新视频的文本脚本
     """
@@ -843,7 +845,7 @@ def gen_video_script(logical_scene_info, owner_asr_info, output_dir, has_author_
     final_scene_info = process_scenes_improved(logical_scene_info, owner_asr_info)
     save_json(final_scene_info_path, final_scene_info)
 
-    new_video_script = gen_new_video_script_llm(final_scene_info, output_dir, has_author_voice=has_author_voice)
+    new_video_script = gen_new_video_script_llm(final_scene_info, output_dir, no_is_adjustable, has_author_voice=has_author_voice)
     save_json(new_video_script_path, new_video_script)
 
     return new_video_script
@@ -1558,7 +1560,7 @@ def gen_new_video_script(video_path, basename, params={}):
     # 获取场景分割信息
     logical_scene_info = gen_logical_scene(video_path, output_dir, logger)
     logger.info(f"{basename} 场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info'))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene'))}")
-
+    no_is_adjustable = check_logical_scene_info(logical_scene_info)
 
     # 后续处理
     logger.info(f"场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info', []))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene', []))}")
@@ -1572,7 +1574,7 @@ def gen_new_video_script(video_path, basename, params={}):
     has_author_voice = has_author_voice and fact_has_author_voice
 
     start_time = time.time()
-    new_video_script = gen_video_script(logical_scene_info, owner_asr_info, output_dir, has_author_voice=has_author_voice)
+    new_video_script = gen_video_script(logical_scene_info, owner_asr_info, output_dir, no_is_adjustable, has_author_voice=has_author_voice)
     logger.info(f"新视频脚本生成完成。耗时: {time.time() - start_time:.2f} 秒")
 
 def fuse_all_info(owner_asr_info, final_scene_info, new_video_script_list):
@@ -1696,7 +1698,19 @@ def gen_new_video_robus(video_path):
                 time.sleep(2)  # 等待一段时间后再重试
 
 
-
+def check_logical_scene_info(logical_scene_info):
+    """
+    检测 "new_scene_info" 中每个sequence_info的is_adjustable是否都为Fasle
+    """
+    new_scene_info = logical_scene_info.get('new_scene_info', [])
+    for i, scene in enumerate(new_scene_info):
+        sequence_info = scene.get('sequence_info', {})
+        is_adjustable = sequence_info.get('is_adjustable', True)
+        if is_adjustable:
+            print(f"警告: 场景 {i + 1} 的 sequence_info 中 is_adjustable 为 True")
+            return False
+    print("所有场景的 sequence_info 中 is_adjustable 均为 False")
+    return True
 
 def gen_new_video(video_path, basename):
     """
@@ -1751,12 +1765,13 @@ def gen_new_video(video_path, basename):
 
 
 if __name__ == '__main__':
-    video_path = '7561145190335024442_process.mp4'
+    video_path = '7561420776100973864.mp4'
     # process_and_crop_video(video_path)
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
+    # compress_video_in_place(video_path)
 
     gen_new_video_script_robus(video_path)
-    # gen_new_video_robus(video_path)
+    gen_new_video_robus(video_path)
 
     # delete_all_mp4_in_dir(base_output_dir)
