@@ -843,7 +843,7 @@ def check_type(updated_entry):
     danmu_info = updated_entry.get('hudong', {}).get('danmu_info', {})
     video_topic = danmu_info.get('视频分析', {}).get('题材', '')
     video_id_list = updated_entry.get('video_id_list')
-    video_type = 'fun'
+    video_type = 'no'
     if video_topic:
         if '游戏' in video_topic:
             video_type = 'game'
@@ -994,6 +994,7 @@ def auto_upload():
             video_info = metadata_cache.get(video_id, {})
             video_info = full_video_info(video_info)
             origin_video_path_list.append(video_info.get('video_process_path'))
+            origin_video_path_list.append(video_info.get('video_path'))
             comment_list = video_info.get('hudong', {}).get('comment_list', [])
             comment_list_all.extend(comment_list)
             # 选择最佳投稿方案
@@ -1097,7 +1098,7 @@ def auto_upload():
 
     # 如果需要在一次运行结束前等待所有后台上传完成，可取消下面注释：
     print("等待所有后台上传完成...")
-    concurrent.futures.wait(futures, timeout=None)
+    # concurrent.futures.wait(futures, timeout=None)
 
     # 处理被跳过的 persistent tasks
     if len(temp_set) > 0:

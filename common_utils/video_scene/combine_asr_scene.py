@@ -532,9 +532,13 @@ def check_optimized_video_plan(optimized_video_plan, video_duration_ms):
     for i, overlay in enumerate(overlays):
         start = overlay.get('start')
         start_ms = time_to_ms(start)
+        text = overlay.get('text', '').strip()
+        if len(text) >= 10:
+            return False, f"优化方案检查失败：第 {i + 1} 个 overlay 的文本长度过长（>=10）。文本: {text}"
         if not (0 <= start_ms <= video_duration_ms):
             return False, f"优化方案检查失败：第 {i + 1} 个 overlay 的 start 时间 {start} 超出视频时长范围 [0, {video_duration_ms}ms]。"
     return True, "优化方案检查通过。"
+
 
 def gen_optimized_video_plan_llm(video_path, logger):
     """
@@ -1076,6 +1080,8 @@ def add_image_text_to_video(video_path, video_script, optimized_video_plan_info,
             position = overlay.get('position', 'TC')
             start_ms = time_to_ms(start)
             next_timestamp = first_greater(start_ms, all_scene_timestamp_list)
+            if not next_timestamp:
+                continue
             duration = next_timestamp - start_ms
             duration = min(duration, 5000)
             texts_list.append({
@@ -1745,12 +1751,12 @@ def gen_new_video(video_path, basename):
 
 
 if __name__ == '__main__':
-    video_path = '7556619076186279202_process.mp4'
+    video_path = '7561145190335024442_process.mp4'
     # process_and_crop_video(video_path)
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
 
     gen_new_video_script_robus(video_path)
-    gen_new_video_robus(video_path)
+    # gen_new_video_robus(video_path)
 
     # delete_all_mp4_in_dir(base_output_dir)
