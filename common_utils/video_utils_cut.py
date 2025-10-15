@@ -688,7 +688,7 @@ def crop_video(input_path, output_path, bbox, crf=23):
         '-vf', f'crop={w}:{h}:{x}:{y}',
         '-c:v', 'libx264',  # 指定视频编码器为 H.264
         '-crf', str(crf),   # 指定质量因子，23 是一个很好的平衡值
-        '-preset', 'medium',# 预设，影响编码速度和压缩率的平衡。'medium' 是默认值，通常无需更改。
+        '-preset', 'ultrafast',# 预设，影响编码速度和压缩率的平衡。'medium' 是默认值，通常无需更改。
         '-c:a', 'copy',     # 直接复制音频流，不做重新编码
         output_path
     ]
@@ -791,7 +791,7 @@ def _escape_ffmpeg_text(text):
     return escaped_text
 
 
-def get_coordinate_offset(original_w: int, original_h: int, padding_ratio: float = 0.25) -> tuple[int, int]:
+def get_coordinate_offset(original_w: int, original_h: int, padding_ratio: float = 0.1) -> tuple[int, int]:
     """
     根据视频的原始尺寸和边框比例，计算原始视频画面在新画布上的坐标偏移量。
 
@@ -831,7 +831,7 @@ def get_coordinate_offset(original_w: int, original_h: int, padding_ratio: float
     return x_offset, y_offset
 
 def add_text_adaptive_padding(input_video_path, output_video_path, text_events, font_path=None,
-                                    padding_ratio=0.25):
+                                    padding_ratio=0.1):
     """
     自适应地为视频添加边框和文字，实现文字靠近视频上边界的“底部对-齐”效果。
 
@@ -945,7 +945,7 @@ def add_text_adaptive_padding(input_video_path, output_video_path, text_events, 
         'ffmpeg', '-i', input_video_path,
         '-filter_complex', f"[0:v]{full_filter_chain}[outv]",
         '-map', '[outv]', '-map', '0:a?',
-        '-c:v', 'libx264', '-preset', 'superfast', '-crf', '23',
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
         '-c:a', 'aac', '-y', output_video_path
     ]
     print("即将执行的 FFmpeg 命令:")
@@ -1307,7 +1307,7 @@ def add_text_overlays_to_video(
     full_cmd = base_cmd + [
         '-filter_complex', ";".join(filter_complex),
         '-map', last_video_stream, '-map', '0:a?',
-        '-c:v', 'libx264', '-preset', 'superfast', '-crf', '23', '-c:a', 'aac',
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-c:a', 'aac',
         output_video_path
     ]
 

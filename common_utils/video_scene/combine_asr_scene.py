@@ -992,7 +992,7 @@ def choose_script(new_video_script, need_different=False):
 
     return new_video_script
 
-
+@timeit_print
 def add_title_to_video(video_path, video_script, output_path, need_on_screen_text=True):
     """
     为视频添加动态计算的居中标题。
@@ -1004,6 +1004,7 @@ def add_title_to_video(video_path, video_script, output_path, need_on_screen_tex
 
     video_abstract = video_script.get('video_abstract', '')
     video_abstract_list = split_and_merge_sentence(video_abstract)
+    # video_abstract_list = [video_abstract]
     # 遍历video_abstract_list调用remove_last_punctuation
     video_abstract_list = [remove_last_punctuation(text) for text in video_abstract_list if text.strip()]
 
@@ -1018,6 +1019,7 @@ def add_title_to_video(video_path, video_script, output_path, need_on_screen_tex
             temp_text_list = video_abstract_list.copy()
             if need_on_screen_text:
                 temp_text_list.append(on_screen_text)
+
             scene_start = scene.get('scene_start', 0) / 1000.0  # 假设输入是毫秒
             scene_end = scene.get('scene_end', 0) / 1000.0  # 假设输入是毫秒
             temp_dict = {}
@@ -1035,7 +1037,7 @@ def add_title_to_video(video_path, video_script, output_path, need_on_screen_tex
 
     add_text_adaptive_padding(video_path, output_path, texts_list)
 
-
+@timeit_print
 def add_image_text_to_video(video_path, video_script, optimized_video_plan_info, output_path, output_dir):
     """
     为视频添加动态计算的居中标题。
@@ -1045,7 +1047,7 @@ def add_image_text_to_video(video_path, video_script, optimized_video_plan_info,
         log_file_path = os.path.join(output_dir, 'log.txt')
         logger = setup_logger(log_file_path)
         scene_list = video_script.get('场景顺序与新文案')
-        theme_tags = video_script.get('tags', [])
+        theme_tags = video_script.get('tags', []).get('theme_tags', [])
         is_fun = False
         # 如果theme_tags包含"综艺", "娱乐"，"吐槽"其中一个就应该是True
         for tag in theme_tags:
@@ -1743,7 +1745,7 @@ def gen_new_video(video_path, basename):
 
 
 if __name__ == '__main__':
-    video_path = '7544573678915226934_process.mp4'
+    video_path = '7556619076186279202_process.mp4'
     # process_and_crop_video(video_path)
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))

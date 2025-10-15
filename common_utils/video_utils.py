@@ -766,7 +766,7 @@ def cover_video_area_blur_super_robust(
         time_ranges=None,
         blur_strength: int = 15,
         crf: int = 23,
-        preset: str = "superfast"
+        preset: str = "ultrafast"
 ):
     """
     为一个视频的指定区域应用模糊，并进行大量的预检查和参数修正以确保成功。
@@ -1779,7 +1779,7 @@ def _merge_chunk_ffmpeg(video_paths, output_path, probe_fn):
         "-map", "[outv]",
         "-map", "[outa]",
         "-r", f"{ref_fps:.2f}",
-        "-c:v", "libx264", "-preset", "superfast", "-crf", "23",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
         "-pix_fmt", "yuv420p",
         "-colorspace", "bt709",
         "-color_primaries", "bt709",
@@ -2904,7 +2904,7 @@ def clip_video_ms(
         '-c:v', 'libx264',  # 或者使用 'libx265' 如果需要 HEVC 编码
         '-crf', '23',  # 推荐值，可以调整
         '-c:a', 'copy',  # 复制音频，避免处理和质量损失
-        '-preset', 'superfast',  # 编码速度和压缩率的平衡，'veryfast', 'fast', 'medium', 'slow'
+        '-preset', 'ultrafast',  # 编码速度和压缩率的平衡，'veryfast', 'fast', 'medium', 'slow'
         '-y', output_path
     ]
 

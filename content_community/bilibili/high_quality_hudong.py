@@ -1307,7 +1307,7 @@ def pick_commenters(commenter_map, usage_path, n=3):
     特殊 uid 使用一次记 2 次，其他记 1 次。
     返回选中的 commenter 对象列表。
     """
-    usage_map = {'196823511':6,'3546972143225467':4,'3546717871934392':4,'3632304865937878':3}
+    usage_map = {'196823511':6,'3546972143225467':4,'3546717871934392':5,'3632304865937878':3, '3546970887031023':3, '3546979686681114':3, '3546970725550911':3, '3632307990694238':4}
 
     usage = read_json(usage_path) or {}
     # ensure keys are strings
@@ -1322,7 +1322,7 @@ def pick_commenters(commenter_map, usage_path, n=3):
 
     selected = uids[:min(n, len(uids))]
     for uid in selected:
-        usage[uid] = usage.get(uid, 0) + 8 - usage_map.get(uid, 2)
+        usage[uid] = usage.get(uid, 0) + 7 - usage_map.get(uid, 2)
 
     save_json(usage_path, usage)
     selected_commenter = [commenter_map[uid] for uid in selected if uid in commenter_map]
@@ -1582,7 +1582,7 @@ def fun():
             name = config_map[uid].get('name', uid)
             # if uid in ['3546965562362625']:
             #     continue
-            if name in ['xiaoxue', 'qiqixiao', 'junxiao', 'hao', 'xue', 'shuijun1', 'shuijun2']:
+            if name in ['xiaoxue', 'qiqixiao', 'junxiao', 'hao', 'xue', 'shuijun1', 'shuijun2', 'shuijun3', 'dahao']:
                 continue
 
             if NEED_UPDATE_SIGN:
