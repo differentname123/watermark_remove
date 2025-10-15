@@ -1796,22 +1796,22 @@ def calculate_uniformity_score(lengths: list[int]) -> float:
 
 def split_and_merge_sentence(sentence: str) -> list[str]:
     """
-    将句子智能地分割并合并成一个包含1、2或3个元素的列表。
+    将句子智能地分割并合并成一个包含1或2个元素的列表。
 
     处理逻辑：
-    1. 使用标点符号（不包括引号）将句子分割成多个基础短句。
-    2. 如果只有一个短句，直接返回。
-    3. 寻找所有可能的2元素和3元素合并方案，必须满足非递减长度规则
-       (len(part_i) >= len(part_{i-1})).
-    4. 在所有有效方案中，选择最“均匀”的一个返回。均匀度通过计算各部分长度的
-       标准差来衡量，标准差越小越均匀。
-    5. 如果没有找到任何有效的合并方案，则返回原始分割的短句列表。
+    1. 使用标点符号将句子分割成多个基础短句。
+    2. 如果分割后只有一个短句，直接返回。
+    3. 寻找所有可能的2元素合并方案，这些方案必须满足非递减长度规则
+       (len(part_2) >= len(part_1))。
+    4. 在所有有效的2元素方案中，选择最“均匀”的一个返回。
+    5. 如果没有找到任何有效的2元素合并方案，则将所有短句合并，
+       返回包含完整句子的单元素列表。
 
     Args:
         sentence: 需要处理的输入字符串。
 
     Returns:
-        一个列表，包含1、2或3个处理后的短句。
+        一个列表，包含1或2个处理后的短句。
     """
     if not sentence or not isinstance(sentence, str):
         return []
@@ -1824,54 +1824,29 @@ def split_and_merge_sentence(sentence: str) -> list[str]:
         return clauses
 
     best_partition = None
-    # 使用一个很大的初始值，确保任何有效方案都会被采纳
     min_score = float('inf')
 
-    # --- 2. 寻找并评估2元素方案 ---
-    # 遍历所有可能的分割点
+    # 2. 寻找并评估所有可能的2元素方案
     for i in range(1, len(clauses)):
         part1 = "".join(clauses[:i])
         part2 = "".join(clauses[i:])
 
         len1, len2 = len(part1), len(part2)
 
-        # 检查是否满足非递减长度规则
         if len2 >= len1:
             lengths = [len1, len2]
             score = calculate_uniformity_score(lengths)
-
-            # 如果当前方案更优，则更新最佳方案
             if score < min_score:
                 min_score = score
                 best_partition = [part1, part2]
 
-    # --- 3. 寻找并评估3元素方案 (仅在短句数量足够时) ---
-    if len(clauses) >= 3:
-        # 遍历所有可能的两个分割点 (i 和 j)
-        for i in range(1, len(clauses) - 1):
-            for j in range(i + 1, len(clauses)):
-                part1 = "".join(clauses[:i])
-                part2 = "".join(clauses[i:j])
-                part3 = "".join(clauses[j:])
-
-                len1, len2, len3 = len(part1), len(part2), len(part3)
-
-                # 检查是否满足非递减长度规则
-                if len3 >= len2 and len2 >= len1:
-                    lengths = [len1, len2, len3]
-                    score = calculate_uniformity_score(lengths)
-
-                    # 如果当前方案更优，则更新最佳方案
-                    if score < min_score:
-                        min_score = score
-                        best_partition = [part1, part2, part3]
-
-    # --- 4. 返回结果 ---
+    # 3. 返回结果
     if best_partition:
+        # 如果找到了最优方案，返回它
         return best_partition
     else:
-        # 如果没有任何方案满足条件，返回原始分割列表
-        return clauses
+        # 【关键改动】如果没有找到任何有效方案，合并所有短句并返回
+        return ["".join(clauses)]
 
 
 def first_greater(target_num, num_list):
