@@ -765,8 +765,8 @@ def cover_video_area_blur_super_robust(
         bottom_right,
         time_ranges=None,
         blur_strength: int = 15,
-        crf: int = 28,
-        preset: str = "veryfast"
+        crf: int = 23,
+        preset: str = "superfast"
 ):
     """
     为一个视频的指定区域应用模糊，并进行大量的预检查和参数修正以确保成功。
@@ -1779,7 +1779,7 @@ def _merge_chunk_ffmpeg(video_paths, output_path, probe_fn):
         "-map", "[outv]",
         "-map", "[outa]",
         "-r", f"{ref_fps:.2f}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+        "-c:v", "libx264", "-preset", "superfast", "-crf", "23",
         "-pix_fmt", "yuv420p",
         "-colorspace", "bt709",
         "-color_primaries", "bt709",
@@ -2902,9 +2902,9 @@ def clip_video_ms(
         '-ss', start_formatted,
         '-to', end_formatted,
         '-c:v', 'libx264',  # 或者使用 'libx265' 如果需要 HEVC 编码
-        '-crf', '28',  # 推荐值，可以调整
+        '-crf', '23',  # 推荐值，可以调整
         '-c:a', 'copy',  # 复制音频，避免处理和质量损失
-        '-preset', 'veryfast',  # 编码速度和压缩率的平衡，'veryfast', 'fast', 'medium', 'slow'
+        '-preset', 'superfast',  # 编码速度和压缩率的平衡，'veryfast', 'fast', 'medium', 'slow'
         '-y', output_path
     ]
 
@@ -3073,8 +3073,8 @@ def check_video_integrity(video_path: str) -> (bool, str):
 def reduce_video_size_robust(
         input_path: str,
         output_path: str,
-        target_width: int = 1280,
-        crf: int = 28,
+        target_width: int = 960,
+        crf: int = 32,
         target_fps: int = 30,
         force_fps: bool = False,
         faststart: bool = True
@@ -3125,6 +3125,21 @@ def reduce_video_size_robust(
     reduce_fps = False
     if force_fps or (fps is not None and fps > float(target_fps)):
         reduce_fps = True
+
+    # 1. 定义是否需要调整的条件
+    needs_scaling = target_width != -1 and w is not None and target_width < w
+    needs_fps_reduction = force_fps or (fps is not None and fps > float(target_fps))
+
+    # 2. 如果两个条件都不满足，则直接复制并返回
+    if not needs_scaling and not needs_fps_reduction:
+        print("[跳过] 视频分辨率和帧率均无需调整，直接复制文件。")
+        try:
+            shutil.copy2(input_path, output_path)
+            print(f"成功：文件已复制到 {output_path}")
+            return True
+        except Exception as e:
+            print(f"错误：复制文件时失败: {e}")
+            return False
 
     # --- 修改 ---: 构建 vf 过滤器，集成智能缩放逻辑
     vf_parts = []

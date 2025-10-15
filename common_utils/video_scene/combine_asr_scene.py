@@ -19,18 +19,19 @@ from pathlib import Path
 
 from LLM.gemini import get_llm_content, get_llm_content_gemini_flash_video
 from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time, read_file_to_str, string_to_object, \
-    timeit_print, is_valid_target_file_simple
+    timeit_print, is_valid_target_file_simple, split_and_merge_sentence, remove_last_punctuation, first_greater
 from common_utils.image_utils import save_frames_around_timestamp
 from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box_target_number
 from common_utils.split_audio import separate_with_cli
 from common_utils.split_scenes import split_scenes_json
 from common_utils.video_utils import extract_audio_from_video, clip_video_ms, merge_videos_ffmpeg, probe_duration, \
-    cover_subtitle, reduce_video_size_robust, reduce_and_replace_video
+    cover_subtitle, reduce_video_size_robust, reduce_and_replace_video, probe_video_new
 from common_utils.video_utils2 import add_bgm_to_video
 
 import re
 
-from common_utils.video_utils_cut import gen_video
+from common_utils.video_utils_cut import gen_video, add_text_to_video_robust, process_and_crop_video, \
+    add_text_adaptive_padding, add_text_overlays_to_video, get_coordinate_offset
 from content_community.app.remake_video import adjust_subtitle_box
 
 base_output_dir = "W:/project/python_project/watermark_remove/douyin_video"
@@ -165,15 +166,11 @@ def check_owner_asr(owner_asr_info, video_duration, logger):
     return True
 
 
-def gen_owner_asr_by_llm(video_path, has_author_voice):
+def gen_owner_asr_by_llm(video_path, has_author_voice, logger):
     """
     通过大模型生成带说话人识别的ASR文本。
     （已重构，提升可读性和健壮性）
     """
-    basename = os.path.basename(video_path).split('.mp4')[0]
-    output_dir = os.path.join(base_output_dir, basename)
-    log_file_path = os.path.join(output_dir, 'log.txt')
-    logger = setup_logger(log_file_path)
 
     # --- 1. 配置常量 ---
     MAX_RETRIES = 3
@@ -274,7 +271,7 @@ def gen_asr(video_path, output_dir, has_author_voice):
     speech_asr_output_file = os.path.join(output_dir, 'speech_asr_with_owner.json')
 
     if not is_valid_target_file_simple(speech_asr_output_file, min_size_bytes=10):
-        owner_asr_info = gen_owner_asr_by_llm(video_path, has_author_voice)
+        owner_asr_info = gen_owner_asr_by_llm(video_path, has_author_voice, logger)
         # 判断owner_asr_info是否为dict
         if owner_asr_info is None:
             logger.error("生成asr文本失败，返回空结果")
@@ -522,15 +519,69 @@ def check_logical_scene(logical_scene_info: dict, video_duration_ms: int) -> tup
 
     return True, "检查并转换成功：所有场景的时间有效、连续且无重叠，格式已更新为毫秒。"
 
+def check_optimized_video_plan(optimized_video_plan, video_duration_ms):
+    """
+    检查优化的方案
+    """
 
-def gen_logical_scene_llm(video_path):
+    overlays = optimized_video_plan.get('overlays', [])
+    # 长度要大于2
+    if len(overlays) < 2:
+        return False, f"优化方案检查失败：overlays 长度必须至少为 2。当前长度为 {len(overlays)}。"
+    # 每个start必须都在视频时长范围内
+    for i, overlay in enumerate(overlays):
+        start = overlay.get('start')
+        start_ms = time_to_ms(start)
+        if not (0 <= start_ms <= video_duration_ms):
+            return False, f"优化方案检查失败：第 {i + 1} 个 overlay 的 start 时间 {start} 超出视频时长范围 [0, {video_duration_ms}ms]。"
+    return True, "优化方案检查通过。"
+
+def gen_optimized_video_plan_llm(video_path, logger):
+    """
+    生成新的视频优化方案
+    """
+
+    # --- 2. 初始化和预处理 ---
+    try:
+        video_duration = probe_duration(video_path)
+        video_duration_ms = int(video_duration * 1000)
+    except Exception as e:
+        logger.error(f"获取视频时长失败: {e}")
+        return None
+
+    retry_delay = 10
+    max_retries = 3
+    prompt_file_path = '../../content_community/app/视频质量提高生成画面文字.txt'
+    prompt = read_file_to_str(prompt_file_path)
+    full_prompt = f'{prompt}'
+    raw = ""
+    for attempt in range(1, max_retries + 1):
+        try:
+            model_name = "gemini-flash-latest"
+            # model_name = "gemini-2.5-pro"
+            logger.info(f"正在生成提高生成画面 (尝试 {attempt}/{max_retries})")
+            raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
+            optimized_video_plan = string_to_object(raw)
+            check_result, check_info = check_optimized_video_plan(optimized_video_plan, video_duration_ms)
+            if not check_result:
+                logger.error(f"优化方案检查未通过: {check_info} {raw}")
+                raise ValueError(f"优化方案检查未通过: {check_info} {raw}")
+            return optimized_video_plan
+        except Exception as e:
+            logger.error(f"优化方案检查未通过 (尝试 {attempt}/{max_retries}): {e} {raw}")
+            if attempt < max_retries:
+                logger.info(f"正在重试... (等待 {retry_delay} 秒)")
+                time.sleep(retry_delay)  # 等待一段时间后再重试
+            else:
+                logger.error("达到最大重试次数，失败.")
+                return None  # 达到最大重试次数后返回 None
+            logger.exception("详细堆栈信息：")
+
+def gen_logical_scene_llm(video_path, logger):
     """
     生成新的视频方案
     """
-    basename = os.path.basename(video_path).split('.mp4')[0]
-    output_dir = os.path.join(base_output_dir, basename)
-    log_file_path = os.path.join(output_dir, 'log.txt')
-    logger = setup_logger(log_file_path)
+
 
     # --- 2. 初始化和预处理 ---
     try:
@@ -942,17 +993,150 @@ def choose_script(new_video_script, need_different=False):
     return new_video_script
 
 
+def add_title_to_video(video_path, video_script, output_path, need_on_screen_text=True):
+    """
+    为视频添加动态计算的居中标题。
+    """
+    scene_list = video_script.get('场景顺序与新文案')
+    if not scene_list:
+        print("错误：'video_script' 中未找到 '场景顺序与新文案'。")
+        return False
+
+    video_abstract = video_script.get('video_abstract', '')
+    video_abstract_list = split_and_merge_sentence(video_abstract)
+    # 遍历video_abstract_list调用remove_last_punctuation
+    video_abstract_list = [remove_last_punctuation(text) for text in video_abstract_list if text.strip()]
+
+    texts_list = []
+
+
+    for scene in scene_list:
+        on_screen_text = scene.get('on_screen_text', '')
+        if on_screen_text.strip():
+            # --- 字体和位置的动态计算 ---
+            on_screen_text = remove_last_punctuation(on_screen_text)
+            temp_text_list = video_abstract_list.copy()
+            if need_on_screen_text:
+                temp_text_list.append(on_screen_text)
+            scene_start = scene.get('scene_start', 0) / 1000.0  # 假设输入是毫秒
+            scene_end = scene.get('scene_end', 0) / 1000.0  # 假设输入是毫秒
+            temp_dict = {}
+            temp_dict['text_list'] = temp_text_list
+            temp_dict['start_time'] = scene_start
+            temp_dict['end_time'] = scene_end
+            texts_list.append(temp_dict)
+
+    if not texts_list:
+        print("没有找到任何需要添加的标题文案。")
+        # 根据需要，可以选择复制原视频或什么都不做
+        # shutil.copy(video_path, output_path)
+        return True
+    print(f"准备添加 {len(texts_list)} 条标题文案到视频中。")
+
+    add_text_adaptive_padding(video_path, output_path, texts_list)
+
+
+def add_image_text_to_video(video_path, video_script, optimized_video_plan_info, output_path, output_dir):
+    """
+    为视频添加动态计算的居中标题。
+    """
+    try:
+
+        log_file_path = os.path.join(output_dir, 'log.txt')
+        logger = setup_logger(log_file_path)
+        scene_list = video_script.get('场景顺序与新文案')
+        theme_tags = video_script.get('tags', [])
+        is_fun = False
+        # 如果theme_tags包含"综艺", "娱乐"，"吐槽"其中一个就应该是True
+        for tag in theme_tags:
+            if tag in ["综艺", "娱乐", "吐槽"]:
+                is_fun = True
+                break
+
+        if not scene_list:
+            print("错误：'video_script' 中未找到 '场景顺序与新文案'。")
+            return False
+
+        all_scene_timestamp_list = []
+        overlays = optimized_video_plan_info.get('overlays', [])
+        # 获取所有scene_start和scene_end
+        for scene in scene_list:
+            all_scene_timestamp_list.append(scene.get('scene_start', 0))
+            all_scene_timestamp_list.append(scene.get('scene_end', 0))
+
+        # 将all_scene_timestamp_list升序排序并去重
+        all_scene_timestamp_list = sorted(set(all_scene_timestamp_list))
+        # 遍历overlays，找到每个时间段内的场景
+        texts_list = []
+        for overlay in overlays:
+            text = overlay.get('text', '').strip()
+            start = overlay.get('start')
+            position = overlay.get('position', 'TC')
+            start_ms = time_to_ms(start)
+            next_timestamp = first_greater(start_ms, all_scene_timestamp_list)
+            duration = next_timestamp - start_ms
+            duration = min(duration, 5000)
+            texts_list.append({
+                'text': text,
+                'start': start_ms / 1000.0,
+                'duration': duration / 1000.0,
+                'position': position})
+
+        if not texts_list:
+            print("没有找到任何需要添加的标题文案。")
+            # 根据需要，可以选择复制原视频或什么都不做
+            # shutil.copy(video_path, output_path)
+            return True
+        print(f"准备添加 {len(texts_list)} 条文案图片到视频中。is_fun {is_fun}")
+        # 获取output_path的目录
+
+        add_text_overlays_to_video(video_path, texts_list, output_path, output_dir, is_fun)
+    except Exception as e:
+        logger.error(f"为视频添加文案图片失败: {e}")
+
+
 @timeit_print
 def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_box, output_dir, has_overall_bgm):
     """
     生成新视频的文本脚本
     """
+
+    w, h, fps, sar = probe_video_new(video_path)
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
 
     final_output_path = os.path.join(output_dir, 'remake.mp4')
     final_with_bgm_path = final_output_path.replace('.mp4', '_with_bgm.mp4')
     final_video_script = choose_script(fused_new_video_script_info, need_different=True)
+
+
+    title_video_path = final_output_path.replace('.mp4', '_with_title.mp4')
+
+    image_text_video_path = final_output_path.replace('.mp4', '_with_text_image.mp4')
+
+    video_size = os.path.getsize(video_path)
+
+    output_file_optimized_video_plan_path = os.path.join(output_dir, 'optimized_video_plan.json')
+
+    optimized_video_plan = read_json(output_file_optimized_video_plan_path)
+    if not is_valid_target_file_simple(image_text_video_path, video_size * 0.1):
+        add_image_text_to_video(video_path, final_video_script, optimized_video_plan, image_text_video_path, output_dir)
+    if is_valid_target_file_simple(image_text_video_path, video_size * 0.1):
+        video_path = image_text_video_path
+
+
+    if not is_valid_target_file_simple(title_video_path, video_size * 0.1):
+        add_title_to_video(video_path, final_video_script, title_video_path)
+    if is_valid_target_file_simple(title_video_path, video_size * 0.1):
+        video_path = title_video_path
+
+    if subtitle_box:
+        x_offset, y_offset = get_coordinate_offset(w, h)
+        for box in subtitle_box:
+            box[0] += x_offset
+            box[1] += y_offset
+
+
     need_merge_video_file_list = []
     video_duration = probe_duration(video_path)
 
@@ -1249,7 +1433,7 @@ def get_scene(video_path, output_dir):
     return kept_sorted
 
 @timeit_print
-def gen_logical_scene(video_path, output_dir):
+def gen_logical_scene(video_path, output_dir, logger):
     """
     直接根据视频生成逻辑性场景划分
     """
@@ -1259,7 +1443,7 @@ def gen_logical_scene(video_path, output_dir):
     if is_valid_target_file_simple(output_file_logical_scene_info_path, 10):
         logical_scene_info = read_json(output_file_logical_scene_info_path)
     else:
-        logical_scene_info = gen_logical_scene_llm(video_path=video_path)
+        logical_scene_info = gen_logical_scene_llm(video_path, logger)
         save_json(output_file_logical_scene_info_path, logical_scene_info)
         kept_sorted = get_scene(video_path, output_dir)
         logical_scene_info = fix_logical_scene_info(video_path, kept_sorted, logical_scene_info, output_dir, max_delta_ms=1000)
@@ -1271,14 +1455,14 @@ def gen_new_video_script_robus(video_path, params={}):
     """
     最多尝试3次生成新的视频方案
     """
-    basename = os.path.basename(video_path).split('.mp4')[0]
+    basename = os.path.basename(video_path).split('.mp4')[0].split('_')[0]
     output_dir = os.path.join(base_output_dir, basename)
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
-            return gen_new_video_script(video_path, params)
+            return gen_new_video_script(video_path, basename, params)
         except Exception as e:
             logger.error(f"尝试 {attempt} 失败: {e} traceback: {traceback.format_exc()}")
             print(f"尝试 {attempt} 失败: {e} traceback: {traceback.format_exc()}")
@@ -1331,51 +1515,42 @@ def fix_logical_scene_info(video_path, scenes, logical_scene_info, output_dir, m
     return logical_scene_info
 
 
+def gen_optimized_video_plan(video_path, output_dir, logger):
+    """
+    生成优化的视频方案
+    """
+    output_file_optimized_video_plan_path = os.path.join(output_dir, 'optimized_video_plan.json')
+    if is_valid_target_file_simple(output_file_optimized_video_plan_path, 10):
+        optimized_video_plan = read_json(output_file_optimized_video_plan_path)
+    else:
+        optimized_video_plan = gen_optimized_video_plan_llm(video_path, logger)
+        save_json(output_file_optimized_video_plan_path, optimized_video_plan)
+    return optimized_video_plan
 
 
-
-def gen_new_video_script(video_path, params={}):
+def gen_new_video_script(video_path, basename, params={}):
     """
     根据原始视频以及一些参数生成新的视频方案
     参数包括 是否包含原始作者语音（默认为True表示包含作者语音） 创作指导 评论参考
     """
     # 信息准备
-    basename = os.path.basename(video_path).split('.mp4')[0]
     output_dir = os.path.join(base_output_dir, basename)
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
 
     has_author_voice = params.get('has_author_voice', False)
-
+    need_optimized_video_plan = params.get('need_optimized_video_plan', True)
+    if need_optimized_video_plan:
+        gen_optimized_video_plan(video_path, output_dir, logger)
+        logger.info(f"{basename} 优化视频方案生成完成")
 
     # 生成asr信息
     owner_asr_info = gen_asr(video_path, output_dir, has_author_voice)
 
     # 获取场景分割信息
-    logical_scene_info = gen_logical_scene(video_path, output_dir)
+    logical_scene_info = gen_logical_scene(video_path, output_dir, logger)
     logger.info(f"{basename} 场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info'))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene'))}")
 
-    # # --- 多进程并行执行 ---
-    #
-    # # 将要执行的函数和它们的参数打包
-    # tasks = [
-    #     (gen_logical_scene, (video_path, output_dir)),
-    #     (gen_asr, (video_path, output_dir, has_author_voice))
-    # ]
-    #
-    # # 核心改动：将 ThreadPoolExecutor 换成 ProcessPoolExecutor
-    # with ProcessPoolExecutor(max_workers=2) as executor:
-    #     logger.info("开始并行处理场景分割和语音识别 (多进程)...")
-    #
-    #     # 提交和获取结果的逻辑完全不用变！
-    #     futures = [executor.submit(func, *args) for func, args in tasks]
-    #     results = [f.result() for f in futures]
-    #
-    # # 按提交顺序解包结果
-    # logical_scene_info, owner_asr_info = results
-    # logger.info("场景分割和语音识别均已完成。")
-    #
-    # # --- 并行执行结束 ---
 
     # 后续处理
     logger.info(f"场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info', []))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene', []))}")
@@ -1454,7 +1629,7 @@ def correct_owner_timestamps(asr_result: list) -> list:
                     gap = current_segment['start'] - prev_segment['end']
                     if gap > 0:
                         # 最多移动500ms
-                        movement = min(500, gap)
+                        movement = min(500, gap / 2)
                         current_segment['fix_start'] = current_segment['start'] - movement
 
             # --- 向后修正逻辑 (修正 end) ---
@@ -1486,7 +1661,7 @@ def correct_owner_timestamps(asr_result: list) -> list:
                     gap = next_segment['start'] - current_segment['end']
                     if gap > 0:
                         # 最多移动500ms
-                        movement = min(500, gap)
+                        movement = min(500, gap / 2)
                         current_segment['fix_end'] = current_segment['end'] + movement
 
     return asr_result
@@ -1495,14 +1670,14 @@ def gen_new_video_robus(video_path):
     """
     最多尝试3次生成新的视频
     """
-    basename = os.path.basename(video_path).split('.mp4')[0]
+    basename = os.path.basename(video_path).split('.mp4')[0].split('_')[0]
     output_dir = os.path.join(base_output_dir, basename)
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
-            return gen_new_video(video_path)
+            return gen_new_video(video_path, basename)
         except Exception as e:
             logger.error(f"尝试 {attempt} 失败: {e} traceback: {traceback.format_exc()}")
             print(f"尝试 {attempt} 失败: {e} traceback: {traceback.format_exc()}")
@@ -1515,11 +1690,10 @@ def gen_new_video_robus(video_path):
 
 
 
-def gen_new_video(video_path):
+def gen_new_video(video_path, basename):
     """
     根据新的方案生成新的视频
     """
-    basename = os.path.basename(video_path).split('.mp4')[0]
     output_dir = os.path.join(base_output_dir, basename)
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
@@ -1569,7 +1743,8 @@ def gen_new_video(video_path):
 
 
 if __name__ == '__main__':
-    video_path = '7030743791866744071.mp4'
+    video_path = '7544573678915226934_process.mp4'
+    # process_and_crop_video(video_path)
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
 
@@ -1577,11 +1752,3 @@ if __name__ == '__main__':
     gen_new_video_robus(video_path)
 
     # delete_all_mp4_in_dir(base_output_dir)
-
-
-    # # 1. 分析视频获取边界框
-    # was_cropped, final_path = process_and_crop_video(video_path)
-    # print(f"\n处理结果:")
-    # print(f"是否裁剪: {was_cropped}")
-    # print(f"最终文件: {final_path}")
-    # print("-" * 30)

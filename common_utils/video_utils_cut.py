@@ -1,18 +1,26 @@
 import pathlib
+import platform
 import random
+import shlex
 import shutil
 import subprocess
 import os
 import sys
+import os
+import random
+import shlex
+import subprocess
+import tempfile
 
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import cv2
 import numpy as np
 from PIL import Image
 import math  # 需要导入 math 模块以使用 PI
 
-from common_utils.common_utils import ms_to_time
+from common_utils.common_utils import ms_to_time, is_valid_target_file_simple
 from common_utils.tts.edge_tts_utils import generate_audio_and_get_duration_sync
-from common_utils.video_utils import add_subtitles_to_video, probe_duration
+from common_utils.video_utils import add_subtitles_to_video, probe_duration, probe_video_new
 from common_utils.video_utils1 import redub_video_with_ffmpeg
 from common_utils.video_utils2 import add_bgm_to_video
 
@@ -714,7 +722,7 @@ def crop_video(input_path, output_path, bbox, crf=23):
         print("\n--- FFmpeg 错误输出 ---", file=sys.stderr)
         print(e.stderr, file=sys.stderr)
 
-def process_and_crop_video(video_path, area_threshold_ratio=0.8, **kwargs):
+def process_and_crop_video(video_path, area_threshold_ratio=0.9, **kwargs):
     """
     分析视频中的运动区域，如果运动区域显著小于整个画面，则进行裁剪。
 
@@ -767,11 +775,554 @@ def process_and_crop_video(video_path, area_threshold_ratio=0.8, **kwargs):
         return (False, video_path)
 
 
-# ... (示例使用部分保持不变) ...
+def _escape_ffmpeg_path(path):
+    """为 FFmpeg 滤镜中的文件路径进行转义，特别处理 Windows 路径。"""
+    if platform.system() == 'Windows':
+        return path.replace('\\', '\\\\').replace(':', '\\:')
+    return path
+
+
+def _escape_ffmpeg_text(text):
+    """为 FFmpeg 的 drawtext 滤镜中的文本内容进行转义。"""
+    escaped_text = text.replace('\\', '\\\\')
+    escaped_text = escaped_text.replace("'", "'\\\\\\''")
+    escaped_text = escaped_text.replace('%', '\\%')
+    escaped_text = escaped_text.replace(':', '\\:')
+    return escaped_text
+
+
+def get_coordinate_offset(original_w: int, original_h: int, padding_ratio: float = 0.25) -> tuple[int, int]:
+    """
+    根据视频的原始尺寸和边框比例，计算原始视频画面在新画布上的坐标偏移量。
+
+    这个函数模拟了 `add_text_adaptive_padding` 函数中用于定位视频的逻辑。
+    返回的偏移量可以直接用于旧坐标到新坐标的转换：
+    new_x = old_x + x_offset
+    new_y = old_y + y_offset
+
+    Args:
+        original_w (int): 视频的原始宽度。
+        original_h (int): 视频的原始高度。
+        padding_ratio (float, optional): 添加的边框高度占原始视频高度的比例。默认为 0.25。
+
+    Returns:
+        tuple[int, int]: 一个包含 (x_offset, y_offset) 的元组。
+                         在这个逻辑中，x_offset 总是 0。
+    """
+    if original_h <= 0 or original_w <= 0:
+        return 0, 0
+
+    # 水平偏移量始终为 0
+    x_offset = 0
+
+    # --- 计算垂直偏移量 (video_y_start) ---
+    top_padding = int(original_h * padding_ratio)
+    video_y_start = top_padding  # 默认的垂直偏移量
+
+    # 针对宽屏视频的特殊处理逻辑
+    if original_w / original_h > 1.5:
+        bottom_padding = top_padding // 2
+        # 重新计算顶部 padding，这会成为新的垂直偏移量
+        new_top_padding = top_padding + bottom_padding
+        video_y_start = new_top_padding
+
+    y_offset = video_y_start
+
+    return x_offset, y_offset
+
+def add_text_adaptive_padding(input_video_path, output_video_path, text_events, font_path=None,
+                                    padding_ratio=0.25):
+    """
+    自适应地为视频添加边框和文字，实现文字靠近视频上边界的“底部对-齐”效果。
+
+    Args:
+        input_video_path (str): 输入视频的文件路径。
+        output_video_path (str): 输出视频的文件路径。
+        text_events (list): 包含文字事件的列表。
+        font_path (str, optional): 字体文件路径。
+        padding_ratio (float, optional): 添加的边框高度占原始视频高度的比例。
+    """
+    # --- 1. 参数校验和准备 (不变) ---
+    if not os.path.exists(input_video_path):
+        print(f"错误：输入视频文件不存在 -> {input_video_path}")
+        return
+    if font_path is None:
+        font_path = 'C:/Windows/Fonts/msyhbd.ttc'
+        print(f"提示：未使用指定字体，将尝试使用默认字体 -> {font_path}")
+    if not os.path.exists(font_path):
+        print(f"错误：字体文件不存在 -> {font_path}")
+        return
+    original_w, original_h, _, _ = probe_video_new(input_video_path)
+    if not all([original_w, original_h]):
+        print("错误：无法获取有效的视频尺寸。")
+        return
+
+    # --- 2. 计算新画布尺寸和视频位置 (不变) ---
+    top_padding = int(original_h * padding_ratio)
+    output_w = original_w
+    output_h = original_h + top_padding
+    video_y_start = top_padding
+    if original_w / original_h > 1.5:
+        bottom_padding = top_padding // 2
+        top_padding = top_padding + bottom_padding
+        output_h = original_h + top_padding + bottom_padding
+        video_y_start = top_padding
+
+    # --- 3. 构建滤镜链 ---
+    base_filter = f"pad={output_w}:{output_h}:0:{video_y_start}:color=black"
+    drawtext_filters = []
+    escaped_font_path = _escape_ffmpeg_path(font_path)
+    for event in text_events:
+        text_list = event.get('text_list', [])
+        if not text_list: continue
+
+        start_time = event.get('start_time', 0)
+        end_time = event.get('end_time', 99999)
+        if start_time >= end_time: continue
+
+        colors = event.get('color_config', {})
+        fontcolor = colors.get('fontcolor', '#FFD700')
+        shadowcolor = colors.get('shadowcolor', 'black@0.8')
+
+        # --- 字体大小计算逻辑 (保持不变，依然健壮) ---
+        margin_ratio = 0.0
+        line_spacing_ratio = 0.1
+        available_width = output_w * 0.9
+        available_height = top_padding * (1.0 - margin_ratio * 2)
+        longest_text = max(text_list, key=len) if any(text_list) else ''
+        fontsize_w = (available_width / len(longest_text)) if longest_text else 9999
+        num_lines = len(text_list)
+        if num_lines > 1:
+            denominator = num_lines + (num_lines - 1) * line_spacing_ratio
+            fontsize_h = available_height / denominator
+        else:
+            fontsize_h = available_height
+        fontsize = min(fontsize_w, fontsize_h, 100)
+
+        # === NEW: 重新计算文本块起始位置以实现“底部对齐” ===
+
+        # 1. 计算单行高度（字体+行间距）
+        line_height = fontsize * (1 + line_spacing_ratio)
+
+        # 2. 计算整个文本块的总高度
+        # 总高度 = (行数 - 1) * 行高 + 最后一行的字体高度
+        total_text_block_height = (num_lines - 1) * line_height + fontsize
+
+        # 3. 计算文本块的起始Y坐标（反推法）
+        # 底部锚点 = 视频上边界 - 安全边距
+        bottom_anchor = video_y_start - (top_padding * margin_ratio)
+        # 起始Y坐标 = 底部锚点 - 文本块总高度
+        text_block_y_start = bottom_anchor - total_text_block_height
+
+        # 确保起始点不为负（在文本极多的情况下）
+        text_block_y_start = max(0, text_block_y_start)
+        # ======================================================
+
+        for i, text in enumerate(text_list):
+            if not text: continue
+
+            # 每行的Y坐标计算方式不变，因为它依赖于起始点
+            current_y = text_block_y_start + i * line_height
+            escaped_text = _escape_ffmpeg_text(text)
+
+            filter_str = (
+                f"drawtext="
+                f"fontfile='{escaped_font_path}':"
+                f"text='{escaped_text}':"
+                f"fontsize={fontsize}:"
+                f"fontcolor='{fontcolor}':"
+                f"shadowcolor='{shadowcolor}':shadowx=2:shadowy=2:"
+                f"x=(w-text_w)/2:"
+                f"y={current_y}:"
+                f"enable='between(t,{start_time},{end_time})'"
+            )
+            drawtext_filters.append(filter_str)
+
+    # --- 4. 组合最终滤镜并构建命令 (不变) ---
+    all_filters = [base_filter] + drawtext_filters
+    full_filter_chain = ",".join(all_filters)
+    command = [
+        'ffmpeg', '-i', input_video_path,
+        '-filter_complex', f"[0:v]{full_filter_chain}[outv]",
+        '-map', '[outv]', '-map', '0:a?',
+        '-c:v', 'libx264', '-preset', 'superfast', '-crf', '23',
+        '-c:a', 'aac', '-y', output_video_path
+    ]
+    print("即将执行的 FFmpeg 命令:")
+    print(shlex.join(command))
+
+    # --- 5. 执行命令 (不变) ---
+    try:
+        process = subprocess.run(
+            command, check=True, capture_output=True, text=True, encoding='utf-8'
+        )
+        print(f"\n视频处理成功！输出文件位于: {output_video_path}")
+    except subprocess.CalledProcessError as e:
+        print("\n--- FFmpeg 处理失败! ---")
+        print("FFmpeg 返回码:", e.returncode)
+        print("FFmpeg 错误信息:\n" + e.stderr)
+
+def add_text_to_video_robust(input_video_path, output_video_path, text_events, font_path=None,
+                             output_width=1080):
+    """
+    将视频转换为带文字的竖屏格式，输出宽度固定。
+
+    Args:
+        input_video_path (str): 输入视频的文件路径。
+        output_video_path (str): 输出视频的文件路径。
+        text_events (list): 包含文字事件的列表。
+        probe_video_new (function): 获取视频信息的函数，返回 (width, height, fps, sar)。
+        font_path (str, optional): 字体文件路径。默认为 'C:/Windows/Fonts/msyhbd.ttc'。
+        output_width (int, optional): 输出竖屏视频的宽度。默认为 1080。
+    """
+    # --- 1. 参数校验和准备 ---
+    if not os.path.exists(input_video_path):
+        print(f"错误：输入视频文件不存在 -> {input_video_path}")
+        return
+
+    if font_path is None:
+        font_path = 'C:/Windows/Fonts/msyhbd.ttc'
+        print(f"提示：未使用指定字体，将尝试使用默认字体 -> {font_path}")
+
+    if not os.path.exists(font_path):
+        print(f"错误：字体文件不存在 -> {font_path}")
+        print("请通过 'font_path' 参数指定一个有效的字体文件路径。")
+        return
+
+    try:
+        original_w, original_h, _, _ = probe_video_new(input_video_path)
+        if not all([original_w, original_h]):
+            raise ValueError("获取到的视频尺寸无效")
+    except Exception as e:
+        print(f"错误：使用 probe_video_new 获取视频信息失败: {e}")
+        return
+
+    # --- 2. 计算尺寸 (已更新) ---
+    output_w = output_width
+    output_h = int(output_w * 16 / 9)
+
+    # 计算视频缩放后的高度，以保持原始宽高比
+    scaled_video_h = int(original_h * (output_w / original_w))
+
+    # 计算视频在竖屏画布中的Y轴起始位置
+    video_y_start = (output_h - scaled_video_h) / 2
+
+    # --- 3. 构建滤镜链 (已更新) ---
+    # 重新引入 scale 滤镜，先缩放视频，再用 pad 填充
+    # scale={output_w}:-1 表示宽度固定为 output_w，高度按比例自动计算
+    base_filter = f"scale={output_w}:-1,pad={output_w}:{output_h}:(ow-iw)/2:(oh-ih)/2:color=black"
+
+    drawtext_filters = []
+    escaped_font_path = _escape_ffmpeg_path(font_path)
+
+    for event in text_events:
+        text_list = event.get('text_list', [])
+        start_time = event.get('start_time', 0)
+        end_time = event.get('end_time', 99999)
+
+        if start_time >= end_time:
+            print(f"警告：跳过一个无效的时间段事件 (start >= end): {event}")
+            continue
+
+        colors = event.get('color_config', {})
+        fontcolor = colors.get('fontcolor', '#FFD700')
+        shadowcolor = colors.get('shadowcolor', 'black@0.8')
+
+        # --- 字体大小计算 ---
+        longest_text = max(text_list, key=len) if any(text_list) else ''
+        available_width = output_w * 0.9
+        max_fontsize = available_width / 10
+
+        if not longest_text:
+            calculated_fontsize = max_fontsize
+        else:
+            calculated_fontsize = available_width / len(longest_text)
+
+        fontsize = min(max_fontsize, calculated_fontsize)
+
+        # --- Y轴位置计算 ---
+        line_spacing = fontsize * 0.25
+        bottom_gap = fontsize * 0.5
+        last_line_y = video_y_start - bottom_gap - fontsize
+
+        for i, text in enumerate(reversed(text_list)):
+            if not text:
+                continue
+
+            current_y = last_line_y - i * (fontsize + line_spacing)
+            escaped_text = _escape_ffmpeg_text(text)
+
+            filter_str = (
+                f"drawtext="
+                f"fontfile='{escaped_font_path}':"
+                f"text='{escaped_text}':"
+                f"fontsize={fontsize}:"
+                f"fontcolor='{fontcolor}':"
+                f"shadowcolor='{shadowcolor}':shadowx=2:shadowy=2:"
+                f"x=(w-text_w)/2:"
+                f"y={current_y}:"
+                f"enable='between(t,{start_time},{end_time})'"
+            )
+            drawtext_filters.append(filter_str)
+
+    # --- 4. 组合最终滤镜并构建命令 ---
+    if drawtext_filters:
+        full_filter_chain = f"{base_filter},{','.join(drawtext_filters)}"
+    else:
+        full_filter_chain = base_filter
+
+    command = [
+        'ffmpeg', '-i', input_video_path,
+        '-vf', full_filter_chain,
+        '-map', '0:v:0', '-map', '0:a:0?',
+        '-c:a', 'copy',
+        '-y', output_video_path
+    ]
+
+    print("即将执行的 FFmpeg 命令:")
+    print(shlex.join(command))
+
+    # --- 5. 执行命令 ---
+    try:
+        process = subprocess.run(
+            command, check=True, capture_output=True, text=True, encoding='utf-8'
+        )
+        print(f"\n视频处理成功！输出文件位于: {output_video_path}")
+    except subprocess.CalledProcessError as e:
+        print("\n--- FFmpeg 处理失败! ---")
+        print("FFmpeg 返回码:", e.returncode)
+        print("FFmpeg 错误信息:\n" + e.stderr)
+
+
+def create_variety_text(text: str, font_size: int, output_image_path: str, text_type: str = "正式"):
+    """
+    一个为不同场景优化的、自动化的风格化文字生成函数。
+
+    你只需要关心：【文字内容、字体大小、输出路径、文字类型】。
+    颜色会根据类型从内置颜色池随机选择，描边宽度会根据字体大小和类型自动适配。
+
+    Args:
+        text (str): 要生成的文字内容。
+        font_size (int): 字体大小。
+        output_image_path (str): 生成图片的保存路径。
+        text_type (str, optional): 文字类型，可选值为 "综艺" 或 "正式"。默认为 "综艺"。
+    """
+    DEFAULT_FONT_PATH = r'C:\Users\zxh\AppData\Local\Microsoft\Windows\Fonts\AaFengKuangYuanShiRen-2.ttf'
+
+    # --- 1. 样式配置库 ---
+    # 将不同类型的配置集中管理，方便扩展
+    STYLE_CONFIG = {
+        "综艺": {
+            "colors": [
+                (255, 225, 1),  # 亮黄色
+                (255, 120, 177),  # 甜粉色
+                (0, 225, 233),  # 天青色
+                (138, 88, 255),  # 潮紫色
+                (255, 108, 0),  # 活力橙
+                (124, 252, 0),  # 荧光绿
+            ],
+            "inner_stroke_ratio": 0.12,  # 内层白色描边，占字号的12%，较粗
+            "outer_stroke_ratio": 0.05,  # 最外层深色描边，占字号的5%，较粗
+            'font_path': r'C:\Users\zxh\AppData\Local\Microsoft\Windows\Fonts\AaFengKuangYuanShiRen-2.ttf'
+
+        },
+        "正式": {
+            "colors": [
+                (19, 41, 75),  # 深海军蓝
+                (218, 165, 32),  # 高级金色
+                (139, 0, 0),  # 暗红色
+                (80, 80, 80),  # 中性灰
+                (0, 100, 0),  # 深绿色
+            ],
+            "inner_stroke_ratio": 0.06,  # 内层白色描边，占字号的6%，更精致
+            "outer_stroke_ratio": 0.03,  # 最外层深色描边，占字号的3%，更纤细
+            'font_path': 'C:/Windows/Fonts/msyhbd.ttc'
+        }
+    }
+
+    # --- 2. 自动化参数计算 ---
+    # 检查传入的 text_type 是否有效，无效则报错
+    if text_type not in STYLE_CONFIG:
+        print(f"错误：无效的文字类型 '{text_type}'。可用类型为: {list(STYLE_CONFIG.keys())}")
+        return False
+
+    # 根据类型选择配置
+    config = STYLE_CONFIG[text_type]
+    color_pool = config["colors"]
+    font_path = config.get('font_path', DEFAULT_FONT_PATH)
+    inner_stroke_ratio = config["inner_stroke_ratio"]
+    outer_stroke_ratio = config["outer_stroke_ratio"]
+
+    # 根据字体大小和选择的比例，自动计算描边的最佳宽度
+    stroke_width = max(1, int(font_size * inner_stroke_ratio))
+    outer_stroke_width = max(1, int(font_size * outer_stroke_ratio))
+
+    # 自动选择颜色
+    fill_color = random.choice(color_pool)
+    stroke_color = (255, 255, 255)  # 内描边固定为白色
+    outer_stroke_color = (40, 40, 40)  # 外描边固定为深灰色/黑色
+
+    # --- 3. 加载字体并准备画布 ---
+    try:
+        font = ImageFont.truetype(font_path, font_size)
+    except IOError:
+        print(f"错误：无法加载字体 -> {font_path}")
+        print("请检查函数中的 DEFAULT_FONT_PATH 变量是否设置正确！")
+        return False
+
+    # 计算画布大小，需要给描边留出足够的“扩张”空间
+    padding = (stroke_width + outer_stroke_width) * 2
+    # 使用 getbbox 来精确计算文字边界
+    text_bbox = font.getbbox(text)
+    text_width = text_bbox[2] - text_bbox[0]
+    text_height = text_bbox[3] - text_bbox[1]
+
+    canvas_width = text_width + padding
+    canvas_height = text_height + padding
+
+    # --- 4. 绘制、扩张、合成图层 (核心逻辑) ---
+
+    # [底层] 绘制最顶层的文字，用于提取形状
+    text_layer = Image.new('RGBA', (canvas_width, canvas_height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(text_layer)
+    # text_bbox[1] 是文字顶部的偏移量，减去它来让文字从画布的(padding/2, 0)位置开始绘制
+    draw.text((padding // 2, padding // 2 - text_bbox[1]), text, font=font, fill=fill_color)
+
+    # 提取文字形状的Alpha通道作为蒙版
+    alpha_mask = text_layer.getchannel('A')
+
+    # [中层] 创建白色描边
+    white_stroke_mask = alpha_mask.filter(ImageFilter.MaxFilter(stroke_width * 2 + 1))
+    white_stroke_layer = Image.new('RGBA', (canvas_width, canvas_height), (0, 0, 0, 0))
+    white_stroke_layer.paste(Image.new('RGB', (canvas_width, canvas_height), stroke_color), mask=white_stroke_mask)
+
+    # [顶层] 创建深色外框
+    black_stroke_mask = white_stroke_mask.filter(ImageFilter.MaxFilter(outer_stroke_width * 2 + 1))
+    black_stroke_layer = Image.new('RGBA', (canvas_width, canvas_height), (0, 0, 0, 0))
+    black_stroke_layer.paste(Image.new('RGB', (canvas_width, canvas_height), outer_stroke_color),
+                             mask=black_stroke_mask)
+
+    # 从后往前，完美地合成所有图层 (背景 -> 外描边 -> 内描边 -> 文字)
+    final_image = Image.alpha_composite(black_stroke_layer, white_stroke_layer)
+    final_image = Image.alpha_composite(final_image, text_layer)
+
+    # --- 5. 裁剪并保存 ---
+    bbox = final_image.getbbox()
+    if bbox:
+        final_image = final_image.crop(bbox)
+
+    final_image.save(output_image_path)
+    # print(f"-> 类型 '{text_type}' 的文字已生成：{output_image_path} (颜色: {fill_color})")
+    return True
+
+
+def add_text_overlays_to_video(
+        video_path: str,
+        text_info_list: list,
+        output_video_path: str,
+        image_dir_path: str,
+        is_fun=False
+):
+    """
+    为视频叠加多个综艺花字图片，并将生成的图片保存到指定目录。
+
+    Args:
+        video_path (str): 输入视频的路径。
+        text_info_list (list): 花字信息列表。
+        output_video_path (str): 输出视频的路径。
+        image_dir_path (str): 用于存放生成的所有花字图片的目录路径。
+    """
+    print("开始处理视频...")
+
+    # --- 步骤 1: 获取视频信息 ---
+    try:
+        video_w, video_h, _, _ = probe_video_new(video_path)
+        print(f"视频分辨率: {video_w}x{video_h}")
+    except (TypeError, FileNotFoundError) as e:
+        print(f"无法继续处理，因为获取视频信息失败: {e}")
+        return
+
+    auto_font_size = int(video_h / 12)
+    margin = int(video_h * 0.15)
+    print(f"自动计算字体大小为: {auto_font_size}px, 边距为: {margin}px")
+
+    # --- 步骤 2: 创建指定目录并生成所有花字图片 ---
+    # 【改动】确保指定的图片输出目录存在
+    os.makedirs(image_dir_path, exist_ok=True)
+    print(f"花字图片将保存到目录: {image_dir_path}")
+
+    generated_images = []
+    # 【改动】为图片文件名添加视频文件名前缀，避免混淆
+    video_basename = os.path.splitext(os.path.basename(video_path))[0]
+
+    for i, info in enumerate(text_info_list):
+        # 【改动】使用指定的目录和新的命名规则
+        image_filename = f"{video_basename}_text_{i}.png"
+        image_path = os.path.join(image_dir_path, image_filename)
+        text_type = "综艺" if is_fun else "正式"
+        # print(f"正在生成图片: {image_filename} ...")
+        success = create_variety_text(
+            text=info['text'],
+            font_size=auto_font_size,
+            output_image_path=image_path,
+            text_type=text_type
+        )
+        # if is_valid_target_file_simple(image_path):
+        #     success = True
+        if success:
+            generated_images.append({**info, 'path': image_path})
+        else:
+            print(f"警告: 生成文字 '{info['text']}' 的图片失败，将跳过。")
+
+    if not generated_images:
+        print("没有成功生成任何花字图片，处理终止。")
+        return
+
+    # --- 步骤 3: 构建并执行 FFmpeg 命令 (逻辑无变化) ---
+    position_map = {
+        'TL': f"x={margin}:y={margin}", 'TC': f"x=(W-overlay_w)/2:y={margin}",
+        'TR': f"x=W-overlay_w-{margin}:y={margin}",
+        'ML': f"x={margin}:y=(H-overlay_h)/2", 'MC': f"x=(W-overlay_w)/2:y=(H-overlay_h)/2",
+        'MR': f"x=W-overlay_w-{margin}:y=(H-overlay_h)/2",
+        'BL': f"x={margin}:y=H-overlay_h-{margin}", 'BC': f"x=(W-overlay_w)/2:y=H-overlay_h-{margin}",
+        'BR': f"x=W-overlay_w-{margin}:y=H-overlay_h-{margin}",
+    }
+    base_cmd = ['ffmpeg', '-y', '-i', video_path]
+    for img_info in generated_images:
+        base_cmd.extend(['-i', img_info['path']])
+
+    filter_complex = []
+    last_video_stream = "[0:v]"
+
+    for i, img_info in enumerate(generated_images):
+        image_stream = f"[{i + 1}:v]"
+        output_stream = f"[v{i + 1}]"
+        start, end = img_info['start'], img_info['start'] + img_info['duration']
+        position = img_info['position'].upper()
+        overlay_coords = position_map.get(position, position_map['MC'])
+        filter_str = f"{last_video_stream}{image_stream}overlay={overlay_coords}:enable='between(t,{start},{end})'{output_stream}"
+        filter_complex.append(filter_str)
+        last_video_stream = output_stream
+
+    full_cmd = base_cmd + [
+        '-filter_complex', ";".join(filter_complex),
+        '-map', last_video_stream, '-map', '0:a?',
+        '-c:v', 'libx264', '-preset', 'superfast', '-crf', '23', '-c:a', 'aac',
+        output_video_path
+    ]
+
+    print("\n即将执行 FFmpeg 命令:")
+    print(shlex.join(full_cmd))
+
+    try:
+        subprocess.run(full_cmd, check=True, capture_output=True, text=True)
+        print(f"\n✅ 视频处理成功！输出文件: {output_video_path}")
+    except subprocess.CalledProcessError as e:
+        print("\n❌ FFmpeg 执行失败! 错误信息:\n", e.stderr)
+
+
+
 if __name__ == '__main__':
-
-
-
 
     test_portrait_image = 'test4.jpg'
 

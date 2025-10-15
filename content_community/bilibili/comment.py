@@ -973,7 +973,7 @@ def send_one_comment_per_user(config_map, bvid, like_video=False, delay=2, retri
 if __name__ == "__main__":
     config_map = init_config()
     target_bvid = "BV1mu43zFETB"
-    res = send_one_comment_per_user(config_map, target_bvid, like_video=True, delay=2, retries=2)
+    res = send_one_comment_per_user(config_map, target_bvid, like_video=False, delay=2, retries=2)
     print(res)
 
     #

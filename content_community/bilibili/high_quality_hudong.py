@@ -20,7 +20,7 @@ from queue import Queue, Empty
 
 from content_community.bilibili.bili_utils import update_bili_user_sign
 from content_community.bilibili.get_comment import get_bilibili_comments
-from common_utils.common_utils import get_config, init_config, merge_json_files, time_to_ms
+from common_utils.common_utils import get_config, init_config, merge_json_files, time_to_ms, read_json
 # 评论相关代码保留，但暂时不使用
 from content_community.bilibili.comment import BilibiliCommenter
 from content_community.bilibili.get_danmu import gen_proper_comment
@@ -1301,6 +1301,33 @@ def start_send_danmu_background(danmu_list, other_commenters, bvid, max_success_
     return t, stop_event, result
 
 
+def pick_commenters(commenter_map, usage_path, n=3):
+    """
+    从 commenter_map 中尽量均匀选 n 个账号，读取/更新 usage_path。
+    特殊 uid 使用一次记 2 次，其他记 1 次。
+    返回选中的 commenter 对象列表。
+    """
+    usage_map = {'196823511':6,'3546972143225467':4,'3546717871934392':4,'3632304865937878':3}
+
+    usage = read_json(usage_path) or {}
+    # ensure keys are strings
+    usage = {str(k): int(v) for k,v in usage.items()}
+    for uid in list(commenter_map.keys()):
+        usage.setdefault(str(uid), 0)
+
+    # 随机打乱后按使用次数升序选择，打破并列的确定性
+    uids = list(map(str, commenter_map.keys()))
+    random.shuffle(uids)
+    uids.sort(key=lambda x: usage.get(x, 0))
+
+    selected = uids[:min(n, len(uids))]
+    for uid in selected:
+        usage[uid] = usage.get(uid, 0) + 8 - usage_map.get(uid, 2)
+
+    save_json(usage_path, usage)
+    selected_commenter = [commenter_map[uid] for uid in selected if uid in commenter_map]
+    return selected_commenter
+
 def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     if not today:
         today = datetime.date.today().isoformat()
@@ -1431,20 +1458,10 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
 
 
     comment_list = hudong_info.get('comment_list', [])
-    comment_list = comment_list[:3]
+    # comment_list = comment_list[:3]
     comment_used_list = hudong_info.get('comment_used', [])
     comment_used_list.extend(exist_comment_text)
-    commenter_list = list(commenter_map.values())
-    comment_commenters = [c for k, c in commenter_map.items() if k in ['196823511', '3546972143225467', '3546717871934392', '3632304865937878']]
-
-    # 随机选择commenter_list中的2个
-    if len(comment_commenters) >= 3:
-        selected_commenters = random.sample(commenter_list, 3)
-        for sc in selected_commenters:
-            if sc not in comment_commenters:
-                comment_commenters.append(sc)
-    # 去重commenter_list
-    comment_commenters = list({c.all_params['uid']: c for c in comment_commenters}.values())
+    comment_commenters = pick_commenters(commenter_map, '../../LLM/TikTokDownloader/back_up/commenter_usage.json', n=10)
 
 
     post_comments_once(

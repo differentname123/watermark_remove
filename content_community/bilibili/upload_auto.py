@@ -553,7 +553,7 @@ def _preprocess_media_steps(
     generation_options = value.get('generation_options', {}) or {}
 
     # 初始设定（和原脚本保持一致）
-    video_path = value.get('video_path')
+    video_path = value.get('video_process_path')
     current_video_path = video_path
     duration = metadata[0].get('duration', "00:10")
     duration = time_str_to_seconds(duration)
@@ -812,7 +812,7 @@ def gen_clean_files(video_path_list):
     """
     # 遍历视频
     cleaner_file_list = []
-    file_names = ['merged_timestamps.json', 'hudong.json', 'title_schemes.json', 'new_video_script.json', 'final_scene_info.json', 'speech_asr_with_owner.json', 'log.txt', 'logical_scene_info.json', 'final_subtitle_box.json']
+    file_names = ['optimized_video_plan.json', 'merged_timestamps.json', 'hudong.json', 'title_schemes.json', 'new_video_script.json', 'final_scene_info.json', 'speech_asr_with_owner.json', 'log.txt', 'logical_scene_info.json', 'final_subtitle_box.json']
 
     all_files = []
     for video_path in video_path_list:
@@ -829,6 +829,10 @@ def gen_clean_files(video_path_list):
     for f in all_files:
         if os.path.basename(f) not in file_names:
             cleaner_file_list.append(f)
+        # 也需要排出视频文件本身
+        if f in video_path_list and f in cleaner_file_list:
+            cleaner_file_list.remove(f)
+
     print(f"🧹 生成清理文件列表，共 {len(cleaner_file_list)} 个文件。")
     return cleaner_file_list
 
@@ -989,7 +993,7 @@ def auto_upload():
         for video_id in video_id_list:
             video_info = metadata_cache.get(video_id, {})
             video_info = full_video_info(video_info)
-            origin_video_path_list.append(video_info.get('video_path'))
+            origin_video_path_list.append(video_info.get('video_process_path'))
             comment_list = video_info.get('hudong', {}).get('comment_list', [])
             comment_list_all.extend(comment_list)
             # 选择最佳投稿方案
@@ -1080,6 +1084,7 @@ def auto_upload():
 
         all_files_to_cleanup = gen_clean_files(origin_video_path_list)
         # 排除final_output_path，需要按照filename进行排除不能够直接使用路径
+        all_files_to_cleanup = [f for f in all_files_to_cleanup if os.path.basename(f) != os.path.basename(final_output_path)]
         all_files_to_cleanup = [f for f in all_files_to_cleanup if os.path.basename(f) != os.path.basename(final_output_path)]
         print(f"🧹 预处理完成，准备清理 {len(all_files_to_cleanup)} 个临时文件。排除{final_output_path}")
 
