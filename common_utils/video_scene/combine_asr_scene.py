@@ -535,7 +535,7 @@ def check_optimized_video_plan(optimized_video_plan, video_duration_ms):
         start = overlay.get('start')
         start_ms = time_to_ms(start)
         text = overlay.get('text', '').strip()
-        if len(text) >= 10:
+        if len(text) > 10:
             return False, f"优化方案检查失败：第 {i + 1} 个 overlay 的文本长度过长（>=10）。文本: {text}"
         if not (0 <= start_ms <= video_duration_ms):
             return False, f"优化方案检查失败：第 {i + 1} 个 overlay 的 start 时间 {start} 超出视频时长范围 [0, {video_duration_ms}ms]。"

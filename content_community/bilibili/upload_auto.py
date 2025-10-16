@@ -25,7 +25,7 @@ from common_utils.common_utils import get_config, format_seconds_to_mmss, read_j
     scan_generated_files, ms_to_time
 from common_utils.video_scene.combine_asr_scene import gen_new_video_robus
 from common_utils.video_utils import get_video_duration_seconds, create_enhanced_cover, \
-    merge_videos_ffmpeg, apply_all_subtle_tweaks, _get_video_resolution, process_video_with_template, probe_duration, \
+    merge_videos_ffmpeg, _get_video_resolution, process_video_with_template, probe_duration, \
     add_transparent_watermark
 from common_utils.video_utils_cut import text_image_to_video_with_subtitles, gen_ending_video
 
@@ -472,14 +472,6 @@ import traceback
 import concurrent.futures
 from typing import Dict, Any, Tuple, List, Set
 
-# -------------- 注意 --------------
-# 下面的代码依赖你原有模块里的函数与全局变量（不要删改）：
-# load_json, save_json, remake_video_robust, add_image_to_video_end, apply_all_subtle_tweaks,
-# merge_videos_ffmpeg, _get_video_resolution, text_image_to_video_with_subtitles,
-# add_template, create_enhanced_cover, fetch_bili_topics, time_str_to_seconds,
-# account_executors, upload_worker, config_map, error_user_map,
-# METADATA_FILE, UPLOAD_LOG_FILE, persistent_tasks_file
-# ---------------------------------
 
 # 我们在模块级保留 upload_log_global 的声明，和原来行为一致（worker 使用时仍受 upload_lock 保护）
 upload_log_global = {}
@@ -520,19 +512,6 @@ def _basic_task_checks(key: str, value: Dict[str, Any], video_id_key) -> Tuple[b
         return True, f"⏭️ 跳过 {key}：userName 题材不匹配 {value.get('userName')}"
 
     return False, ""
-
-def _select_config_for_user(userName: str) -> Tuple[str, Any]:
-    """
-    选择 config（保留原逻辑：若 userName 不在 config_map，回退到 'base' 并打印提示）
-    返回实际使用的 userName 与 config
-    """
-    if userName in error_user_map:
-        return "error_user", None
-    if userName not in config_map.keys():
-        print(f"⚠️ 跳过 {userName} 用户上传 请检查配置数据。")
-        userName = 'base'
-    config = config_map.get(userName, config_map['base'])
-    return userName, config
 
 def _preprocess_media_steps(
     key: str,
@@ -598,61 +577,6 @@ def _preprocess_media_steps(
             upload_log_global[key]['status'] = 'error'
             save_json(UPLOAD_LOG_FILE, upload_log_global)
             print(f"❌ 重制失败：{e}")
-
-    # # ---------- 预处理：在尾部插入引导图片 ----------
-    # new_video_path = current_video_path.replace('.mp4', '_new.mp4')
-    # if duration < 600:
-    #     try:
-    #         t0 = time.time()
-    #         image_duration = int(duration / 100)
-    #         image_duration = max(1, image_duration)
-    #         print(f"🔄 尾部插图处理：视频时长 {duration} 秒，插图持续 {image_duration} 秒。 文件路径：{current_video_path} -> {new_video_path}")
-    #         final_jpg_path = f'{userName}_final.jpg'
-    #         if not os.path.exists(final_jpg_path):
-    #             final_jpg_path = 'final.jpg'
-    #             print(f"⚠️ 尾部插图文件 {final_jpg_path} 不存在，使用默认图片。")
-    #         add_image_to_video_end(current_video_path, final_jpg_path, new_video_path, image_duration)
-    #         video_path = new_video_path
-    #         stage_times['尾部插图'] = time.time() - t0
-    #     except Exception as e:
-    #         stage_times['尾部插图'] = time.time() - t0
-    #         print(f"⚠️ 尾部插图失败，继续使用原视频：{e}")
-
-    # # 视频细节调整（当 duration < 600）
-    # if duration < 6000:
-    #     tweak_video_path = video_path.replace('.mp4', '_tweaked.mp4')
-    #     try:
-    #         t0 = time.time()
-    #         result = apply_all_subtle_tweaks(video_path, output_path=tweak_video_path)
-    #         if os.path.exists(tweak_video_path) and result and os.path.getsize(tweak_video_path) > 0:
-    #             video_path = tweak_video_path
-    #             print(f"✅ 视频细节调整成功，保存为 {tweak_video_path}")
-    #         else:
-    #             print(f"❌ 视频细节调整失败，继续使用原视频。")
-    #         stage_times['视频细节调整'] = time.time() - t0
-    #     except Exception as e:
-    #         stage_times['视频细节调整'] = time.time() - t0
-    #         print(f"⚠️ 视频细节调整失败：{e}")
-
-    # # 添加结尾片段
-    # temp_video_path = video_path.replace('.mp4', '_temp.mp4')
-    # try:
-    #     if generation_options.get('add_epilogue', False):
-    #         t0 = time.time()
-    #         print(f"🔄 添加结尾视频片段到 {video_path}... userName: {userName}")
-    #         copyright_video_path = f'{userName}_final.mp4'
-    #         if not os.path.exists(copyright_video_path):
-    #             copyright_video_path = 'final.mp4'
-    #             print(f"⚠️ 版权视频文件 {copyright_video_path} 不存在，使用默认视频。")
-    #         video_path_list = [video_path, copyright_video_path]
-    #         merge_videos_ffmpeg(video_path_list, output_path=temp_video_path)
-    #         if os.path.exists(temp_video_path) and os.path.getsize(temp_video_path) > 0:
-    #             video_path = temp_video_path
-    #             print(f"✅ 合并视频成功，保存为 {temp_video_path}")
-    #         stage_times['添加结尾片段'] = time.time() - t0
-    # except Exception as e:
-    #     stage_times['添加结尾片段'] = time.time() - t0
-    #     print(f"⚠️ 合并视频失败：{e}")
 
     # 封面路径选择（遵循原脚本判断优先级）
     cover_path = (
