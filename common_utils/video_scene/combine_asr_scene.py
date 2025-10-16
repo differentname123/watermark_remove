@@ -1119,6 +1119,10 @@ def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_bo
     final_with_bgm_path = final_output_path.replace('.mp4', '_with_bgm.mp4')
     final_video_script = choose_script(fused_new_video_script_info, need_different=True)
 
+    if is_valid_target_file_simple(final_output_path, 100):
+        logger.info("检测到已存在的输出文件，直接加载返回")
+        return final_output_path, final_video_script
+
 
     title_video_path = final_output_path.replace('.mp4', '_with_title.mp4')
 
@@ -1182,7 +1186,13 @@ def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_bo
     if bgm_path and os.path.exists(bgm_path):
         # logger.info(f"正在为视频添加背景音乐: {bgm_path}")
         add_bgm_to_video(final_output_path, bgm_path, str(final_with_bgm_path), auto_compute=True, rate=rate)
-        return final_with_bgm_path, final_video_script
+        # 将final_with_bgm_path覆盖final_output_path
+        if is_valid_target_file_simple(final_with_bgm_path, video_size * 0.1):
+            os.replace(final_with_bgm_path, final_output_path)
+            logger.info(f"已为视频添加背景音乐: {bgm_path} 输出文件: {final_output_path}")
+        else:
+            logger.warning(f"添加背景音乐失败，继续使用无背景音乐的视频: {final_output_path}")
+        return final_output_path, final_video_script
     return final_output_path, final_video_script
 
 
