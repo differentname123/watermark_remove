@@ -2995,7 +2995,7 @@ def add_transparent_watermark(
             '-filter_complex', filter_complex,
             '-c:v', 'libx264',  # 显式指定编码器
             '-crf', '23',  # 近无差别质量；需要更好则减小（比如16或0）
-            '-preset', 'ultrafast',  # 均衡速度/质量；开发时可用 veryslow
+            # '-preset', 'ultrafast',  # 均衡速度/质量；开发时可用 veryslow
             '-y',
             output_path
         ]

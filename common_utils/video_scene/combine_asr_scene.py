@@ -382,7 +382,7 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, has_autho
                 if not last_is_adjustable:
                     other_prompt += f"\n注意：最后一个场景的位置不能够改变。"
         if no_is_adjustable:
-            other_prompt = f"\n注意：所有场景的顺序都不能够改变。"
+            other_prompt = f"\n注意：所有场景的顺序都不能够改变。只用在方案中体现不同的on_screen_text就行"
 
     for temp in scene_info:
         for key in need_pop_list:
@@ -1176,8 +1176,9 @@ def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_bo
     rate = 1
     cut_type = final_video_script.get('cut_type', '未知')
     if has_overall_bgm and cut_type != 'all':
-        rate = 0.25
-        print("有原始bgm，降低BGM音量")
+        print("有原始bgm，不增加bgm")
+        return final_output_path, final_video_script
+
     if bgm_path and os.path.exists(bgm_path):
         # logger.info(f"正在为视频添加背景音乐: {bgm_path}")
         add_bgm_to_video(final_output_path, bgm_path, str(final_with_bgm_path), auto_compute=True, rate=rate)
@@ -1493,34 +1494,68 @@ def is_contain_owner_speaker(owner_asr_info):
             return True
     return False
 
-def fix_logical_scene_info(video_path, scenes, logical_scene_info, output_dir, max_delta_ms=1000):
+def fix_logical_scene_info(video_path, scenes, logical_scene_info, output_dir, logger, max_delta_ms=1000):
     """
-    将 logical_scene_info 中的每个 scene 的 start/end 对齐到最近的 camera shot（容差 max_delta_ms 毫秒内）。
-    打印每个时间戳调整前后的对比。返回修改后的 logical_scene_info。
-    """
+     将 logical_scene_info 中的每个 scene 的 start/end 对齐到 camera shot。
+     对齐原则：
+     1. 寻找 max_delta_ms 毫秒容差范围内的所有 camera shot。
+     2. 在这些候选中，选择出现次数最多的那个。
+     3. 如果出现次数相同，则选择与原始时间戳差值最小（最近）的那个。
+     打印每个时间戳调整前后的对比。返回修改后的 logical_scene_info。
 
-    camera_ts = [t for t in (c[0] for c in scenes) if t is not None]
-    if not camera_ts:
+     Args:
+         video_path (str): 视频文件路径。
+         scenes (list of list): camera shot 信息，每个元素是 [timestamp_ms, count]。
+         logical_scene_info (dict): 包含 'new_scene_info' 的逻辑场景信息。
+         output_dir (str): 输出目录，用于保存调试帧。
+         max_delta_ms (int): 查找候选 camera shot 的最大时间差（毫秒）。
+     """
+
+    camera_shots_with_counts = [c for c in scenes if c and c[0] is not None and c[1] > 0]
+    if not camera_shots_with_counts:
         print("⚠️ 无有效 camera_shot 时间戳，跳过调整。")
         return logical_scene_info
 
     for i, scene in enumerate(logical_scene_info.get('new_scene_info', [])):
         for key in ('start', 'end'):
-            orig = scene.get(key)
-            ms = orig
-            if ms is None:
-                print(f"[Scene {i}] {key}: 无法解析原始时间 ({orig})，跳过。")
+            orig_ts = scene.get(key)
+            if orig_ts is None:
+                print(f"[Scene {i}] {key}: 无法解析原始时间 ({orig_ts})，跳过。")
                 continue
 
-            closest = min(camera_ts, key=lambda x: abs(x - ms))
-            diff = abs(closest - ms)
-            if diff <= max_delta_ms:
-                scene[key] = int(closest)
-                print(f"[Scene {i}] {key}: {orig} -> {closest} （差 {diff} ms，已调整）")
-                # save_frames_around_timestamp(video_path, ms_to_time(orig), 5, str(os.path.join(output_dir, 'orig', str(orig))))
-                # save_frames_around_timestamp(video_path, ms_to_time(closest), 5, str(os.path.join(output_dir,'closest', str(closest))))
+            # 步骤 1: 筛选候选者
+            candidates = [
+                shot for shot in camera_shots_with_counts
+                if abs(shot[0] - orig_ts) <= max_delta_ms
+            ]
+
+            if not candidates:
+                print(f"[Scene {i}] {key}: 保持不变 {orig_ts} (在 {max_delta_ms}ms 范围内无候选 camera shot)")
             else:
-                print(f"[Scene {i}] {key}: 保持不变 {orig} （最近 {closest}, 差 {diff} ms > {max_delta_ms} ms）")
+                # 步骤 2: 使用 min() 和一个计算分数的 key 来找到最佳匹配
+                # key 返回一个元组，min() 会依次比较元组中的元素
+                # 1. 主要比较分数: (差值 / 次数)
+                # 2. 次要比较（分数相同时）: 差值本身，确保选择更近的
+                def calculate_key(shot):
+                    diff = abs(shot[0] - orig_ts)
+                    count = shot[1]
+                    # 安全起见，虽然前面过滤了，但这里处理 count=0 的情况
+                    score = diff / count if count > 0 else float('inf')
+                    return (score, diff)
+
+                best_shot = min(candidates, key=calculate_key)
+
+                new_ts = int(best_shot[0])
+                count = best_shot[1]
+                diff = abs(new_ts - orig_ts)
+                score = diff / count if count > 0 else float('inf')
+
+                scene[key] = new_ts
+                logger.info(f"[Scene {i}] {key}: {orig_ts} -> {new_ts} (最佳分={score:.2f}, 次数={count}, 差值={diff}ms, 已调整)")
+
+                # 如果需要调试，可以取消下面的注释
+                # save_frames_around_timestamp(video_path, ms_to_time(orig_ts), 5, str(os.path.join(output_dir, 'orig', str(orig_ts))))
+                # save_frames_around_timestamp(video_path, ms_to_time(new_ts), 5, str(os.path.join(output_dir,'closest', str(new_ts))))
 
     return logical_scene_info
 
@@ -1765,7 +1800,7 @@ def gen_new_video(video_path, basename):
 
 
 if __name__ == '__main__':
-    video_path = '7561420776100973864.mp4'
+    video_path = '7561723638467071278.mp4'
     # process_and_crop_video(video_path)
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))

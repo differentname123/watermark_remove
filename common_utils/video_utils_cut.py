@@ -881,7 +881,9 @@ def add_text_adaptive_padding(input_video_path, output_video_path, text_events, 
         if start_time >= end_time: continue
 
         colors = event.get('color_config', {})
-        fontcolor = colors.get('fontcolor', '#FFD700')
+        PALETTE = ['#FFFFFF', '#FF4C4C', '#FFD700']  # 白 / 黑 / 金
+        fontcolor = colors.get('fontcolor', random.choice(PALETTE))
+        # fontcolor = colors.get('fontcolor', '#FFD700')
         shadowcolor = colors.get('shadowcolor', 'black@0.8')
 
         # --- 字体大小计算逻辑 (保持不变，依然健壮) ---

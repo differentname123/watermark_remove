@@ -575,7 +575,7 @@ def _preprocess_media_steps(
         creative_guidance = generation_options.get('creative_guidance', '')
         print(f"🔄 重制视频 {video_path}... userName: {userName} 是否不包含作者语音{no_owner} 创作指导：{creative_guidance} 视频名称：{full_title} duration{duration}")
         try:
-
+            params = {}
             final_video_path, final_video_script = gen_new_video_robus(video_path)
             cut_type = final_video_script.get('cut_type', 'all')
             if is_valid_target_file_simple(final_video_path):
@@ -1098,7 +1098,7 @@ def auto_upload():
 
     # 如果需要在一次运行结束前等待所有后台上传完成，可取消下面注释：
     print("等待所有后台上传完成...")
-    # concurrent.futures.wait(futures, timeout=None)
+    concurrent.futures.wait(futures, timeout=None)
 
     # 处理被跳过的 persistent tasks
     if len(temp_set) > 0:

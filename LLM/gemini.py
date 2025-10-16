@@ -1,29 +1,22 @@
 import os
 import time
-import base64
-import traceback
+import json
 from pathlib import Path
+import functools
 
 # 假设 common_utils 是您本地的模块
-from common_utils.common_utils import get_config, read_json
-from PIL import Image
-import functools
-import json
-import threading
-from filelock import FileLock  # 新增：导入文件锁库
+from common_utils.common_utils import read_json
 
-# 新增：用于识别图片文件类型
-import mimetypes
-import uuid
-from io import BytesIO
+from PIL import Image  # 仅用于类型提示与可选检测，不强依赖 PIL 的上传流程
+from filelock import FileLock
 
-# 导入新版 SDK（必须先 pip install google-genai）
+# 新版 SDK（pip install google-genai）
 from google import genai
 from google.genai import types
-# 兼容旧的 google.api_core 异常导入（你的代码中已有引用）
-from google.api_core import exceptions as ga_exceptions
 
-# === 修改开始：引入健壮的、支持并发的 ApiKeyManager ===
+
+# ========== API Key 读取与管理 ==========
+
 def build_api_key_map():
     google_config = read_json(str(Path(__file__).resolve().parent / 'config_google.json'))
 
@@ -38,27 +31,23 @@ def build_api_key_map():
 
     return api_key_map
 
+
 class ApiKeyManager:
     """
-    一个线程安全和进程安全的API密钥管理器。
-    - 每次请求时根据特定模型的使用次数动态排序密钥。
-    - 使用文件锁来处理并发读写。
+    线程/进程安全的 API Key 使用统计与动态排序：
+    - 针对特定模型维度记录使用次数
+    - 使用文件锁避免并发读写冲突
     """
 
     def __init__(self, api_key_map):
         self.api_key_map = api_key_map
-
-        # --- 这是唯一的、核心的修改 ---
         module_dir = os.path.dirname(os.path.abspath(__file__))
         self.stats_file = os.path.join(module_dir, 'api_key_usage.json')
-        # --- 修改结束 ---
-
         self.lock_file = self.stats_file + '.lock'
         self.lock = FileLock(self.lock_file, timeout=10)
         self._initialize_stats()
 
     def _initialize_stats(self):
-        """初始化统计文件，如果不存在或为空。"""
         with self.lock:
             if not os.path.exists(self.stats_file) or os.path.getsize(self.stats_file) == 0:
                 initial_stats = {key: {} for key in self.api_key_map.keys()}
@@ -66,16 +55,12 @@ class ApiKeyManager:
                     json.dump(initial_stats, f, indent=4)
 
     def get_ordered_keys(self, model_name: str):
-        """
-        【核心】获取根据【特定模型】使用次数动态排序的密钥名称列表。
-        此操作是线程和进程安全的。
-        """
         with self.lock:
             try:
                 with open(self.stats_file, 'r') as f:
                     stats = json.load(f)
                 if stats and isinstance(next(iter(stats.values()), None), int):
-                   raise TypeError("Old stats format detected. Resetting.")
+                    raise TypeError("Old stats format detected. Resetting.")
             except (FileNotFoundError, json.JSONDecodeError, TypeError) as e:
                 print(f"[WARN] Failed to read or parse stats file ({e}), re-initializing.")
                 stats = {key: {} for key in self.api_key_map.keys()}
@@ -89,10 +74,6 @@ class ApiKeyManager:
         return sorted_keys
 
     def record_success(self, key_name: str, model_name: str):
-        """
-        【核心】为一个成功的API调用记录指定模型的次数。
-        此操作是线程和进程安全的“读取-修改-写入”原子操作。
-        """
         with self.lock:
             try:
                 with open(self.stats_file, 'r') as f:
@@ -115,121 +96,54 @@ class ApiKeyManager:
 
 API_KEY_MAP = build_api_key_map()
 api_key_manager = ApiKeyManager(API_KEY_MAP)
-# === 修改结束 ===
 
 
-# ================== 新增兼容层：在不改动现有逻辑的前提下，用新版 SDK 实现旧接口 ==================
-class GenAIFlashCompat:
+# ========== 统一的思考预算与调用工具函数 ==========
+
+def build_generate_content_config(model_name: str | None) -> types.GenerateContentConfig:
     """
-    提供与旧 google.generativeai 模块类似的接口：
-    - configure(api_key=...)
-    - upload_file(path=...)
-    - get_file(name)
-    - delete_file(name)
-    - GenerativeModel(model_name=...) -> object with generate_content(contents, request_options=...)
-    以及在内部把 PIL.Image -> 上传文件 的转换（保留原始逻辑）
+    统一生成 GenerateContentConfig：
+    - 默认 thinking_budget=24567
+    - 若 model_name 包含 'pro'（不区分大小写），则为 32678
+    - 统一 response_mime_type 为 'text/plain'
     """
-    def __init__(self):
-        self._client = None
-
-    def configure(self, api_key: str):
-        # 保存 client 实例，后续 API 调用使用该 client
-        self._client = genai.Client(api_key=api_key)
-
-    def _ensure_client(self):
-        if self._client is None:
-            raise RuntimeError("GenAIFlashCompat: client not configured. Call configure(api_key=...) first.")
-
-    def upload_file(self, path: str):
-        """
-        path: 本地文件路径
-        返回：新版 SDK 的 File 对象（保持属性 .name, .state.name 可用）
-        """
-        self._ensure_client()
-        # 新 SDK 的接口：client.files.upload(file=path)
-        return self._client.files.upload(file=path)
-
-    def get_file(self, name: str):
-        self._ensure_client()
-        return self._client.files.get(name=name)
-
-    def delete_file(self, name: str):
-        self._ensure_client()
-        return self._client.files.delete(name=name)
-
-    class GenerativeModel:
-        def __init__(self, outer, model_name: str):
-            """
-            outer: GenAIFlashCompat 的实例，用于访问 client
-            """
-            self._outer = outer
-            self.model_name = model_name
-
-        def generate_content(self, contents, request_options: dict | None = None, model_name: str | None = None):
-            """
-            contents: 原始内容列表（可能包含上传后的 File 对象、字符串、PIL.Image 等）
-            request_options: 兼容旧参数（主要提取 timeout）
-            model_name: 可选，调用时覆盖模型名；若为 None，则使用实例的 model_name；若实例也没有，则使用默认 'gemini-flash-latest'
-            """
-            self._outer._ensure_client()
-            client = self._outer._client
-
-            # 决定最终使用的模型名（优先级：调用参数 > 实例属性 > 默认）
-            model_to_use = model_name or getattr(self, "model_name", None) or "gemini-flash-latest"
-
-            # 处理 contents：把 PIL.Image -> 临时上传文件
-            temp_uploaded_files = []  # 记录需要在调用后删除的临时 uploaded file names（仅临时产生的）
-            processed_contents = []
-            try:
-                for c in contents:
-                    # 如果是 PIL 图像实例，保存到临时文件并上传
-                    if isinstance(c, Image.Image):
-                        tmp_name = f"tmp_upload_{uuid.uuid4().hex}.png"
-                        tmp_path = os.path.join(os.path.dirname(__file__), tmp_name)
-                        c.save(tmp_path, format="PNG")
-                        uploaded = client.files.upload(file=tmp_path)
-                        processed_contents.append(uploaded)
-                        temp_uploaded_files.append((uploaded.name, tmp_path))
-                    else:
-                        # 直接传递（例如已有上传的 File 对象、字符串等）
-                        processed_contents.append(c)
-
-                # 从 request_options 中提取 timeout（如果有）
-                timeout = None
-                if request_options and isinstance(request_options, dict):
-                    timeout = request_options.get("timeout", None)
-
-                # 调用新版 SDK：优先把 timeout 以关键字传入（多数版本支持）
-                try:
-                    if timeout is not None:
-                        resp = client.models.generate_content(model=model_to_use, contents=processed_contents, timeout=timeout)
-                    else:
-                        resp = client.models.generate_content(model=model_to_use, contents=processed_contents)
-                except TypeError:
-                    # 若某些 SDK 版本不接受 timeout 参数，则降级到不带 timeout 的调用
-                    resp = client.models.generate_content(model=model_to_use, contents=processed_contents)
-
-                return resp
-            finally:
-                # 清理临时本地文件（如果生成了）以及删除临时上传的文件（如果已上传）
-                for uploaded_name, tmp_path in temp_uploaded_files:
-                    try:
-                        client.files.delete(name=uploaded_name)
-                    except Exception:
-                        pass
-                    try:
-                        if os.path.exists(tmp_path):
-                            os.remove(tmp_path)
-                    except Exception:
-                        pass
+    budget = 24567
+    if model_name and ('pro' in model_name.lower()):
+        budget = 32678
+    return types.GenerateContentConfig(
+        thinking_config=types.ThinkingConfig(thinking_budget=budget),
+        response_mime_type="text/plain",
+    )
 
 
-# 实例化兼容对象，替代原先直接 import 的 genai_flash 模块
-genai_flash = GenAIFlashCompat()
-# =======================================================================================
+def safe_generate_content(client: genai.Client, model: str, contents, config: types.GenerateContentConfig, timeout: int | None = None):
+    """
+    统一模型调用，兼容部分 SDK 版本不接受 timeout 的情况。
+    """
+    try:
+        if timeout is not None:
+            return client.models.generate_content(model=model, contents=contents, config=config, timeout=timeout)
+        else:
+            return client.models.generate_content(model=model, contents=contents, config=config)
+    except TypeError:
+        # 某些版本不接受 timeout
+        return client.models.generate_content(model=model, contents=contents, config=config)
 
 
-# 下面保留你原有的 with_proxy 装饰器和函数逻辑（不改动逻辑，仅调用兼容层）
+def wait_until_file_ready(client: genai.Client, file_obj, poll_interval: int = 10):
+    """
+    轮询等待文件处理完成（PROCESSING -> ACTIVE/FAILED）。
+    """
+    while getattr(file_obj, "state", None) and getattr(file_obj.state, "name", None) == "PROCESSING":
+        time.sleep(poll_interval)
+        file_obj = client.files.get(name=file_obj.name)
+    if getattr(file_obj.state, "name", None) == "FAILED":
+        raise RuntimeError(f"文件处理失败：{getattr(file_obj, 'name', '未知')}")
+    return file_obj
+
+
+# ========== 代理装饰器（保持行为） ==========
+
 def with_proxy(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -238,106 +152,14 @@ def with_proxy(func):
         try:
             return func(*args, **kwargs)
         finally:
-            if 'HTTP_PROXY' in os.environ: del os.environ['HTTP_PROXY']
-            if 'HTTPS_PROXY' in os.environ: del os.environ['HTTPS_PROXY']
-
+            if 'HTTP_PROXY' in os.environ:
+                del os.environ['HTTP_PROXY']
+            if 'HTTPS_PROXY' in os.environ:
+                del os.environ['HTTPS_PROXY']
     return wrapper
 
-@with_proxy
-def analyze_videos_gemini(
-    prompt: str = '视频中的内容是什么',
-    video_paths: list[str] = [],
-    timeout: int = 1200
-) -> str:
-    """
-    针对一组视频文件，调用 Gemini-2.5-Pro 分析其内容并返回合并后的文本回复。
 
-    参数：
-    - prompt: 你希望模型在视频内容上回答的问题。
-    - video_paths: 本地视频文件路径列表。
-    - timeout: 单次请求的超时时间（秒）。
-    """
-    if video_paths is None:
-        video_paths = []
-
-    last_error = None
-    # 指定要使用的模型
-    model_name = "gemini-2.5-pro"
-    ordered_keys = api_key_manager.get_ordered_keys(model_name=model_name)
-
-    for key_name in ordered_keys:
-        api_key = API_KEY_MAP.get(key_name)
-        if not api_key:
-            continue
-
-        # 使用新版客户端通过兼容层进行配置
-        genai_flash.configure(api_key=api_key)
-        uploaded = []  # 存储 (原始文件名, 上传后的 video_file 对象)
-
-        try:
-            # 1. 上传并等待所有视频处理完成
-            for path in video_paths:
-                if not os.path.exists(path):
-                    return f"错误: 视频文件未找到 -> {path}"
-                basename = os.path.basename(path)
-                print(f"[INFO] 使用 API Key “{key_name}” 上传视频 {basename} …")
-                video_file = genai_flash.upload_file(path=path)
-                # 等待处理完成
-                while video_file.state.name == "PROCESSING":
-                    print(f"[INFO] 视频 {basename} 正在处理…")
-                    time.sleep(10)
-                    video_file = genai_flash.get_file(video_file.name)
-                if video_file.state.name == "FAILED":
-                    raise RuntimeError(f"视频处理失败：{basename}")
-                uploaded.append((basename, video_file))
-
-            # 2. 构造 prompt_parts，包含“文件名:”提示
-            prompt_parts = [
-                prompt,
-                "下面我将以 '文件名:' 的格式，在每个视频前提供其名称，请据此作答。"
-            ]
-            for basename, vf in uploaded:
-                prompt_parts.append(f"{basename}:")  # 使用本地原始文件名
-                prompt_parts.append(vf)             # 插入视频对象
-
-            # 3. 调用 Gemini-2.5-Pro 生成内容（通过兼容层）
-            print(f"[INFO] 使用 API Key “{key_name}” 调用 Gemini 模型 {model_name} 生成内容…")
-            model = genai_flash.GenerativeModel(genai_flash, model_name=model_name)
-            response = model.generate_content(
-                prompt_parts,
-                request_options={"timeout": timeout}
-            )
-
-            # 4. 记录成功并清理上传文件
-            api_key_manager.record_success(key_name, model_name=model_name)
-            for _, vf in uploaded:
-                try:
-                    print(f"[INFO] 删除临时文件 {vf.name} …")
-                    genai_flash.delete_file(vf.name)
-                except Exception as de:
-                    print(f"[WARN] 删除视频文件 {vf.name} 失败：{de}")
-
-            return response.text
-
-        except (ga_exceptions.PermissionDenied,
-                ga_exceptions.ResourceExhausted,
-                ga_exceptions.GoogleAPICallError) as e:
-            # 某些 Key 遇到配额或权限问题，切换到下一个
-            last_error = e
-            print(f"[WARN] API Key “{key_name}” 调用失败：{e}，尝试下一个…")
-            # 删除已上传的文件，避免残留
-            for _, vf in uploaded:
-                try:
-                    genai_flash.delete_file(vf.name)
-                except:
-                    pass
-            continue
-
-        except Exception as e:
-            # 未知错误，直接返回
-            return f"处理过程中发生未知错误: {e.__class__.__name__}: {e}"
-
-    return f"所有 API Key 均尝试失败。最后一次错误：{last_error}"
+# ========== 业务函数（无兼容层，保持原功能） ==========
 
 
 @with_proxy
@@ -345,87 +167,84 @@ def get_llm_content_gemini_flash_video(
     prompt: str = '视频中的内容是什么',
     video_path: str = 'test.mp4',
     model_name: str = "gemini-flash-latest",
-    max_attempts: int = 1  # <--- 修改点 1: 增加一个控制尝试次数的参数，默认为 1
+    max_attempts: int = 10
 ) -> str:
     last_error = None
     ordered_keys = api_key_manager.get_ordered_keys(model_name=model_name)
 
-    # <--- 修改点 2: 使用列表切片来限制循环次数
     for key_name in ordered_keys[:max_attempts]:
         api_key = API_KEY_MAP.get(key_name)
         if not api_key:
             continue
 
-        # 使用新版 SDK（兼容层）
-        genai_flash.configure(api_key=api_key)
+        client = genai.Client(api_key=api_key)
         if not os.path.exists(video_path):
             return f"错误: 视频文件未找到 -> {video_path}"
 
         video_file = None
         try:
             print(f"[INFO] 使用 API Key “{key_name}” prompt length: {len(prompt)} 上传视频… {model_name}， {video_path}")
+            # 保持原行为：调用前先记一次成功（影响排序）
             api_key_manager.record_success(key_name, model_name=model_name)
-            video_file = genai_flash.upload_file(path=video_path)
 
-            while video_file.state.name == "PROCESSING":
-                print("等待视频处理完成…")
-                time.sleep(10)
-                video_file = genai_flash.get_file(video_file.name)
+            video_file = client.files.upload(file=video_path)
+            video_file = wait_until_file_ready(client, video_file, poll_interval=10)
 
-            if video_file.state.name == "FAILED":
-                raise RuntimeError(f"视频处理失败：{video_path}")
-
-            model = genai_flash.GenerativeModel(genai_flash, model_name=model_name)
-            response = model.generate_content(
-                [video_file, prompt],
-                request_options={"timeout": 1200}
+            config = build_generate_content_config(model_name)
+            response = safe_generate_content(
+                client=client,
+                model=model_name,
+                contents=[video_file, prompt],
+                config=config,
+                timeout=1200
             )
-
             return response.text
-
-        except (ga_exceptions.PermissionDenied,
-                ga_exceptions.ResourceExhausted,
-                ga_exceptions.GoogleAPICallError) as e:
-            last_error = e
-            print(f"[WARN] Key “{key_name}” 调用失败：{e}，切换下一个…{video_path}")
-            # 继续到下一个 key
-
         except Exception as e:
-            return f"处理过程中发生未知错误: {e}"
-
+            if 'overloaded' in str(e):
+                last_error = e
+                print(f"[WARN] Key “{key_name}” 调用失败：{e}，切换下一个…{video_path}")
+            else:
+                print(f"[ERROR] Key “{key_name}” 调用失败：{e}，停止尝试。 {video_path}")
+                raise e
         finally:
             if video_file is not None:
                 try:
                     print(f"[INFO] 删除临时文件 {video_file.name}…")
-                    genai_flash.delete_file(video_file.name)
+                    client.files.delete(name=video_file.name)
                 except Exception as de:
                     print(f"[ERROR] 删除文件 {video_file.name} 失败：{de}")
 
     return f"所有 API Key 均尝试失败 ({max_attempts}次)。最后一次错误：{last_error} {video_path}"
 
 
-
 def get_llm_content_gemini2flash(prompt: str = '你好，Gemini！请介绍一下你自己。') -> str:
     last_error = None
     model_name = "gemini-flash-latest"
     ordered_keys = api_key_manager.get_ordered_keys(model_name=model_name)
+    last_key_name = None
     for key_name in ordered_keys:
+        last_key_name = key_name
         api_key = API_KEY_MAP.get(key_name)
-        if not api_key: continue
+        if not api_key:
+            continue
         try:
             print(f"[INFO] 正在使用名为 '{key_name}' 的 API Key... prompt length: {len(prompt)}")
             client = genai.Client(api_key=api_key)
             contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
-            config = types.GenerateContentConfig(response_mime_type="text/plain")
-            response = client.models.generate_content(model=model_name, contents=contents, config=config)
+            config = build_generate_content_config(model_name)
+            response = safe_generate_content(client, model_name, contents, config, timeout=None)
 
-            api_key_manager.record_success(key_name, model_name=model_name)  # 成功，记录
+            api_key_manager.record_success(key_name, model_name=model_name)
             return response.text
-        except (ga_exceptions.PermissionDenied, ga_exceptions.ResourceExhausted, ga_exceptions.GoogleAPICallError) as e:
-            last_error = e
-            print(f"[WARN] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 正在尝试下一个...")
-            continue
-    return f"所有 API Key 均尝试失败。最后一次错误 (来自密钥 '{key_name}'): {last_error}"
+        except Exception as e:
+            if 'overloaded' in str(e):
+                last_error = e
+                print(f"[WARN] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 正在尝试下一个...")
+                continue
+            else:
+                print(f"[ERROR] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 停止尝试。 {e}")
+                raise e
+    return f"所有 API Key 均尝试失败。最后一次错误 (来自密钥 '{last_key_name}')：{last_error}"
 
 
 def get_llm_content_sub(prompt: str = '你好，Gemini！请介绍一下你自己。',
@@ -435,25 +254,31 @@ def get_llm_content_sub(prompt: str = '你好，Gemini！请介绍一下你自�
     ordered_keys = api_key_manager.get_ordered_keys(model_name=model_name)
     for key_name in ordered_keys:
         api_key = API_KEY_MAP.get(key_name)
-        if not api_key: continue
+        if not api_key:
+            continue
         try:
+            # 保持原始行为：先记成功再调用
             api_key_manager.record_success(key_name, model_name=model_name)
 
             print(f"[INFO] 正在使用名为 '{key_name}' 的 API Key... prompt length: {len(prompt)}")
             client = genai.Client(api_key=api_key)
             contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
-            config = types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=24576),
-                                                 response_mime_type="text/plain")
-            response = client.models.generate_content(model=model_name, contents=contents, config=config)
+            config = build_generate_content_config(model_name)
+            response = safe_generate_content(client, model_name, contents, config, timeout=None)
+
             text = response.text
             if not text:
                 print(f"模型返回了空响应{response.prompt_feedback}")
             return text
         except Exception as e:
-            print(f"[WARN] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 正在尝试下一个... {e}")
-            last_error = e
-            continue
-    raise last_error if last_error else Exception(f"所有 API Key 均尝试失败且未记录特定错误。")
+            if 'overloaded' in str(e):
+                print(f"[WARN] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 正在尝试下一个... {e}")
+                last_error = e
+                continue
+            else:
+                print(f"[ERROR] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 停止尝试。 {e}")
+                raise e
+    raise last_error if last_error else Exception("所有 API Key 均尝试失败且未记录特定错误。")
 
 
 @with_proxy
@@ -475,46 +300,12 @@ def get_llm_content(prompt: str = '你好，Gemini！请介绍一下你自己。
 
 
 @with_proxy
-def analyze_images_gemini(prompt='每张图片的内容是什么', image_paths=['a.jpg']) -> str:
-    last_error = None
-    model_name = "gemini-2.5-pro"
-    ordered_keys = api_key_manager.get_ordered_keys(model_name=model_name)
-    for key_name in ordered_keys:
-        api_key = API_KEY_MAP.get(key_name)
-        if not api_key: continue
-        try:
-            api_key_manager.record_success(key_name, model_name=model_name)
-
-            print(f"[INFO] 正在使用名为 '{key_name}' 的 API Key 尝试分析图片... prompt length: {len(prompt)}, 图片数量: {len(image_paths)}")
-            genai_flash.configure(api_key=api_key)
-            prompt_parts = [prompt, "下面我将以'文件名:'的格式，在每个图片前提供其名称，请据此作答。"]
-            for path in image_paths:
-                if not os.path.exists(path): return f"错误: 图片文件未找到 -> {path}"
-                prompt_parts.append(f"{os.path.basename(path)}:")
-                # 保留你的原始逻辑：向 prompt_parts 中放入 PIL.Image 对象（兼容层会在发送前上传）
-                prompt_parts.append(Image.open(path))
-
-            model = genai_flash.GenerativeModel(genai_flash, model_name=model_name)
-            response = model.generate_content(prompt_parts, request_options={"timeout": 1200})
-
-            return response.text
-        except (ga_exceptions.PermissionDenied, ga_exceptions.ResourceExhausted, ga_exceptions.GoogleAPICallError) as e:
-            last_error = e
-            print(f"[WARN] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 正在尝试下一个...")
-            continue
-        except Exception as e:
-            return f"处理过程中发生未知错误: {e.__class__.__name__}: {e}"
-    return f"所有 API Key 均尝试失败。最后一次错误 (来自密钥 '{key_name}'): {last_error}"
-
-
-@with_proxy
 def valid_all_api_keys():
     """
     测试所有 API Key 的有效性。
     """
     failed_key_list = []
     success_key_list = []
-    # 测试时，我们基于最常用或基础的模型（如flash）来排序
     test_model = "gemini-flash-latest"
     ordered_keys = api_key_manager.get_ordered_keys(model_name=test_model)
     results = {}
@@ -527,8 +318,8 @@ def valid_all_api_keys():
             print(f"[TEST] 正在测试名为 '{key_name}' 的 API Key...")
             client = genai.Client(api_key=api_key)
             contents = [types.Content(role="user", parts=[types.Part.from_text(text="你好")])]
-            config = types.GenerateContentConfig(response_mime_type="text/plain")
-            response = client.models.generate_content(model=test_model, contents=contents, config=config)
+            config = build_generate_content_config(test_model)
+            response = safe_generate_content(client, test_model, contents, config, timeout=None)
             results[key_name] = "有效"
             print(f"[SUCCESS] Key '{key_name}' 有效，模型响应: {response.text[:30]}...")
             success_key_list.append(key_name)
@@ -546,13 +337,11 @@ def valid_all_api_keys():
 
 
 if __name__ == "__main__":
-
     valid_all_api_keys()
 
     print("\n" + "=" * 20 + " 开始测试 " + "=" * 20)
     print("[TEST] 正在测试 get_llm_content (这将触发第一次动态排序)")
     start_time = time.time()
-    # model_name 参数现在会影响密钥的选择顺序
     result = get_llm_content(prompt="再给我讲个笑话吧", model_name="gemini-flash-latest")
     if result:
         print("\n[RESULT] 模型输出：\n", result)
