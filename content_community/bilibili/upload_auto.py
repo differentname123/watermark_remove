@@ -946,6 +946,7 @@ def process_video_batch(
 
 
 # ---------- 主流程 ----------
+# ---------- 主流程 ----------
 def auto_upload() -> None:
     """
     非阻塞版 auto_upload（主线程负责预处理，投稿提交到每个账号的单线程 executor）：
@@ -953,6 +954,8 @@ def auto_upload() -> None:
     - 在生成 upload_params 后，使用 account_executors[userName].submit(...) 提交 upload_worker，
       以确保同一用户同一时刻只会有一个上传任务在运行。
     - 视频处理流水线已封装到 process_video_batch，并支持断点续跑（按产物存在跳过）。
+    - 新增需求：如果本轮循环因账号冷却或上限未提交任何新视频，则在最后至少有效处理一个视频（耗时>10s），
+      以充分利用计算资源。
     """
     global upload_log_global
 
@@ -972,6 +975,13 @@ def auto_upload() -> None:
     error_count = 0
     processed_video_id: List[str] = []
     latest_user = ""
+
+    # --- 新增变量以满足新需求 ---
+    # 标志位，记录本轮是否有实际的投稿任务被提交
+    submitted_any_uploads = False
+    # 收集因账号限制而跳过，但可被预处理的视频任务
+    skippable_candidates: List[Dict[str, Any]] = []
+    # --- 变量新增结束 ---
 
     # 遍历所有权威元数据任务
     for key, value in metadata_cache.items():
@@ -1050,20 +1060,42 @@ def auto_upload() -> None:
             f"🔍 处理 {key} (用户: {userName}) 今日已本地上传 {uploads_today} 个视频， 实际平台数据：{remote_upload_count}  "
             f"最近一小时上传个数为: {uploads_last_hour}，最近上传时间为：{latest_upload_time}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}"
         )
-        if uploads_today >= 25 or remote_upload_count >= 20:
-            print(
-                f"⚠️ 跳过 {userName} 用户上传：今日已本地上传 {uploads_today} 个视频， 实际平台数据：{remote_upload_count} ，达到上限。"
-            )
-            continue
-        if latest_timestamp and (time.time() - latest_timestamp) < 1200 and uploads_last_hour >= 1:
-            print(
-                f"⚠️ 跳过 {userName} 用户上传：距离上次上传少于 20 分钟。 上次上传时间：{latest_upload_time}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            continue
 
-        if userName == latest_user:
-            print(f"⚠️ 跳过 {userName} 用户上传：与上一个上传用户相同，避免连续上传。")
+        # --- 修改跳过逻辑，收集可处理的候选任务 ---
+        is_cooldown_or_limit = False
+        cooldown_reason = ""
+        if uploads_today >= 25 or remote_upload_count >= 20:
+            is_cooldown_or_limit = True
+            cooldown_reason = f"今日已本地上传 {uploads_today} 个视频， 实际平台数据：{remote_upload_count} ，达到上限。"
+        elif latest_timestamp and (time.time() - latest_timestamp) < 1200 and uploads_last_hour >= 1:
+            is_cooldown_or_limit = True
+            cooldown_reason = f"距离上次上传少于 20 分钟。 上次上传时间：{latest_upload_time}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}"
+        elif userName == latest_user:
+            is_cooldown_or_limit = True
+            cooldown_reason = "与上一个上传用户相同，避免连续上传。"
+
+        generation_options = value.get("generation_options", {}) or {}
+        is_real_time = generation_options.get("is_real_time", False)
+
+        # 判断当前时间是否在 5 点 到 24 点之间
+        if not (5 <= datetime.datetime.now().hour < 24) and not is_real_time:
+            is_cooldown_or_limit = True
+            cooldown_reason = "当前时间不在允许的上传时间段（5点-24点）内。"
+
+        if is_cooldown_or_limit:
+            print(f"⚠️ 跳过 {userName} 用户上传：{cooldown_reason}")
+            # 收集该任务以备后续处理，但不提交上传
+            candidate_params = {
+                "parent_key": key,
+                "video_id_list": video_id_list,
+                "metadata_cache": metadata_cache,
+                "base_value": value,
+                "userName": userName,
+            }
+            skippable_candidates.append(candidate_params)
             continue
+        # --- 逻辑修改结束 ---
+
         latest_user = userName
 
         # 执行视频处理流水线（带断点续跑）
@@ -1114,6 +1146,12 @@ def auto_upload() -> None:
             f"🚀 准备为用户 {userName} 后台投稿 {key} (ID: {video_id_key}) - 《{upload_params.get('title')}》（按账号串行）"
         )
 
+
+
+        # --- 更新任务提交状态 ---
+        submitted_any_uploads = True
+        # --- 状态更新结束 ---
+
         task_stage_times = dict(last_stage_times)
 
         # 清理文件（排除最终产物）
@@ -1141,6 +1179,77 @@ def auto_upload() -> None:
     print("等待所有后台上传完成...")
     concurrent.futures.wait(futures, timeout=None)
 
+    # --- 新增备用处理逻辑 ---
+    # --- 新增备用处理逻辑 (日志优化 + 进度统计) ---
+    if not submitted_any_uploads and skippable_candidates:
+        from collections import defaultdict
+
+        # 1. 启动信息：更详细的启动摘要
+        print("💡 本轮未提交任何新投稿，启动【备用视频预处理】流程以充分利用计算资源。")
+
+        user_candidate_counts = defaultdict(int)
+        for c in skippable_candidates:
+            user_candidate_counts[c['userName']] += 1
+
+        user_summary = ", ".join([f"{user}: {count}个" for user, count in user_candidate_counts.items()])
+        print(f"💡 共发现 {len(skippable_candidates)} 个候选任务，用户分布: {user_summary}")
+
+        effective_task_found = False
+
+        # --- 新增：用于统计跳过任务的数量 ---
+        skipped_count = 0
+        total_candidates = len(skippable_candidates)
+        # --- 新增结束 ---
+
+        # 2. 处理进度：增加进度指示和详细信息
+        for i, candidate in enumerate(skippable_candidates, 1):
+            user_name = candidate['userName']
+            parent_key = candidate['parent_key']
+            video_ids = candidate['video_id_list']
+
+            print(f"\n⏳ [{i}/{total_candidates}] 尝试处理候选任务: {parent_key}")
+            print(f"   - 用户: {user_name}")
+            print(f"   - 包含视频ID: {video_ids}")
+
+            start_time = time.time()
+            remaining_count = total_candidates - i
+
+            try:
+                # 以只处理不上传的方式调用视频处理流水线
+                process_video_batch(**candidate)
+                processing_duration = time.time() - start_time
+
+                # 3. 结果反馈：更清晰的结果说明
+                if processing_duration > 10:
+                    print(f"🎉 【有效处理完成】 任务 '{parent_key}' 耗时 {processing_duration:.2f} 秒 (> 10秒).")
+                    print("   - 目标达成，备用处理流程结束。")
+                    effective_task_found = True
+                    break  # 目标达成，退出备用处理循环
+                else:
+                    skipped_count += 1  # 仅在“太快”时才算作跳过
+                    print(f"ℹ️  【跳过】 任务 '{parent_key}' 耗时 {processing_duration:.2f} 秒 (≤ 10秒).")
+                    # --- 新增：打印当前进度 ---
+                    print(f"   - 📊 进度: 已跳过 {skipped_count} 个, 剩余 {remaining_count} 个待检查。")
+
+            except Exception as e:
+                print(f"❌ 【处理失败】 候选任务 '{parent_key}' 发生错误: {e}")
+                traceback.print_exc()
+                print("   - 将跳过此任务，继续处理下一个候选。")
+                # --- 新增：打印当前进度 ---
+                # 注意：失败的任务不算入“跳过”计数，但仍然消耗了一次机会
+                print(f"   - 📊 进度: 已处理 {i} 个 (其中1个失败), 剩余 {remaining_count} 个待检查。")
+                continue
+
+        # 4. 最终总结：根据是否找到有效任务给出不同的总结
+        if not effective_task_found:
+            print("\n" + "-" * 50)
+            if total_candidates > 0:
+                print(f"✅ 已检查全部 {total_candidates} 个候选任务，但未发现需要大量计算的（耗时均≤10秒）。")
+            else:
+                print("✅ 备用流程结束，没有需要处理的候选任务。")
+
+        print("=" * 50 + "\n")
+
     # 处理被跳过的 persistent tasks
     if len(temp_set) > 0:
         print(f"⚠️ 跳过了 {len(temp_set)} 个任务：{', '.join(temp_set)}")
@@ -1149,7 +1258,7 @@ def auto_upload() -> None:
         persistent_tasks.update(temp_set)
         save_json(persistent_tasks_file, list(persistent_tasks))
 
-    print(f"错误数量为{error_user_map and len(error_user_map) or 0}  全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"错误数量为{len(error_user_map)}  全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 # ---------- CLI ----------
