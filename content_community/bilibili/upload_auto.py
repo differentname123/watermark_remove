@@ -2,14 +2,22 @@
 # -*- coding: utf-8 -*-
 
 """
-自动上传脚本（B 站版）
+自动上传脚本（B 站版）- 重构版
 
-功能说明
+功能说明（保持原逻辑不变）
 1. 读取权威元数据文件 metadata_cache.json，获取需要处理的全部视频任务。
 2. 读取 / 创建 上传日志文件 metadata_cache_with_uploads.json，判断哪些视频已成功投稿。
 3. 仅对尚未记录成功投稿的视频执行完整上传流程。
 4. 上传成功后，把「权威元数据 + upload_info」写入 / 更新到 metadata_cache_with_uploads.json。
 5. 任何情况下都不修改 metadata_cache.json。
+
+重构要点
+- 将“视频处理流水线（预处理/合并/结尾/水印）”封装为 process_video_batch(...)，并实现断点续跑：
+  - 若存在 _final.mp4 则跳过合并；
+  - 若存在 _new.mp4 则跳过末尾拼接；
+  - 若存在 _watermark.mp4 则跳过水印；
+  - 若封面增强 _enhanced.jpg 已存在，则跳过再次生成。
+- 保持上传前参数构建、上传重试、日志更新、清理与节流策略不变。
 """
 
 import concurrent.futures
@@ -17,7 +25,6 @@ import datetime
 import hashlib
 import json
 import os
-import random
 import threading
 import time
 import traceback
@@ -301,6 +308,7 @@ def get_watermark_path(user_type: str, user_name: str) -> str:
     print(f"{user_name} ✅ 使用水印图片 {watermark_path} 筛选池大小 {len(filtered_files)}")
     return watermark_path
 
+
 def get_best_plan_by_potential(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """根据“爆款潜力指数”选出分值最高的方案。"""
     best_plan, highest_score = None, float("-inf")
@@ -336,7 +344,15 @@ def time_str_to_seconds(time_str: str) -> Optional[int]:
         return None
 
 
-# ---------- 核心上传工作线程 ----------
+def file_valid(path: Optional[str]) -> bool:
+    """判断文件存在且非空。"""
+    try:
+        return bool(path) and os.path.exists(path) and os.path.getsize(path) > 0
+    except Exception:
+        return False
+
+
+# ---------- 上传后台任务 ----------
 def upload_worker(
     upload_params: Dict[str, Any],
     key: str,
@@ -504,9 +520,9 @@ def _preprocess_media_steps(
     """
     执行视频 / 封面的一系列预处理步骤（顺序与原逻辑一致）。
     返回：
-      - video_path: 最终用于上传的视频路径
-      - cover_path: 最终用于上传的封面路径
-      - stage_times: 每一步耗时字典
+      - video_path: 最终用于后续处理的视频路径（可能被重制覆盖）
+      - cover_path: 最终用于上传的封面路径（可能被增强覆盖）
+      - stage_times: 本视频的阶段耗时（仅统计“重制视频”“封面处理”，保持原逻辑）
     """
     stage_times: Dict[str, float] = {}
     metadata = value.get("metadata", [])
@@ -542,10 +558,10 @@ def _preprocess_media_steps(
                     if cover_text:
                         best_scheme.setdefault("封面", {}).setdefault("配文", cover_text)
             else:
+                print("❌ 重制失败（结果文件不存在），记录错误状态。")
                 upload_log_global[key] = upload_log_global.get(key, {})
                 upload_log_global[key]["status"] = "error"
                 save_json(UPLOAD_LOG_FILE, upload_log_global)
-                print("❌ 重制失败")
             stage_times["重制视频"] = time.time() - t0
         except Exception as e:
             stage_times["重制视频"] = time.time() - t0
@@ -564,17 +580,21 @@ def _preprocess_media_steps(
         cover_path = scheme_cover if os.path.exists(scheme_cover) else meta_cover
         print(f"⚠️ 重复视频，使用方案封面 {cover_path}。")
 
-    # 封面增强处理
+    # 封面增强处理（支持断点续跑：若增强文件已存在则直接使用）
     try:
         t0 = time.time()
         output_image_path = cover_path.replace(".jpg", "_enhanced.jpg")
-        create_enhanced_cover(
-            input_image_path=cover_path,
-            output_image_path=output_image_path,
-            text_lines=[best_scheme.get("封面", {}).get("配文", "")],
-        )
-        if os.path.exists(output_image_path):
+        if file_valid(output_image_path):
             cover_path = output_image_path
+            print(f"✅ 发现已增强封面，复用 {output_image_path}")
+        else:
+            create_enhanced_cover(
+                input_image_path=cover_path,
+                output_image_path=output_image_path,
+                text_lines=[best_scheme.get("封面", {}).get("配文", "")],
+            )
+            if os.path.exists(output_image_path):
+                cover_path = output_image_path
         stage_times["封面处理"] = time.time() - t0
     except Exception as e:
         stage_times["封面处理"] = time.time() - t0
@@ -688,11 +708,13 @@ def gen_clean_files(video_path_list: List[str]) -> List[str]:
 
     all_files: List[str] = []
     for video_path in video_path_list:
-        dir_name = os.path.dirname(video_path)
-        file_name = os.path.basename(video_path)
-        file_names.append(file_name)
-        all_sub_files = scan_generated_files(dir_name)
-        all_files.extend(all_sub_files)
+        dir_name = os.path.dirname(video_path) if video_path else ""
+        file_name = os.path.basename(video_path) if video_path else ""
+        if file_name:
+            file_names.append(file_name)
+        if dir_name and os.path.exists(dir_name):
+            all_sub_files = scan_generated_files(dir_name)
+            all_files.extend(all_sub_files)
 
     all_files = list(set(all_files))  # 去重
 
@@ -737,6 +759,192 @@ def check_type(updated_entry: Dict[str, Any]) -> bool:
     return True
 
 
+def compute_output_variants(base_video_path: str) -> Dict[str, str]:
+    """基于基准视频路径，生成各阶段产物的目标路径。"""
+    final_output_path = base_video_path.replace(".mp4", "_final.mp4")
+    new_video_path = final_output_path.replace(".mp4", "_new.mp4")
+    temp_ending_video_path = final_output_path.replace(".mp4", "_ending.mp4")
+    output_watermark_path = final_output_path.replace(".mp4", "_watermark.mp4")
+    return {
+        "final": final_output_path,
+        "new": new_video_path,
+        "ending": temp_ending_video_path,
+        "watermark": output_watermark_path,
+    }
+
+
+def process_video_batch(
+    parent_key: str,
+    video_id_list: List[str],
+    metadata_cache: Dict[str, Any],
+    base_value: Dict[str, Any],
+    userName: str,
+) -> Tuple[str, Optional[Dict[str, Any]], Optional[str], List[Any], Dict[str, float], List[str], List[str], bool]:
+    """
+    封装“多视频 -> 合并 -> 尾部引导 -> 水印”的完整流水线，支持断点续跑（按产物存在跳过）。
+
+    参数：
+      - parent_key: 外层任务 key（用于打印与 persistent 统计）
+      - video_id_list: 需要合并的子视频 ID 列表（已排序）
+      - metadata_cache: 权威元数据缓存
+      - base_value: 外层条目的原始 value（用于读取 base best_scheme）
+      - userName: 用户名
+
+    返回：
+      - final_output_path: 最终可上传的视频文件路径
+      - best_scheme_final: 按分数选出的最佳方案（用于构建上传参数）
+      - best_cover_path: 最佳封面路径（增强后）
+      - comment_list_top30: 合并后的评论 Top30
+      - last_stage_times: 最后一个视频的预处理阶段耗时（保持原日志逻辑）
+      - origin_video_path_list: 原始视频路径集合（用于清理）
+      - video_path_list: 参与合并的实际视频路径集合
+      - had_missing_scheme: 是否存在“无法选取投稿方案”的子视频（用于 persistent 标记）
+    """
+    video_path_list: List[str] = []
+    origin_video_path_list: List[str] = []
+    comment_list_all: List[Any] = []
+    best_score_max = float("-inf")
+    best_scheme_final: Optional[Dict[str, Any]] = None
+    best_cover_path: Optional[str] = None
+    last_stage_times: Dict[str, float] = {}
+    had_missing_scheme = False
+
+    base_video_path_for_naming: Optional[str] = None
+
+    # 逐视频预处理（保持原判定逻辑）
+    for video_id in video_id_list:
+        video_info = full_video_info(metadata_cache.get(video_id, {}))
+        origin_video_path_list.append(video_info.get("video_process_path"))
+        origin_video_path_list.append(video_info.get("video_path"))
+        comment_list = video_info.get("hudong", {}).get("comment_list", [])
+        comment_list_all.extend(comment_list)
+
+        best_scheme = base_value.get("best_scheme") or get_best_plan_by_potential(
+            video_info.get("title_schemes", {})
+        )
+        if not best_scheme:
+            print(f"⏭️ 跳过 {parent_key}：无法选取投稿方案。")
+            had_missing_scheme = True
+            continue
+
+        score = float(best_scheme.get("增长潜力", {}).get("爆款潜力指数", 0))
+
+        print(
+            f"\n⏳ {userName} 开始处理子任务 {video_id}，时间：{time.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        try:
+            video_path, cover_path, stage_times = _preprocess_media_steps(
+                video_id, video_info, best_scheme, userName
+            )
+            last_stage_times = stage_times  # 保持与原逻辑一致：只记录最后一个视频的耗时
+
+            # 选择最终用于上传的标题/封面方案（高分优先）
+            if score > best_score_max:
+                best_score_max = score
+                best_scheme_final = best_scheme
+                best_cover_path = cover_path
+                video_path_list.insert(0, video_path)  # 高分视频放前面
+            else:
+                video_path_list.append(video_path)
+
+            base_video_path_for_naming = video_path  # 保持与原逻辑一致：用最后一次的 video_path 生成产物名
+        except Exception as e:
+            print(f"⚠️ 处理媒体过程中出现异常：{e} {video_id} {userName}")
+            traceback.print_exc()
+            # 与原逻辑一致：不中断整批，后续步骤依赖文件存在自行决策
+            continue
+
+    # 评论取 Top30
+    comment_list_top30 = sorted(comment_list_all, key=lambda x: x[1], reverse=True)[:30]
+
+    # 若没有有效视频，直接抛错
+    if not video_path_list or not base_video_path_for_naming:
+        raise RuntimeError(f"未得到可用的视频路径（{parent_key}，{userName}）。")
+
+    # 产物文件名（与原逻辑一致：源于最后一个 video_path）
+    outputs = compute_output_variants(base_video_path_for_naming)
+    final_output_path = outputs["final"]
+    new_video_path = outputs["new"]
+    temp_ending_video_path = outputs["ending"]
+    output_watermark_path = outputs["watermark"]
+
+    # 断点续跑：若已有水印产物，直接返回
+    if file_valid(output_watermark_path):
+        print(f"✅ 发现已存在水印产物，复用：{output_watermark_path}")
+        return (
+            output_watermark_path,
+            best_scheme_final,
+            best_cover_path,
+            comment_list_top30,
+            last_stage_times,
+            origin_video_path_list,
+            video_path_list,
+            had_missing_scheme,
+        )
+
+    # 合并（若已存在则跳过）
+    if not file_valid(final_output_path):
+        print(f"🔗 合并 {len(video_path_list)} 段视频 -> {final_output_path}")
+        merge_videos_ffmpeg(video_path_list, output_path=final_output_path)
+    else:
+        print(f"✅ 发现已存在合并产物，复用：{final_output_path}")
+
+    # 追加尾部引导（< 6000 秒）
+    active_path = final_output_path
+    try:
+        duration = probe_duration(final_output_path)
+        if duration is not None and duration < 6000:
+            if file_valid(new_video_path):
+                print(f"✅ 发现已存在追加结尾产物，复用：{new_video_path}")
+                active_path = new_video_path
+            else:
+                try:
+                    origin_ending_video_path = "origin_ending_video.mp4"
+                    ending_text = (best_scheme_final or {}).get("简介", {}).get(
+                        "结尾语", "感谢观看本视频，欢迎点赞、评论、关注、投币、分享！"
+                    )
+                    gen_ending_video(ending_text, temp_ending_video_path, origin_ending_video_path)
+                    merge_videos_ffmpeg([final_output_path, temp_ending_video_path], output_path=new_video_path)
+                    if file_valid(new_video_path):
+                        active_path = new_video_path
+                        print(f"✅ 已追加结尾引导 -> {new_video_path}")
+                except Exception as e:
+                    print(f"⚠️ 尾部引导视频失败，继续使用原视频：{e}")
+    except Exception as e:
+        print(f"⚠️ 检测视频时长失败，跳过追加结尾：{e}")
+
+    # 增加水印（若已存在则跳过）
+    try:
+        if file_valid(output_watermark_path):
+            print(f"✅ 发现已存在水印产物，复用：{output_watermark_path}")
+            final_output_path_ready = output_watermark_path
+        else:
+            user_type = get_user_type(userName)
+            wm_path = get_watermark_path(user_type, userName)
+            start_time = time.time()
+            add_transparent_watermark(active_path, wm_path, output_watermark_path)
+            if file_valid(output_watermark_path):
+                print(f"✅ 水印增加成功，保存为 {output_watermark_path} 耗时 {time.time() - start_time:.2f} 秒")
+                final_output_path_ready = output_watermark_path
+            else:
+                print("⚠️ 水印生成失败，继续使用无水印视频。")
+                final_output_path_ready = active_path
+    except Exception as e:
+        print(f"⚠️ 水印增加失败，继续使用原视频：{e}")
+        final_output_path_ready = active_path
+
+    return (
+        final_output_path_ready,
+        best_scheme_final,
+        best_cover_path,
+        comment_list_top30,
+        last_stage_times,
+        origin_video_path_list,
+        video_path_list,
+        had_missing_scheme,
+    )
+
+
 # ---------- 主流程 ----------
 def auto_upload() -> None:
     """
@@ -744,6 +952,7 @@ def auto_upload() -> None:
     - 保留并执行原脚本的全部预处理逻辑
     - 在生成 upload_params 后，使用 account_executors[userName].submit(...) 提交 upload_worker，
       以确保同一用户同一时刻只会有一个上传任务在运行。
+    - 视频处理流水线已封装到 process_video_batch，并支持断点续跑（按产物存在跳过）。
     """
     global upload_log_global
 
@@ -774,10 +983,9 @@ def auto_upload() -> None:
 
         user_uploads_info = analyze_user_uploads_by_day(upload_log_global)
 
-        best_score_max = float("-inf")
         should_skip = False
 
-        updated_entry = full_video_info(value)  # 深拷贝 + 补全
+        updated_entry = full_video_info(value)  # 补全
 
         video_id_list = value.get("video_id_list", [key])
         video_id_list = sorted(video_id_list)
@@ -809,7 +1017,6 @@ def auto_upload() -> None:
 
         # 选择 config
         if userName not in config_map.keys():
-            # 修正原日志中的可能变量未定义问题，不改变逻辑（仍然 continue）
             print(f"⚠️ 跳过 {userName} 用户上传 请检查配置数据。video_ids={video_id_list}")
             continue
         config = config_map.get(userName, config_map["base"])
@@ -859,96 +1066,55 @@ def auto_upload() -> None:
             continue
         latest_user = userName
 
-        video_path_list: List[str] = []
-        origin_video_path_list: List[str] = []
-        best_scheme_final: Optional[Dict[str, Any]] = None
-        best_cover_path: Optional[str] = None
-        comment_list_all: List[Any] = []
-
-        # 预处理每个视频
-        for video_id in video_id_list:
-            video_info = full_video_info(metadata_cache.get(video_id, {}))
-            origin_video_path_list.append(video_info.get("video_process_path"))
-            origin_video_path_list.append(video_info.get("video_path"))
-            comment_list = video_info.get("hudong", {}).get("comment_list", [])
-            comment_list_all.extend(comment_list)
-
-            best_scheme = value.get("best_scheme") or get_best_plan_by_potential(video_info.get("title_schemes", {}))
-            if not best_scheme:
-                print(f"⏭️ 跳过 {key}：无法选取投稿方案。")
-                temp_set.add(key)
-                continue
-
-            score = float(best_scheme.get("增长潜力", {}).get("爆款潜力指数", 0))
-
-            print(
-                f"\n⏳ {userName} 开始处理任务 {key}，视频ID列表：{video_id_list}，时间：{time.strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            try:
-                video_path, cover_path, stage_times = _preprocess_media_steps(
-                    video_id, video_info, best_scheme, userName
-                )
-                if score > best_score_max:
-                    best_score_max = score
-                    best_scheme_final = best_scheme
-                    best_cover_path = cover_path
-                    video_path_list.insert(0, video_path)  # 高分视频放前面
-                else:
-                    video_path_list.append(video_path)
-            except Exception as e:
-                print(f"⚠️ 处理媒体过程中出现异常：{e} {video_id} {userName}")
-                traceback.print_exc()
-                error_count += 1
-                break
-
-        # 合并视频
-        final_output_path = video_path.replace(".mp4", "_final.mp4")
-        # 评论取 Top30
-        comment_list_all = sorted(comment_list_all, key=lambda x: x[1], reverse=True)[:30]
-        updated_entry["hudong"]["comment_list"] = comment_list_all
-
-        merge_videos_ffmpeg(video_path_list, output_path=final_output_path)
-        if os.path.exists(final_output_path) and os.path.getsize(final_output_path) > 0:
-            duration = probe_duration(final_output_path)
-
-            # 尾部引导视频（小于 6000 秒时添加）
-            new_video_path = final_output_path.replace(".mp4", "_new.mp4")
-            temp_ending_video_path = final_output_path.replace(".mp4", "_ending.mp4")
-            if duration < 6000:
-                try:
-                    origin_ending_video_path = "origin_ending_video.mp4"
-                    ending_text = best_scheme_final.get("简介", {}).get(
-                        "结尾语", "感谢观看本视频，欢迎点赞、评论、关注、投币、分享！"
-                    )
-                    gen_ending_video(ending_text, temp_ending_video_path, origin_ending_video_path)
-                    merge_videos_ffmpeg([final_output_path, temp_ending_video_path], output_path=new_video_path)
-                    final_output_path = new_video_path
-                except Exception as e:
-                    print(f"⚠️ 尾部引导视频失败，继续使用原视频：{e}")
-
-        # 增加水印
+        # 执行视频处理流水线（带断点续跑）
         try:
-            output_watermark_path = final_output_path.replace(".mp4", "_watermark.mp4")
-            user_type = get_user_type(userName)
-            start_time = time.time()
-            watermark_path = get_watermark_path(user_type, userName)
-            add_transparent_watermark(final_output_path, watermark_path, output_watermark_path)
-            if os.path.exists(output_watermark_path) and os.path.getsize(output_watermark_path) > 0:
-                print(f"✅ 水印增加成功，保存为 {output_watermark_path} 耗时 {time.time() - start_time:.2f} 秒")
-                final_output_path = output_watermark_path
+            (
+                final_output_path,
+                best_scheme_final,
+                best_cover_path,
+                comment_list_top30,
+                last_stage_times,
+                origin_video_path_list,
+                video_path_list,
+                had_missing_scheme,
+            ) = process_video_batch(
+                parent_key=key,
+                video_id_list=video_id_list,
+                metadata_cache=metadata_cache,
+                base_value=value,
+                userName=userName,
+            )
         except Exception as e:
-            print(f"⚠️ 水印增加失败，继续使用原视频：{e}")
+            print(f"❌ 视频处理流水线失败：{e} | {key} | {userName}")
+            traceback.print_exc()
+            error_count += 1
+            continue
 
-        # 构建上传参数
-        upload_params = _build_upload_params(value, best_scheme_final, best_cover_path, final_output_path, config, userName)
-        video_duration = probe_duration(final_output_path)
-        video_duration_str = ms_to_time(video_duration * 1000)
+        if had_missing_scheme:
+            # 与原逻辑一致：将整个 key 放入 persistent_tasks
+            temp_set.add(key)
+
+        # 更新互动评论到 updated_entry
+        updated_entry.setdefault("hudong", {})
+        updated_entry["hudong"]["comment_list"] = comment_list_top30
+
+        # 构建上传参数（保持原逻辑）
+        upload_params = _build_upload_params(
+            value, best_scheme_final or {}, best_cover_path or "", final_output_path, config, userName
+        )
+
+        # 时长字符串
+        try:
+            video_duration_sec = probe_duration(final_output_path)  # 原逻辑：返回秒
+            video_duration_str = ms_to_time(int(video_duration_sec * 1000)) if video_duration_sec is not None else "00:00"
+        except Exception:
+            video_duration_str = "00:00"
 
         print(
             f"🚀 准备为用户 {userName} 后台投稿 {key} (ID: {video_id_key}) - 《{upload_params.get('title')}》（按账号串行）"
         )
 
-        task_stage_times = dict(stage_times)
+        task_stage_times = dict(last_stage_times)
 
         # 清理文件（排除最终产物）
         all_files_to_cleanup = gen_clean_files(origin_video_path_list)
