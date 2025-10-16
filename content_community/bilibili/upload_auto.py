@@ -1208,8 +1208,7 @@ def auto_upload() -> None:
             video_ids = candidate['video_id_list']
 
             print(f"\n⏳ [{i}/{total_candidates}] 尝试处理候选任务: {parent_key}")
-            print(f"   - 用户: {user_name}")
-            print(f"   - 包含视频ID: {video_ids}")
+            print(f"   - 用户: {user_name} 包含视频ID: {video_ids}")
 
             start_time = time.time()
             remaining_count = total_candidates - i
