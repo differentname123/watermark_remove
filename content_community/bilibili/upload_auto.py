@@ -1175,9 +1175,7 @@ def auto_upload() -> None:
         )
         futures.append(future)
 
-    # 等待所有后台上传完成
-    print("等待所有后台上传完成...")
-    concurrent.futures.wait(futures, timeout=None)
+
     submitted_any_uploads = False
     # --- 新增备用处理逻辑 ---
     # --- 新增备用处理逻辑 (日志优化 + 进度统计) ---
@@ -1256,6 +1254,9 @@ def auto_upload() -> None:
         persistent_tasks = set(persistent_tasks) if isinstance(persistent_tasks, list) else set()
         persistent_tasks.update(temp_set)
         save_json(persistent_tasks_file, list(persistent_tasks))
+    # 等待所有后台上传完成
+    print("等待所有后台上传完成...")
+    concurrent.futures.wait(futures, timeout=None)
 
     print(f"错误数量为{len(error_user_map)}  全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
 

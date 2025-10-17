@@ -1007,7 +1007,11 @@ def add_title_to_video(video_path, video_script, output_path, need_on_screen_tex
     if not scene_list:
         print("错误：'video_script' 中未找到 '场景顺序与新文案'。")
         return False
-
+    PALETTE = ['#FFFFFF', '#FF4C4C', '#FFD700']  # 白 / 黑 / 金
+    fontcolor = random.choice(PALETTE)
+    color_config = {
+        'fontcolor': fontcolor
+    }
     video_abstract = video_script.get('video_abstract', '')
     video_abstract_list = split_and_merge_sentence(video_abstract)
     video_abstract_list = [video_abstract]
@@ -1032,6 +1036,7 @@ def add_title_to_video(video_path, video_script, output_path, need_on_screen_tex
             temp_dict['text_list'] = temp_text_list
             temp_dict['start_time'] = scene_start
             temp_dict['end_time'] = scene_end
+            temp_dict['color_config'] = color_config
             texts_list.append(temp_dict)
 
     if not texts_list:
@@ -1810,7 +1815,7 @@ def gen_new_video(video_path, basename):
 
 
 if __name__ == '__main__':
-    video_path = '7561723638467071278.mp4'
+    video_path = '7330088060706770210.mp4'
     # process_and_crop_video(video_path)
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
