@@ -1178,7 +1178,7 @@ def auto_upload() -> None:
     # 等待所有后台上传完成
     print("等待所有后台上传完成...")
     concurrent.futures.wait(futures, timeout=None)
-
+    submitted_any_uploads = False
     # --- 新增备用处理逻辑 ---
     # --- 新增备用处理逻辑 (日志优化 + 进度统计) ---
     if not submitted_any_uploads and skippable_candidates:

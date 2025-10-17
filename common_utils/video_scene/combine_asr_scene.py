@@ -556,7 +556,7 @@ def gen_optimized_video_plan_llm(video_path, logger):
         return None
 
     retry_delay = 10
-    max_retries = 3
+    max_retries = 5
     prompt_file_path = '../../content_community/app/视频质量提高生成画面文字.txt'
     prompt = read_file_to_str(prompt_file_path)
     full_prompt = f'{prompt}'
@@ -1010,7 +1010,7 @@ def add_title_to_video(video_path, video_script, output_path, need_on_screen_tex
 
     video_abstract = video_script.get('video_abstract', '')
     video_abstract_list = split_and_merge_sentence(video_abstract)
-    # video_abstract_list = [video_abstract]
+    video_abstract_list = [video_abstract]
     # 遍历video_abstract_list调用remove_last_punctuation
     video_abstract_list = [remove_last_punctuation(text) for text in video_abstract_list if text.strip()]
 
@@ -1467,7 +1467,7 @@ def gen_logical_scene(video_path, output_dir, logger):
         logical_scene_info = gen_logical_scene_llm(video_path, logger)
         save_json(output_file_logical_scene_info_path, logical_scene_info)
         kept_sorted = get_scene(video_path, output_dir)
-        logical_scene_info = fix_logical_scene_info(video_path, kept_sorted, logical_scene_info, output_dir, max_delta_ms=1000)
+        logical_scene_info = fix_logical_scene_info(video_path, kept_sorted, logical_scene_info, output_dir,logger, max_delta_ms=1000)
         save_json(output_file_logical_scene_info_path, logical_scene_info)
 
     return logical_scene_info
