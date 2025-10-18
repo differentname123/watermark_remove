@@ -1183,7 +1183,7 @@ def auto_upload() -> None:
         from collections import defaultdict
 
         # 1. 启动信息：更详细的启动摘要
-        print("💡 本轮未提交任何新投稿，启动【备用视频预处理】流程以充分利用计算资源。")
+        print(f"💡 本轮未提交任何新投稿，启动【备用视频预处理】流程以充分利用计算资源。 共 {len(skippable_candidates)} 个候选任务。 当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
 
         user_candidate_counts = defaultdict(int)
         for c in skippable_candidates:
@@ -1218,7 +1218,7 @@ def auto_upload() -> None:
 
                 # 3. 结果反馈：更清晰的结果说明
                 if processing_duration > 10:
-                    print(f"🎉 【有效处理完成】 任务 '{parent_key}' 耗时 {processing_duration:.2f} 秒 (> 10秒).")
+                    print(f"🎉 【有效处理完成】 任务 '{parent_key}' 耗时 {processing_duration:.2f} 秒 (> 10秒). [{i}/{total_candidates}]")
                     print("   - 目标达成，备用处理流程结束。")
                     effective_task_found = True
                     break  # 目标达成，退出备用处理循环
@@ -1255,7 +1255,7 @@ def auto_upload() -> None:
         persistent_tasks.update(temp_set)
         save_json(persistent_tasks_file, list(persistent_tasks))
     # 等待所有后台上传完成
-    print("等待所有后台上传完成...")
+    print(f"等待所有后台上传完成...当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
     concurrent.futures.wait(futures, timeout=None)
 
     print(f"错误数量为{len(error_user_map)}  全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")

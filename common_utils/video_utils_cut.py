@@ -500,7 +500,7 @@ def gen_ending_video(text, output_path, origin_ending_video_path):
         video_path=str(with_audio_path),
         subtitles_info=subtitle_data,
         output_path=str(output_path),
-        font_size=70,
+        font_size=60,
         bottom_margin=30
     )
 
