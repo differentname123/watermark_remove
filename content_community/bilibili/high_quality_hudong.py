@@ -827,27 +827,33 @@ def filter_danmu(danmu_list, duration):
         "这祝福像暖阳，照进烦心处",
         "一句走心话，整天都舒服了"
     ]
-
-    total_seconds = time_to_ms(duration) / 1000
-    total_seconds = int(total_seconds)
+    try:
+        total_seconds = time_to_ms(duration) / 1000
+        total_seconds = int(total_seconds)
+    except Exception as e:
+        total_seconds = None
     if total_seconds is None or total_seconds <= 0:
         return danmu_list
 
     # === 第一步：处理并规范化传入的弹幕列表 ===
     processed_danmu = []
     for item in danmu_list:
-        # 为了不修改原始列表，创建一个副本进行操作
-        new_item = item.copy()
-        ts = new_item.get('建议时间戳')
-        seconds = time_to_ms(ts) / 1000
-        seconds = int(seconds) if seconds is not None else None
+        try:
+            # 为了不修改原始列表，创建一个副本进行操作
+            new_item = item.copy()
+            ts = new_item.get('建议时间戳')
+            seconds = time_to_ms(ts) / 1000
+            seconds = int(seconds) if seconds is not None else None
 
-        # 如果时间戳无法解析或超出范围，则随机分配
-        if seconds is None or seconds < 0 or seconds > total_seconds:
-            seconds = random.randint(2, total_seconds - 10)
+            # 如果时间戳无法解析或超出范围，则随机分配
+            if seconds is None or seconds < 0 or seconds > total_seconds:
+                seconds = random.randint(2, total_seconds - 10)
 
-        new_item['建议时间戳'] = seconds
-        processed_danmu.append(new_item)
+            new_item['建议时间戳'] = seconds
+            processed_danmu.append(new_item)
+        except Exception as e:
+            logging.error(f"处理弹幕时出错: {e}")
+            continue
 
     processed_danmu_count = 0
     for item in processed_danmu:
@@ -989,6 +995,7 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads, all_emo
 
     duration = target_value.get('metadata', [{}])[0].get('duration', '00:02')
     try:
+        total_seconds = time_to_ms(duration) / 1000
         comment_list = target_value.get('hudong', {}).get('comment_list', []) or []
         # 如果评论列表为空，使用 gen_proper_comment 生成
         if not comment_list:
@@ -1001,6 +1008,7 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads, all_emo
             comment_list = [[c, 1, "None"] for c in raw_comments]
     except Exception as e:
         comment_list = []
+        print(f"处理评论列表时出错: {e}")
 
     try:
         danmu_info = target_value.get('hudong', {}).get('danmu_info', {})
@@ -1013,7 +1021,6 @@ def gen_hudong_info(bvid, interaction_data, metadata_cache_with_uploads, all_emo
         # logger.error(f"处理弹幕列表时出错: {e}")
         danmu_list = [{'建议时间戳': '00:01', '推荐弹幕内容': danmu_praises_general_quality}]
     danmu_list = filter_danmu(danmu_list, duration)
-    total_seconds = time_to_ms(duration) / 1000
     total_seconds = int(total_seconds)
 
     title_schemes = target_value.get('title_schemes', {})
