@@ -19,6 +19,7 @@
   - 若封面增强 _enhanced.jpg 已存在，则跳过再次生成。
 - 保持上传前参数构建、上传重试、日志更新、清理与节流策略不变。
 """
+from collections import defaultdict
 
 import concurrent.futures
 import datetime
@@ -945,6 +946,41 @@ def process_video_batch(
     )
 
 
+def get_wait_minutes():
+    """
+    根据当前时间的小时数，返回一个非线性的等待分钟数。
+    - 凌晨和清晨等待时间最长。
+    - 白天和傍晚逐渐减少。
+    - 深夜等待时间最短。
+    - 等待时间以5分钟为单位变化。
+
+    Returns:
+        int: 建议的等待分钟数。
+    """
+    # 1. 获取当前时间的小时数 (0-23)
+    current_hour = datetime.datetime.now().hour
+
+    # 2. 根据不同的时间段，返回不同的等待时间
+    # 规则：越早时间越长，越晚时间越短
+
+    if current_hour <= 5:  # 凌晨 00:00 - 05:59，大部分人休息，等待最长
+        return 60
+
+    elif current_hour <= 8:  # 清晨 06:00 - 08:59，开始苏醒，等待时间减少
+        return 45
+
+    elif current_hour <= 11:  # 上午 09:00 - 11:59，工作时间，等待时间减少
+        return 30
+
+    elif current_hour <= 17:  # 中午及下午 12:00 - 17:59，活跃时间
+        return 20
+
+    elif current_hour <= 21:  # 傍晚 18:00 - 21:59，晚上休息前
+        return 15
+
+    else:  # 深夜 22:00 - 23:59，准备休息，等待时间最短
+        return 10
+
 # ---------- 主流程 ----------
 # ---------- 主流程 ----------
 def auto_upload() -> None:
@@ -1050,15 +1086,39 @@ def auto_upload() -> None:
                 "latest_timestamp": None,
             },
         )
+        # 将remote_upload_count更新到user_uploads_info中
+        user_info['remote_upload_count'] = remote_upload_count
+
 
         uploads_today = user_info.get("uploads_today", 0)
         uploads_last_hour = user_info["uploads_last_hour"]
         latest_upload_time = user_info["latest_upload_time"]
         latest_timestamp = user_info["latest_timestamp"]
 
+        wait_minutes = get_wait_minutes()
+        generation_options = value.get("generation_options", {}) or {}
+        is_real_time = generation_options.get("is_real_time", False)
+        if not is_real_time:
+            wait_minutes += 10  # 非实时投稿，增加等待时间
+
+        latest_upload_str = latest_timestamp
+        interval_minutes_str = 0
+
+        if latest_upload_str:
+            try:
+                # 将时间字符串转换为 datetime 对象
+                latest_upload_dt = latest_timestamp
+                # 计算时间差 (timedelta 对象)
+                time_difference = time.time() - latest_upload_dt
+                # 将时间差转换为分钟数（整数）
+                interval_minutes_str = int(time_difference / 60)
+            except (ValueError, TypeError):
+                # 如果时间格式不正确或类型错误，则保持为 "N/A"
+                interval_minutes_str = 0
         print(
             f"🔍 处理 {key} (用户: {userName}) 今日已本地上传 {uploads_today} 个视频， 实际平台数据：{remote_upload_count}  "
             f"最近一小时上传个数为: {uploads_last_hour}，最近上传时间为：{latest_upload_time}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}"
+            f"是否实时视频{is_real_time}，建议等待时间：{wait_minutes} 分钟。还需等待时间：{max(0, wait_minutes - interval_minutes_str)} 分钟。"
         )
 
         # --- 修改跳过逻辑，收集可处理的候选任务 ---
@@ -1067,15 +1127,14 @@ def auto_upload() -> None:
         if uploads_today >= 25 or remote_upload_count >= 20:
             is_cooldown_or_limit = True
             cooldown_reason = f"今日已本地上传 {uploads_today} 个视频， 实际平台数据：{remote_upload_count} ，达到上限。"
-        elif latest_timestamp and (time.time() - latest_timestamp) < 1200 and uploads_last_hour >= 1:
+        elif latest_timestamp and (time.time() - latest_timestamp) < wait_minutes * 60 and uploads_last_hour >= 1:
             is_cooldown_or_limit = True
             cooldown_reason = f"距离上次上传少于 20 分钟。 上次上传时间：{latest_upload_time}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}"
         elif userName == latest_user:
             is_cooldown_or_limit = True
             cooldown_reason = "与上一个上传用户相同，避免连续上传。"
 
-        generation_options = value.get("generation_options", {}) or {}
-        is_real_time = generation_options.get("is_real_time", False)
+
 
         # 判断当前时间是否在 5 点 到 24 点之间
         if not (5 <= datetime.datetime.now().hour < 24) and not is_real_time:
@@ -1177,15 +1236,14 @@ def auto_upload() -> None:
 
 
     submitted_any_uploads = False
-    # --- 新增备用处理逻辑 ---
+    user_candidate_counts = defaultdict(int)
+
     # --- 新增备用处理逻辑 (日志优化 + 进度统计) ---
     if not submitted_any_uploads and skippable_candidates:
-        from collections import defaultdict
 
         # 1. 启动信息：更详细的启动摘要
         print(f"💡 本轮未提交任何新投稿，启动【备用视频预处理】流程以充分利用计算资源。 共 {len(skippable_candidates)} 个候选任务。 当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        user_candidate_counts = defaultdict(int)
         for c in skippable_candidates:
             user_candidate_counts[c['userName']] += 1
 
@@ -1257,8 +1315,42 @@ def auto_upload() -> None:
     # 等待所有后台上传完成
     print(f"等待所有后台上传完成...当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
     concurrent.futures.wait(futures, timeout=None)
+    print(f"{'用户名':<18} | {'本地':>4} | {'远程':>4} | {'待传':>4} | {'间隔(分)':>7} | {'最近上传时间'}")
 
+    now = datetime.datetime.now()
+    for user_name, info in sorted(
+            user_uploads_info.items(),
+            key=lambda item: item[1].get('uploads_today', 0),
+            reverse=True
+    ):
+        # --- 新增的逻辑：计算时间间隔 ---
+        latest_upload_str = info.get("latest_upload_time")
+        interval_minutes_str = "N/A"  # 默认值
+
+        if latest_upload_str:
+            try:
+                # 将时间字符串转换为 datetime 对象
+                latest_upload_dt = datetime.datetime.strptime(latest_upload_str, "%Y-%m-%d %H:%M:%S")
+                # 计算时间差 (timedelta 对象)
+                time_difference = now - latest_upload_dt
+                # 将时间差转换为分钟数（整数）
+                minutes_ago = int(time_difference.total_seconds() / 60)
+                interval_minutes_str = str(minutes_ago)
+            except (ValueError, TypeError):
+                # 如果时间格式不正确或类型错误，则保持为 "N/A"
+                interval_minutes_str = "错误格式"
+
+        need_to_upload = user_candidate_counts.get(user_name, 0)
+        print(
+            f"{user_name:<18} | "
+            f"{info.get('uploads_today', 0):>4} | "
+            f"{info.get('remote_upload_count', 0):>4} | "
+            f"{need_to_upload:>4} | "
+            f"{interval_minutes_str:>7} | "
+            f"{info.get('latest_upload_time', 'N/A')}"
+        )
     print(f"错误数量为{len(error_user_map)}  全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+
 
 
 # ---------- CLI ----------

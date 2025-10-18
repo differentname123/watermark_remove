@@ -992,7 +992,7 @@ def add_subtitles_to_video(
                 # 为矩形添加一些内边距（padding）
                 padding_x = effective_font_size  # 水平方向使用一个字体大小作为边距
                 padding_y = effective_font_size // 2  # 垂直方向使用半个字体大小作为边距
-                max_text_w *= 1.1
+                max_text_w = max_subtitle_width
                 rect_w = max_text_w + padding_x
                 rect_h = max_text_h + padding_y
 
