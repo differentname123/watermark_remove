@@ -1685,21 +1685,53 @@ def process_product_title(title_string: str) -> dict:
     return clean_text
 
 
-def merge_json_files(path_dir, target_name):
-    """将目录下以 target_name 开头的文件汇总成一个字典并返回"""
-    # 获取目录下所有符合条件的文件路径
-    file_paths = [os.path.join(path_dir, f) for f in os.listdir(path_dir) if f.startswith(target_name)]
-    print("找到的文件列表：", len(file_paths))
-    # 按照文件的修改时间排序
+def merge_json_files(path_dir, target_name_list, max_count=None):
+    """
+    将目录下以 target_name_list 中任意一个前缀开头的文件汇总成一个字典并返回。
+
+    Args:
+        path_dir (str): 目标文件所在的目录路径。
+        target_name_list (list): 一个包含文件名前缀的列表。
+        max_count (int, optional): 最多加载的最新文件数量。
+                                   默认为 None，表示加载所有找到的文件。
+                                   例如，2 表示只加载最新的两个文件。
+
+    Returns:
+        dict: 合并后的字典。
+    """
+    # 1. 获取目录下所有符合条件的文件路径
+    #    使用 any() 来检查文件名是否以列表中的任意一个前缀开头
+    all_files = os.listdir(path_dir)
+    file_paths = [
+        os.path.join(path_dir, f)
+        for f in all_files
+        if any(f.startswith(name) for name in target_name_list)
+    ]
+
+    print(f"在目录 '{path_dir}' 中找到 {len(file_paths)} 个匹配的文件。")
+
+    # 2. 按照文件的修改时间升序排序（旧文件在前，新文件在后）
     file_paths.sort(key=lambda x: os.path.getmtime(x))
+
+    # 3. 如果设置了 max_count，则只取最新的几个文件
+    if max_count is not None and max_count > 0:
+        # 使用切片获取列表末尾的 max_count 个元素，即最新的文件
+        file_paths = file_paths[-max_count:]
+        print(f"根据 max_count={max_count}，将只处理最新的 {len(file_paths)} 个文件。")
+    elif max_count == 0:
+        file_paths = []
+        print(f"根据 max_count=0，不处理任何文件。")
 
     # 创建一个空字典来汇总数据
     merged_dict = {}
 
-    # 逐个读取文件并更新字典
+    print("准备合并以下文件:", [os.path.basename(p) for p in file_paths])
+
+    # 4. 逐个读取文件并更新字典
     for file_path in file_paths:
         file_data = read_json(file_path)
-        merged_dict.update(file_data)
+        if file_data:
+            merged_dict.update(file_data)
 
     return merged_dict
 

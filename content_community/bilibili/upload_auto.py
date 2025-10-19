@@ -1003,7 +1003,7 @@ def auto_upload() -> None:
         print(f"❌ 无可用任务：{METADATA_FILE} 为空或不存在。")
         return
 
-    if not upload_log and (len(metadata_cache) - len(upload_log)) > 20:
+    if not upload_log and (len(metadata_cache) - len(upload_log)) > 100:
         print(f"❌ 无可用任务：{UPLOAD_LOG_FILE} 为空或不存在。")
         return
 
@@ -1019,7 +1019,7 @@ def auto_upload() -> None:
     skippable_candidates: List[Dict[str, Any]] = []
     already_upload_users = []
     # --- 变量新增结束 ---
-
+    user_uploads_info = analyze_user_uploads_by_day(upload_log_global)
     # 遍历所有权威元数据任务
     for key, value in metadata_cache.items():
         if key in processed_video_id:
@@ -1028,7 +1028,6 @@ def auto_upload() -> None:
         userName = value.get("userName", "other")
         today_start = datetime.datetime.combine(datetime.date.today(), datetime.time.min).timestamp()
 
-        user_uploads_info = analyze_user_uploads_by_day(upload_log_global)
 
         should_skip = False
 
@@ -1321,7 +1320,7 @@ def auto_upload() -> None:
     # 等待所有后台上传完成
     print(f"等待所有后台上传完成...当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
     concurrent.futures.wait(futures, timeout=None)
-    print(f"{'用户名':<18} | {'本地':>6} | {'远程':>6} | {'待传':>6} | {'间隔(分)':>9} | {'最近上传时间':<19}")
+    print(f"{'用户名':<15} | {'本地':>6} | {'远程':>6} | {'待传':>6} | {'间隔(分)':>7} | {'最近上传时间':<19}")
 
     now = datetime.datetime.now()
     for user_name, info in sorted(

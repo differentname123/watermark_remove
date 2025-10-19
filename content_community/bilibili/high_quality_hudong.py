@@ -1578,8 +1578,9 @@ def fun():
         print(f"共创建 {len(commenter_map)} 个评论者实例。")
 
         interaction_data = load_processed_dict(interaction_data_file)
-        metadata_cache_with_uploads = merge_json_files('../../LLM/TikTokDownloader/back_up',
-                                                       "metadata_cache_with_uploads")
+        UPLOAD_LOG_FILE = "../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json"  # 上传日志
+
+        metadata_cache_with_uploads = read_json(UPLOAD_LOG_FILE) or {}
         bvid_file_data = load_processed_dict(bvid_file_path)
         all_bvid_file_data = load_processed_dict(all_bvid_file_path)
 
