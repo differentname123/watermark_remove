@@ -155,6 +155,7 @@ video_recommend_user_list = [
     "qiqixiao",
     "xiaoxue",
 ]
+video_recommend_user_list = []
 
 # 错误记录
 error_user_map: Dict[str, str] = {}

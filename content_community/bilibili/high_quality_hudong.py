@@ -1355,9 +1355,6 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     max_success_owner_danmu_count = 5
     max_success_other_danmu_count = 5
 
-    # if uid in ['443415885','3546954575383021','3546717871934392','1223805908','3546947310848473','3546947566700892', '477861377', '3493263231158598']:
-    #     max_success_comment_count = 100
-
     print(f"获得到已有评论：{len(exist_comment_text)} 条，已有弹幕：{len(exist_danmu_text)} 条。| BVID: {bvid}")
     owner_commenter = commenter_map.get(uid, None)
     other_commenters = [c for k, c in commenter_map.items() if k != uid]
@@ -1462,13 +1459,14 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     #     # time.sleep(random.uniform(5, 15))
     # hudong_info['danmu_used'] = danmu_used_list
 
-
-
+    max_success_comment_count = 10
+    if uid in ['3632307990694238']:
+        max_success_comment_count = 20
     comment_list = hudong_info.get('comment_list', [])
     # comment_list = comment_list[:3]
     comment_used_list = hudong_info.get('comment_used', [])
     comment_used_list.extend(exist_comment_text)
-    comment_commenters = pick_commenters(commenter_map, '../../LLM/TikTokDownloader/back_up/commenter_usage.json', n=10)
+    comment_commenters = pick_commenters(commenter_map, '../../LLM/TikTokDownloader/back_up/commenter_usage.json', n=max_success_comment_count)
 
 
     post_comments_once(
@@ -1590,7 +1588,7 @@ def fun():
             name = config_map[uid].get('name', uid)
             # if uid in ['3546965562362625']:
             #     continue
-            if name in ['xiaoxue', 'qiqixiao', 'junxiao', 'hao', 'xue', 'shuijun1', 'shuijun2', 'shuijun3', 'dahao', 'xiaodan']:
+            if name in ['xiaoxue', 'qiqixiao', 'junxiao', 'hao', 'xue', 'shuijun1', 'shuijun2', 'shuijun3', 'xiaodan']:
                 continue
 
             if NEED_UPDATE_SIGN:
