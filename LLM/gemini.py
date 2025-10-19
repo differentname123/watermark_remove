@@ -110,11 +110,30 @@ def build_generate_content_config(model_name: str | None) -> types.GenerateConte
     budget = 24567
     if model_name and ('pro' in model_name.lower()):
         budget = 32678
+    safety_settings = [
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE
+        ),
+        types.SafetySetting(
+            category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE
+        )
+    ]
+
     return types.GenerateContentConfig(
         thinking_config=types.ThinkingConfig(thinking_budget=budget),
         response_mime_type="text/plain",
+        safety_settings=safety_settings
     )
-
 
 def safe_generate_content(client: genai.Client, model: str, contents, config: types.GenerateContentConfig, timeout: int | None = None):
     """
@@ -198,6 +217,8 @@ def get_llm_content_gemini_flash_video(
                 config=config,
                 timeout=1200
             )
+            if not response.text:
+                print(f"[WARN] 模型返回了空响应{response.prompt_feedback} {video_path}")
             return response.text
         except Exception as e:
             if 'overloaded' in str(e):
