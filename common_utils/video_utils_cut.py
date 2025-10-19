@@ -1297,8 +1297,9 @@ def add_text_overlays_to_video(
         print(f"无法继续处理，因为获取视频信息失败: {e}")
         return
 
-    auto_font_size = int(video_h / 15)
-    margin = int(video_h * 0.15)
+    min_video_size = min(video_w, video_h)
+    auto_font_size = int(min_video_size / 15)
+    margin = int(min_video_size * 0.15)
     print(f"自动计算字体大小为: {auto_font_size}px, 边距为: {margin}px")
 
     # --- 步骤 2: 创建指定目录并生成所有花字图片 ---

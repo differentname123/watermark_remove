@@ -925,7 +925,7 @@ def process_video_batch(
             start_time = time.time()
             add_transparent_watermark(active_path, wm_path, output_watermark_path)
             if file_valid(output_watermark_path):
-                print(f"✅ 水印增加成功，保存为 {output_watermark_path} 耗时 {time.time() - start_time:.2f} 秒")
+                print(f"✅  耗时 {time.time() - start_time:.2f} 秒 水印增加成功，保存为 {output_watermark_path}")
                 final_output_path_ready = output_watermark_path
             else:
                 print("⚠️ 水印生成失败，继续使用无水印视频。")
@@ -1017,6 +1017,7 @@ def auto_upload() -> None:
     submitted_any_uploads = False
     # 收集因账号限制而跳过，但可被预处理的视频任务
     skippable_candidates: List[Dict[str, Any]] = []
+    already_upload_users = []
     # --- 变量新增结束 ---
 
     # 遍历所有权威元数据任务
@@ -1141,6 +1142,10 @@ def auto_upload() -> None:
             is_cooldown_or_limit = True
             cooldown_reason = "当前时间不在允许的上传时间段（5点-24点）内。"
 
+        if userName in already_upload_users:
+            is_cooldown_or_limit = True
+            cooldown_reason = "本轮循环中该用户已提交过上传任务，避免重复提交。"
+
         if is_cooldown_or_limit:
             print(f"⚠️ 跳过 {userName} 用户上传：{cooldown_reason}")
             # 收集该任务以备后续处理，但不提交上传
@@ -1233,6 +1238,7 @@ def auto_upload() -> None:
             video_duration_str,
         )
         futures.append(future)
+        already_upload_users.append(userName)
 
 
     submitted_any_uploads = False
@@ -1315,7 +1321,7 @@ def auto_upload() -> None:
     # 等待所有后台上传完成
     print(f"等待所有后台上传完成...当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
     concurrent.futures.wait(futures, timeout=None)
-    print(f"{'用户名':<18} | {'本地':>4} | {'远程':>4} | {'待传':>4} | {'间隔(分)':>7} | {'最近上传时间'}")
+    print(f"{'用户名':<18} | {'本地':>6} | {'远程':>6} | {'待传':>6} | {'间隔(分)':>9} | {'最近上传时间':<19}")
 
     now = datetime.datetime.now()
     for user_name, info in sorted(
@@ -1343,11 +1349,11 @@ def auto_upload() -> None:
         need_to_upload = user_candidate_counts.get(user_name, 0)
         print(
             f"{user_name:<18} | "
-            f"{info.get('uploads_today', 0):>4} | "
-            f"{info.get('remote_upload_count', 0):>4} | "
-            f"{need_to_upload:>4} | "
-            f"{interval_minutes_str:>7} | "
-            f"{info.get('latest_upload_time', 'N/A')}"
+            f"{info.get('uploads_today', 0):>6} | "  # 宽度增加到 6
+            f"{info.get('remote_upload_count', 0):>6} | "  # 宽度增加到 6
+            f"{need_to_upload:>6} | "  # 宽度增加到 6
+            f"{interval_minutes_str:>9} | "  # 宽度增加到 9
+            f"{info.get('latest_upload_time', 'N/A'):<19}"  # 指定宽度 19，确保对齐
         )
     print(f"错误数量为{len(error_user_map)}  全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
 
