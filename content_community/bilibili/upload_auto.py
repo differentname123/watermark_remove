@@ -1322,7 +1322,7 @@ def auto_upload() -> None:
         persistent_tasks.update(temp_set)
         save_json(persistent_tasks_file, list(persistent_tasks))
     # 等待所有后台上传完成
-    print(f"等待所有后台上传完成... 本次投稿数量 {this_time_upload_count}  用户{already_upload_users}  当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"等待所有等待后台上传完成... 本次投稿数量 {this_time_upload_count}  用户{already_upload_users}  当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
     concurrent.futures.wait(futures, timeout=None)
     print(f"{'用户名':<15} | {'本地':>6} | {'远程':>6} | {'待传':>6} | {'间隔(分)':>7} | {'最近上传时间':<19}")
 
