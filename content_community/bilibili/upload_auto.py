@@ -572,6 +572,7 @@ def _preprocess_media_steps(
             upload_log_global[key]["status"] = "error"
             save_json(UPLOAD_LOG_FILE, upload_log_global)
             print(f"❌ 重制失败：{e}")
+            return
 
     # 封面路径
     meta_cover = metadata[0].get("abs_cover_path", "")
@@ -854,6 +855,7 @@ def process_video_batch(
         except Exception as e:
             print(f"⚠️ 处理媒体过程中出现异常：{e} {video_id} {userName}")
             traceback.print_exc()
+            upload_log_global[video_id]["status"] = "error"
             # 与原逻辑一致：不中断整批，后续步骤依赖文件存在自行决策
             continue
 
@@ -1028,6 +1030,11 @@ def auto_upload() -> None:
         if key in processed_video_id:
             continue
 
+        upload_status = upload_log_global.get(key, {}).get("status", "未处理")
+        if upload_status == 'error':
+            print(f"⏭️ 跳过 {key}：之前制作视频处理失败，状态为 error。")
+            error_count += 1
+            continue
         userName = value.get("userName", "other")
         today_start = datetime.datetime.combine(datetime.date.today(), datetime.time.min).timestamp()
 
@@ -1186,6 +1193,7 @@ def auto_upload() -> None:
             print(f"❌ 视频处理流水线失败：{e} | {key} | {userName}")
             traceback.print_exc()
             error_count += 1
+            upload_log_global[key]["status"] = "error"
             continue
 
         if had_missing_scheme:
@@ -1302,6 +1310,7 @@ def auto_upload() -> None:
                 # --- 新增：打印当前进度 ---
                 # 注意：失败的任务不算入“跳过”计数，但仍然消耗了一次机会
                 print(f"   - 📊 进度: 已处理 {i} 个 (其中1个失败), 剩余 {remaining_count} 个待检查。")
+                upload_log_global[key]["status"] = "error"
                 continue
 
         # 4. 最终总结：根据是否找到有效任务给出不同的总结
