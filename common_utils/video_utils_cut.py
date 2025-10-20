@@ -899,7 +899,7 @@ def add_text_adaptive_padding(input_video_path, output_video_path, text_events, 
             fontsize_h = available_height / denominator
         else:
             fontsize_h = available_height
-        fontsize = min(fontsize_w, fontsize_h, 100)
+        fontsize = min(fontsize_w, fontsize_h, top_padding / 2)
 
         # === NEW: 重新计算文本块起始位置以实现“底部对齐” ===
 

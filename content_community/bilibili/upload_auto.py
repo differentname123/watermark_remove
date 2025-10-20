@@ -89,6 +89,7 @@ accounts: Dict[str, str] = {
     "yiyi": "yiyi",
     "xiaodan": "xiaodan",
     "xiaoxue": "xiaoxue",
+    "dahao": "dahao",
 }
 
 # 读取各账号 cookie
@@ -1021,6 +1022,7 @@ def auto_upload() -> None:
     already_upload_users = []
     # --- 变量新增结束 ---
     user_uploads_info = analyze_user_uploads_by_day(upload_log_global)
+    this_time_upload_count = 0
     # 遍历所有权威元数据任务
     for key, value in metadata_cache.items():
         if key in processed_video_id:
@@ -1239,6 +1241,7 @@ def auto_upload() -> None:
         )
         futures.append(future)
         already_upload_users.append(userName)
+        this_time_upload_count += 1
 
 
     submitted_any_uploads = False
@@ -1319,7 +1322,7 @@ def auto_upload() -> None:
         persistent_tasks.update(temp_set)
         save_json(persistent_tasks_file, list(persistent_tasks))
     # 等待所有后台上传完成
-    print(f"等待所有后台上传完成...当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"等待所有后台上传完成... 本次投稿数量 {this_time_upload_count}  用户{already_upload_users}  当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
     concurrent.futures.wait(futures, timeout=None)
     print(f"{'用户名':<15} | {'本地':>6} | {'远程':>6} | {'待传':>6} | {'间隔(分)':>7} | {'最近上传时间':<19}")
 
