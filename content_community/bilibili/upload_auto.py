@@ -164,6 +164,7 @@ error_user_map: Dict[str, str] = {}
 # ---------- 文件路径常量 ----------
 METADATA_FILE = "../../LLM/TikTokDownloader/back_up/metadata_cache.json"  # 权威源
 UPLOAD_LOG_FILE = "../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json"  # 上传日志
+USER_UPLOADS_INFO_FILE = "../../LLM/TikTokDownloader/back_up/user_uploads_info.json"  # 用户上传统计
 persistent_tasks_file = "../../LLM/TikTokDownloader/back_up/persistent_tasks.json"
 bvid_file_path = "../../LLM/TikTokDownloader/back_up/bvid_file.json"
 
@@ -231,50 +232,114 @@ def _deep_update(orig: Dict[str, Any], new: Dict[str, Any]) -> None:
             orig[k] = v
 
 
-def analyze_user_uploads_by_day(metadata_cache_with_uploads: Any) -> Dict[str, Dict[str, Any]]:
+def analyze_user_uploads_by_day(
+        metadata_cache_with_uploads: Any,
+        metadata_cache: Any  # 原始投稿信息
+) -> Dict[str, Dict[str, Any]]:
     """
-    汇总每个用户当天/近1小时的投稿数量与最近投稿时间。
-    """
-    user_timestamps: Dict[str, List[float]] = {}
+    汇总每个用户【当天】的投稿数量与状态信息。
+    所有统计数据都仅限于当天（从今日0点到现在）。
 
-    # 兼容列表封装的情况
+    新增统计 (来自 metadata_cache):
+    - total_count_today: 用户今日总投稿数
+    - error_count_today: 今日失败的投稿数 (status='error')
+    - unprocessed_count_today: 今日等待处理的投稿数 (status!='error' 且 key 未在 metadata_cache_with_uploads 中)
+
+    原有统计 (来自 metadata_cache_with_uploads):
+    - uploads_today: 当天已处理的投稿数
+    - uploads_last_hour: 近1小时已处理的投稿数
+    - latest_upload_time: 最近已处理的投稿时间
+    - latest_timestamp: 最近已处理投稿的Unix时间戳
+    """
+    stats_result: Dict[str, Dict[str, Any]] = {}
+
+    # --- 1. 设置时间范围并标准化输入 ---
+    now = datetime.datetime.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    one_hour_ago = now.timestamp() - 3600
+
+    if isinstance(metadata_cache, list) and len(metadata_cache) > 0:
+        metadata_cache = metadata_cache[0]
+    if not isinstance(metadata_cache, dict):
+        metadata_cache = {}
+
     if isinstance(metadata_cache_with_uploads, list) and len(metadata_cache_with_uploads) > 0:
         metadata_cache_with_uploads = metadata_cache_with_uploads[0]
-
     if not isinstance(metadata_cache_with_uploads, dict):
-        return {}
+        metadata_cache_with_uploads = {}
 
+    # --- 辅助函数：为用户初始化统计字典，包含所有新旧字段 ---
+    def get_default_stats():
+        return {
+            # 新增字段
+            "total_count_today": 0,
+            "error_count_today": 0,
+            "unprocessed_count_today": 0,
+            # 原始字段
+            "uploads_today": 0,
+            "uploads_last_hour": 0,
+            "latest_upload_time": None,
+            "latest_timestamp": 0.0,
+        }
+
+    # --- 2. 从原始投稿(metadata_cache)计算【当天】的总数、失败数、未处理数 ---
+    for key, data in metadata_cache.items():
+        try:
+            ts = float(data.get("timestamp", 0))
+            if ts < today_start:
+                continue
+        except (ValueError, TypeError):
+            continue
+
+        user_name = data.get("userName")
+        if not user_name:
+            continue
+
+        user_stats = stats_result.setdefault(user_name, get_default_stats())
+
+        user_stats["total_count_today"] += 1
+
+        status = data.get("status")
+        if status == "error":
+            user_stats["error_count_today"] += 1
+        elif key not in metadata_cache_with_uploads:
+            user_stats["unprocessed_count_today"] += 1
+
+    # --- 3. 从已处理投稿(metadata_cache_with_uploads)计算【当天/小时】已处理数 (保留原始逻辑和字段) ---
+    user_timestamps: Dict[str, List[float]] = {}
     for _, data in metadata_cache_with_uploads.items():
         user_name = data.get("userName")
         if not user_name:
             continue
         try:
             ts = data["upload_info"]["timestamp"]
+            # 同样确保只处理今天的数据
+            if ts >= today_start:
+                user_timestamps.setdefault(user_name, []).append(ts)
         except (KeyError, TypeError):
             continue
-        user_timestamps.setdefault(user_name, []).append(ts)
-
-    stats_result: Dict[str, Dict[str, Any]] = {}
-    now = datetime.datetime.now()
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-    one_hour_ago = now.timestamp() - 3600
 
     for user_name, timestamps in user_timestamps.items():
         if not timestamps:
             continue
-        uploads_today = sum(1 for ts in timestamps if ts >= today_start)
+
+        user_stats = stats_result.setdefault(user_name, get_default_stats())
+
+        # 这里的计算逻辑和字段名完全遵照您的原始代码
+        uploads_today = len(timestamps)  # 因为上面已经筛选过，列表长度就是当天数量
         uploads_last_hour = sum(1 for ts in timestamps if ts > one_hour_ago)
         latest_ts = max(timestamps)
         latest_time_str = datetime.datetime.fromtimestamp(latest_ts).strftime("%Y-%m-%d %H:%M:%S")
 
-        stats_result[user_name] = {
+        user_stats.update({
             "uploads_today": uploads_today,
             "uploads_last_hour": uploads_last_hour,
             "latest_upload_time": latest_time_str,
             "latest_timestamp": latest_ts,
-        }
+        })
 
     return stats_result
+
 
 
 def get_user_type(user_name: str) -> str:
@@ -1023,7 +1088,8 @@ def auto_upload() -> None:
     skippable_candidates: List[Dict[str, Any]] = []
     already_upload_users = []
     # --- 变量新增结束 ---
-    user_uploads_info = analyze_user_uploads_by_day(upload_log_global)
+    user_uploads_info = analyze_user_uploads_by_day(upload_log_global, metadata_cache)
+    save_json(USER_UPLOADS_INFO_FILE, user_uploads_info)
     this_time_upload_count = 0
     # 遍历所有权威元数据任务
     for key, value in metadata_cache.items():

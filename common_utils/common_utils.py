@@ -249,14 +249,7 @@ def get_frame_at_time_safe(video_path: str, time_str: str) -> np.ndarray | None:
     try:
         # 3. 尝试解析时间并定位目标帧（正常流程）
         try:
-            parts = list(map(int, time_str.split(':')))
-            if len(parts) == 3:
-                h, m, s = parts
-            elif len(parts) == 2:
-                h, m, s = 0, parts[0], parts[1]
-            else:
-                raise ValueError("时间格式应为 'HH:MM:SS' 或 'MM:SS'")
-            total_seconds = h * 3600 + m * 60 + s
+            total_seconds = time_to_ms(time_str) / 1000
         except ValueError as e:
             # 如果时间格式解析失败，直接触发回退
             raise ValueError(f"时间格式不正确 ({e})") from e
