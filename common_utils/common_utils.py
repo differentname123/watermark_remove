@@ -1698,7 +1698,7 @@ def merge_json_files(path_dir, target_name_list, max_count=None):
     file_paths = [
         os.path.join(path_dir, f)
         for f in all_files
-        if any(f.startswith(name) for name in target_name_list)
+        if all(name in f for name in target_name_list)
     ]
 
     print(f"在目录 '{path_dir}' 中找到 {len(file_paths)} 个匹配的文件。")

@@ -1095,13 +1095,13 @@ def auto_upload() -> None:
     for key, value in metadata_cache.items():
         if key in processed_video_id:
             continue
+        userName = value.get("userName", "other")
 
         upload_status = upload_log_global.get(key, {}).get("status", "未处理")
         if upload_status == 'error':
-            print(f"⏭️ 跳过 {key}：之前制作视频处理失败，状态为 error。")
+            print(f"⏭️ 跳过 {key} {userName}：之前制作视频处理失败，状态为 error。")
             error_count += 1
             continue
-        userName = value.get("userName", "other")
         today_start = datetime.datetime.combine(datetime.date.today(), datetime.time.min).timestamp()
 
 
@@ -1359,7 +1359,7 @@ def auto_upload() -> None:
 
                 # 3. 结果反馈：更清晰的结果说明
                 if processing_duration > 10:
-                    print(f"🎉 【有效处理完成】 任务 '{parent_key}' 耗时 {processing_duration:.2f} 秒 (> 10秒). [{i}/{total_candidates}]")
+                    print(f"🎉 【有效处理完成】 任务 '{parent_key}' user_name {user_name} 耗时 {processing_duration:.2f} 秒 (> 10秒). [{i}/{total_candidates}]")
                     print("   - 目标达成，备用处理流程结束。")
                     effective_task_found = True
                     break  # 目标达成，退出备用处理循环

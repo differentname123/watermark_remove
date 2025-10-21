@@ -20,7 +20,7 @@ from queue import Queue, Empty
 
 from content_community.bilibili.bili_utils import update_bili_user_sign
 from content_community.bilibili.get_comment import get_bilibili_comments
-from common_utils.common_utils import get_config, init_config, merge_json_files, time_to_ms, read_json
+from common_utils.common_utils import get_config, init_config, time_to_ms, read_json
 # 评论相关代码保留，但暂时不使用
 from content_community.bilibili.comment import BilibiliCommenter
 from content_community.bilibili.get_danmu import gen_proper_comment
