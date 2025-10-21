@@ -278,7 +278,7 @@ def analyze_user_uploads_by_day(
             # 原始字段
             "uploads_today": 0,
             "uploads_last_hour": 0,
-            "latest_upload_time": None,
+            "latest_upload_time": "无记录",
             "latest_timestamp": 0.0,
         }
 
@@ -1205,7 +1205,7 @@ def auto_upload() -> None:
             cooldown_reason = f"今日已本地上传 {uploads_today} 个视频， 实际平台数据：{remote_upload_count} ，达到上限。"
         elif latest_timestamp and (time.time() - latest_timestamp) < wait_minutes * 60 and uploads_last_hour >= 1:
             is_cooldown_or_limit = True
-            cooldown_reason = f"距离上次上传少于 20 分钟。 上次上传时间：{latest_upload_time}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}"
+            cooldown_reason = f"距离上次上传少于 {wait_minutes} 分钟。 上次上传时间：{latest_upload_time}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}"
         elif userName == latest_user:
             is_cooldown_or_limit = True
             cooldown_reason = "与上一个上传用户相同，避免连续上传。"
