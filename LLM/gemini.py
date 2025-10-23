@@ -359,13 +359,13 @@ def valid_all_api_keys():
 
 if __name__ == "__main__":
     valid_all_api_keys()
-
-    print("\n" + "=" * 20 + " 开始测试 " + "=" * 20)
-    print("[TEST] 正在测试 get_llm_content (这将触发第一次动态排序)")
-    start_time = time.time()
-    result = get_llm_content(prompt="再给我讲个笑话吧", model_name="gemini-flash-latest")
-    if result:
-        print("\n[RESULT] 模型输出：\n", result)
-    else:
-        print(f"\n[FAIL] 内容生成失败{result}")
-    print(f"[INFO] 执行时间: {time.time() - start_time:.2f} 秒")
+    #
+    # print("\n" + "=" * 20 + " 开始测试 " + "=" * 20)
+    # print("[TEST] 正在测试 get_llm_content (这将触发第一次动态排序)")
+    # start_time = time.time()
+    # result = get_llm_content(prompt="再给我讲个笑话吧", model_name="gemini-flash-latest")
+    # if result:
+    #     print("\n[RESULT] 模型输出：\n", result)
+    # else:
+    #     print(f"\n[FAIL] 内容生成失败{result}")
+    # print(f"[INFO] 执行时间: {time.time() - start_time:.2f} 秒")

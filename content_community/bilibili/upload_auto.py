@@ -156,6 +156,8 @@ video_recommend_user_list = [
     "qiqixiao",
     "xiaoxue",
 ]
+
+limit_user_list = ["jie", "qiqi", "xue", "lin", "jj", "yang", "yiyi", "xiaoxue"]
 video_recommend_user_list = []
 
 # 错误记录
@@ -1200,7 +1202,11 @@ def auto_upload() -> None:
         # --- 修改跳过逻辑，收集可处理的候选任务 ---
         is_cooldown_or_limit = False
         cooldown_reason = ""
-        if uploads_today >= 25 or remote_upload_count >= 20:
+        uploads_today_max = 25
+        if userName in limit_user_list:
+            uploads_today_max = 2
+
+        if uploads_today >= uploads_today_max or remote_upload_count >= 20:
             is_cooldown_or_limit = True
             cooldown_reason = f"今日已本地上传 {uploads_today} 个视频， 实际平台数据：{remote_upload_count} ，达到上限。"
         elif latest_timestamp and (time.time() - latest_timestamp) < wait_minutes * 60 and uploads_last_hour >= 1:
