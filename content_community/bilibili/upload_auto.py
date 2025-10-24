@@ -1204,7 +1204,7 @@ def auto_upload() -> None:
         cooldown_reason = ""
         uploads_today_max = 25
         if userName in limit_user_list:
-            uploads_today_max = 2
+            uploads_today_max = 25
 
         if uploads_today >= uploads_today_max or remote_upload_count >= 20:
             is_cooldown_or_limit = True
