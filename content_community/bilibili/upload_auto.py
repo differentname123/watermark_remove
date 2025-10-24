@@ -69,7 +69,7 @@ accounts: Dict[str, str] = {
     "ruru": "ruru",
     "nana": "nana",
     "jie": "jie",
-    "qiqi": "qiqi",
+    # "qiqi": "qiqi",
     "mama": "mama",
     "hong": "hong",
     "yan": "yan",
@@ -1208,7 +1208,7 @@ def auto_upload() -> None:
 
         if uploads_today >= uploads_today_max or remote_upload_count >= 20:
             is_cooldown_or_limit = True
-            cooldown_reason = f"今日已本地上传 {uploads_today} 个视频， 实际平台数据：{remote_upload_count} ，达到上限。"
+            cooldown_reason = f"今日已本地上传 {uploads_today} 个视频， 实际平台数据：{remote_upload_count} ，达到上限 {uploads_today_max}。"
         elif latest_timestamp and (time.time() - latest_timestamp) < wait_minutes * 60 and uploads_last_hour >= 1:
             is_cooldown_or_limit = True
             cooldown_reason = f"距离上次上传少于 {wait_minutes} 分钟。 上次上传时间：{latest_upload_time}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}"
