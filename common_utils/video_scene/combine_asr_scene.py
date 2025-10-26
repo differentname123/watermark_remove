@@ -38,6 +38,7 @@ from content_community.app.remake_video import adjust_subtitle_box
 base_output_dir = "W:/project/python_project/watermark_remove/douyin_video"
 METADATA_CACHE_FILE = "W:/project/python_project/watermark_remove/LLM/TikTokDownloader/back_up/metadata_cache.json"
 
+from datetime import datetime, timedelta
 
 def delete_files_except(directory: str):
     """
@@ -105,6 +106,69 @@ def delete_files_except(directory: str):
         print("🧹 操作完成。没有找到需要删除的文件。")
     else:
         print(f"🧹 操作完成。成功删除 {deleted_count} 个文件，失败 {failed_count} 个。")
+
+
+def backup_old_files(directory_path: str, target_filename: str):
+    """
+    扫描指定目录及其所有子目录，将创建时间超过8小时的目标文件重命名，添加'.back'后缀。
+
+    :param directory_path: 需要扫描的根目录路径。
+    :param target_filename: 需要查找和处理的目标文件名。
+    """
+    # 检查目录是否存在
+    if not os.path.isdir(directory_path):
+        print(f"错误：目录 '{directory_path}' 不存在或不是一个有效的目录。")
+        return
+
+    print(f"开始扫描目录: '{directory_path}'")
+    print(f"目标文件: '{target_filename}'")
+
+    # 8小时的时间间隔，单位为秒
+    eight_hours_ago_timestamp = time.time() - (8 * 60 * 60)
+
+    # os.walk() 会递归遍历目录树
+    for root, dirs, files in os.walk(directory_path):
+        # 检查当前目录下是否存在目标文件
+        if target_filename in files:
+            # 构建文件的完整路径
+            full_path = os.path.join(root, target_filename)
+
+            try:
+                # 获取文件的创建时间（时间戳）
+                # 注意：在Unix/Linux上，getctime() 返回的是元数据最后修改时间。
+                # 在Windows上，它返回的是文件的创建时间。
+                # 对于大多数场景，这已经足够。
+                file_creation_timestamp = os.path.getctime(full_path)
+
+                # 检查文件创建时间是否早于8小时前
+                if file_creation_timestamp < eight_hours_ago_timestamp:
+                    # 创建新的文件名
+                    new_path = full_path + '.back'
+
+                    # 检查.back文件是否已存在，避免覆盖
+                    if os.path.exists(new_path):
+                        print(f"跳过: '{full_path}' -> 备份文件 '{new_path}' 已存在。")
+                        continue
+
+                    # 执行重命名操作
+                    os.rename(full_path, new_path)
+
+                    # 打印日志信息
+                    creation_time_str = datetime.fromtimestamp(file_creation_timestamp).strftime('%Y-%m-%d %H:%M:%S')
+                    print(f"成功: 已将 '{full_path}' (创建于 {creation_time_str}) 重命名为 '{new_path}'")
+                else:
+                    # 如果文件不够旧，也打印信息以便调试
+                    creation_time_str = datetime.fromtimestamp(file_creation_timestamp).strftime('%Y-%m-%d %H:%M:%S')
+                    print(f"忽略: '{full_path}' (创建于 {creation_time_str}) 未超过8小时。")
+
+            except FileNotFoundError:
+                # 在极少数情况下，文件可能在找到后被删除
+                print(f"警告: 文件 '{full_path}' 在处理时未找到。")
+            except Exception as e:
+                # 捕获其他可能的错误，如权限问题
+                print(f"错误: 处理文件 '{full_path}' 时发生错误: {e}")
+
+    print("\n扫描完成。")
 
 def delete_all_mp4_in_dir(directory: str):
     """
@@ -473,7 +537,7 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, has_autho
             new_video_script = string_to_object(raw)
             check_result = check_new_video_script(new_video_script, scene_info, logger)
             if not check_result:
-                raise ValueError("生成的视频脚本检查未通过")
+                raise ValueError(f"生成的视频脚本检查未通过 {output_dir}")
 
             # 为new_video_script每个方案增加cut_type字段
             for detail_new_video_script in new_video_script:
@@ -1899,8 +1963,9 @@ if __name__ == '__main__':
     # print(check_video_integrity(video_path))
     # compress_video_in_place(video_path)
 
-    # gen_new_video_script_robus(video_path)
-    # gen_new_video_robus(video_path)
+    gen_new_video_script_robus(video_path)
+    gen_new_video_robus(video_path)
     #
     # delete_all_mp4_in_dir(base_output_dir)
-    delete_files_except(base_output_dir)
+    # delete_files_except(base_output_dir)
+    # backup_old_files(base_output_dir, 'speech_asr_with_owner.json')

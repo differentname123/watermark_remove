@@ -1383,7 +1383,7 @@ def auto_upload() -> None:
                 # --- 新增：打印当前进度 ---
                 # 注意：失败的任务不算入“跳过”计数，但仍然消耗了一次机会
                 print(f"   - 📊 进度: 已处理 {i} 个 (其中1个失败), 剩余 {remaining_count} 个待检查。")
-                upload_log_global[key]["status"] = "error"
+                upload_log_global[parent_key]["status"] = "error"
                 continue
 
         # 4. 最终总结：根据是否找到有效任务给出不同的总结
