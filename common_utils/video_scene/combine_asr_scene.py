@@ -39,77 +39,72 @@ base_output_dir = "W:/project/python_project/watermark_remove/douyin_video"
 METADATA_CACHE_FILE = "W:/project/python_project/watermark_remove/LLM/TikTokDownloader/back_up/metadata_cache.json"
 
 
-def delete_subdirs_except(directory: str, dry_run: bool = False):
+def delete_files_except(directory: str):
     """
-    删除指定目录下的第一层子目录，但会排除一个列表中的目录。
+    删除指定目录下的第一层文件，但会排除一个硬编码的文件名列表。
+
+    此函数会忽略所有子目录，只对目标目录根下的文件进行操作。
+    警告：此操作会直接删除文件，且不可逆！
 
     Args:
         directory (str): 要操作的目标目录。
-        exclude_list (List[str]): 一个包含要保留的目录名的列表（注意：只是目录名，不是完整路径）。
-        dry_run (bool, optional): 是否为演习模式。
-                                  - True (默认): 只打印将要删除的目录，不执行任何删除操作。
-                                  - False: 真正执行删除操作。请谨慎使用！
     """
-    METADATA_CACHE = read_json(METADATA_CACHE_FILE)
-    exclude_list = METADATA_CACHE.keys()
-    # 1. 路径和有效性检查
+    # 1. 定义要排除（保留）的文件名列表
+    exclude_files_list = [
+        "merged_timestamps.json",
+        "speech_asr_with_owner.json",
+        "final_subtitle_box.json"
+    ]
+    # 为了快速查找，将列表转换为集合 (set)
+    exclude_files_set = set(exclude_files_list)
+
+    # 2. 路径有效性检查
     dir_path = Path(directory)
     if not dir_path.is_dir():
-        print(f"❌ 目录不存在或不是一个有效目录：{directory}")
+        print(f"❌ 错误: 目录不存在或路径无效 -> {directory}")
         return
 
-    # 为了快速查找，将排除列表转换为集合 (set)
-    exclude_set = set(exclude_list)
-
-    # 2. 打印操作信息，特别是演习模式警告
-    print("=" * 50)
-    if dry_run:
-        print("⚠️  当前为【演习模式】，仅列出将要删除的目录，不会实际删除。")
-        print("   如需实际删除，请在调用函数时设置 `dry_run=False`。")
-    else:
-        print("‼️  警告：当前为【实战模式】，将永久删除目录！操作不可逆！")
+    # 3. 打印操作信息，并给出明确警告
+    print("=" * 60)
+    print("‼️  警告：将永久删除文件！此操作不可逆！")
     print(f"📂 目标目录：{dir_path.resolve()}")
-    print(f"🚫 排除列表：{len(exclude_list)}")
-    print("=" * 50)
+    print(f"🚫 将保留以下文件：{exclude_files_list}")
+    print("=" * 60)
 
-    # 3. 查找所有需要删除的目录
-    print("🔍 开始扫描第一层子目录...")
+    print("🔍 开始扫描并处理文件...")
 
-    dirs_to_delete = []
-    for sub_path in dir_path.iterdir():
-        # 我们只关心目录，并且它的名字不在排除列表中
-        if sub_path.is_dir() and sub_path.name not in exclude_set:
-            dirs_to_delete.append(sub_path)
-
-    if not dirs_to_delete:
-        print("✅ 没有找到需要删除的目录。")
-        return
-
-    # 4. 执行删除或打印演习结果
-    print(f"🔍 共找到 {len(dirs_to_delete)} 个待删除目录，开始处理... 总共目录为：{len(list(dir_path.iterdir()))} 排除目录为：{len(exclude_list)}")
-
+    # 4. 遍历目录，查找并删除文件
     deleted_count = 0
     failed_count = 0
-    for sub_dir in dirs_to_delete:
-        try:
-            if dry_run:
-                print(f"演习 - 计划删除：[DIR] {sub_dir}")
+    items_in_dir = list(dir_path.iterdir())  # 获取一次列表，避免迭代时修改
+
+    files_to_process = [item for item in items_in_dir if item.is_file()]
+
+    if not files_to_process:
+        print("✅ 在目标目录中没有找到任何文件。")
+        return
+
+    for file_path in files_to_process:
+        # 检查文件名是否在排除列表中
+        if file_path.name not in exclude_files_set:
+            try:
+                # 如果不在，则删除文件
+                file_path.unlink()
+                print(f"✅ 已删除: {file_path.name}")
                 deleted_count += 1
-            else:
-                # 使用 shutil.rmtree 删除非空目录
-                shutil.rmtree(sub_dir)
-                print(f"✅ 已删除：[DIR] {sub_dir}")
-                deleted_count += 1
-        except Exception as e:
-            print(f"❌ 删除失败：[DIR] {sub_dir}，错误：{e}")
-            failed_count += 1
+            except Exception as e:
+                print(f"❌ 删除失败: {file_path.name}，错误：{e}")
+                failed_count += 1
+        # else:
+        #     # 如果需要，可以取消注释这行来查看保留了哪些文件
+        #     print(f"🚫 已保留: {file_path.name}")
 
     # 5. 打印最终总结
-    print("-" * 50)
-    if dry_run:
-        print(f"🧹 演习完成，共计划删除 {deleted_count} 个目录。")
+    print("-" * 60)
+    if deleted_count == 0 and failed_count == 0:
+        print("🧹 操作完成。没有找到需要删除的文件。")
     else:
-        print(f"🧹 删除操作完成，成功删除 {deleted_count} 个目录，失败 {failed_count} 个。")
+        print(f"🧹 操作完成。成功删除 {deleted_count} 个文件，失败 {failed_count} 个。")
 
 def delete_all_mp4_in_dir(directory: str):
     """
@@ -1905,7 +1900,7 @@ if __name__ == '__main__':
     # compress_video_in_place(video_path)
 
     # gen_new_video_script_robus(video_path)
-    gen_new_video_robus(video_path)
+    # gen_new_video_robus(video_path)
     #
     # delete_all_mp4_in_dir(base_output_dir)
-    delete_subdirs_except(base_output_dir)
+    delete_files_except(base_output_dir)
