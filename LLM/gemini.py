@@ -219,6 +219,7 @@ def get_llm_content_gemini_flash_video(
             )
             if not response.text:
                 print(f"[WARN] 模型返回了空响应{response.prompt_feedback} {video_path}")
+                return response.prompt_feedback
             return response.text
         except Exception as e:
             if 'overloaded' in str(e):
@@ -290,6 +291,7 @@ def get_llm_content_sub(prompt: str = '你好，Gemini！请介绍一下你自�
             text = response.text
             if not text:
                 print(f"模型返回了空响应{response.prompt_feedback}")
+                return response.prompt_feedback
             return text
         except Exception as e:
             if 'overloaded' in str(e):

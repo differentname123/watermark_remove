@@ -78,7 +78,7 @@ accounts: Dict[str, str] = {
     "jun": "jun",
     "xiaosu": "xiaosu",
     "chabian": "chabian",
-    "lin": "lin",
+    # "lin": "lin",
     "jj": "jj",
     "hao": "hao",
     "dan": "dan",
@@ -107,10 +107,8 @@ group_info: Dict[str, List[str]] = {
         "chabian",
         "dan",
         "yiyi",
-        "qiqixiao",
         "yang",
         "xiaodan",
-        "qiqixiao",
         "dahao",
         "lin",
         "xiaohao",
@@ -134,6 +132,7 @@ group_info: Dict[str, List[str]] = {
         "qiqi",
         "junda",
         "ruruxiao",
+        "qiqixiao",
     ],
 }
 
@@ -157,7 +156,7 @@ video_recommend_user_list = [
     "xiaoxue",
 ]
 
-limit_user_list = ["jie", "qiqi", "xue", "lin", "jj", "yang", "yiyi", "xiaoxue"]
+right_now_user_list = ["qiqixiao", "jie"]
 video_recommend_user_list = []
 
 # 错误记录
@@ -1052,8 +1051,7 @@ def get_wait_minutes():
     else:  # 深夜 22:00 - 23:59，准备休息，等待时间最短
         return 10
 
-# ---------- 主流程 ----------
-# ---------- 主流程 ----------
+
 def auto_upload() -> None:
     """
     非阻塞版 auto_upload（主线程负责预处理，投稿提交到每个账号的单线程 executor）：
@@ -1178,6 +1176,9 @@ def auto_upload() -> None:
         is_real_time = generation_options.get("is_real_time", False)
         if not is_real_time:
             wait_minutes += 10  # 非实时投稿，增加等待时间
+        if userName in right_now_user_list:
+            wait_minutes = 0
+
 
         latest_upload_str = latest_timestamp
         interval_minutes_str = 0
@@ -1203,8 +1204,8 @@ def auto_upload() -> None:
         is_cooldown_or_limit = False
         cooldown_reason = ""
         uploads_today_max = 25
-        if userName in limit_user_list:
-            uploads_today_max = 25
+        # if userName in limit_user_list:
+        #     uploads_today_max = 25
 
         if uploads_today >= uploads_today_max or remote_upload_count >= 20:
             is_cooldown_or_limit = True

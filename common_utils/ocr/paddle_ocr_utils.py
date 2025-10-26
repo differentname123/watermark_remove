@@ -58,7 +58,7 @@ def find_subtitle(
     ocr_result: List[Dict[str, Any]],
     image_height: int,
     image_width: int,
-    bottom_ratio: float = 0.5,
+    bottom_ratio: float = 0.3,
     rect_ang_thresh: float = 10.0,      # 最大旋转角度阈值（°）
     rect_ratio_thresh: float = 0.8,    # 最小矩形度阈值
     aspect_ratio_thresh: float = 2.0,   # 最小宽高比阈值（可选）

@@ -321,6 +321,9 @@ def gen_owner_asr_by_llm(video_path, has_author_voice, logger):
             logger.error(f"生成或处理ASR时发生异常 (尝试 {attempt}/{MAX_RETRIES}): {e}")
             logger.error(f"       原始响应内容 (raw_response): {raw_response}")
             logger.exception("详细堆栈信息：")  # logger.exception 会自动记录堆栈信息
+            if 'PROHIBITED_CONTENT' in str(e): # <--- 修复在这里
+                logger.warning("检测到'PROHIBITED_CONTENT'，将终止重试。")
+                break  # 使用 break 更清晰地跳出循环
 
         # 如果当前尝试失败且不是最后一次，则等待后重试
         if attempt < MAX_RETRIES:
@@ -483,6 +486,9 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, has_autho
             return new_video_script
         except Exception as e:
             logger.error(f"生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
+            if 'PROHIBITED_CONTENT' in str(e): # <--- 修复在这里
+                logger.warning("检测到'PROHIBITED_CONTENT'，将终止重试。")
+                break  # 使用 break 更清晰地跳出循环
             if attempt < max_retries:
                 logger.info(f"正在重试... (等待 {retry_delay} 秒)")
                 time.sleep(retry_delay)  # 等待一段时间后再重试
@@ -690,6 +696,9 @@ def gen_logical_scene_llm(video_path, logger):
             return logical_scene_info
         except Exception as e:
             logger.error(f"生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
+            if 'PROHIBITED_CONTENT' in str(e): # <--- 修复在这里
+                logger.warning("检测到'PROHIBITED_CONTENT'，将终止重试。")
+                break  # 使用 break 更清晰地跳出循环
             if attempt < max_retries:
                 logger.info(f"正在重试... (等待 {retry_delay} 秒)")
                 time.sleep(retry_delay)  # 等待一段时间后再重试
@@ -1889,7 +1898,7 @@ def gen_new_video(video_path, basename):
 
 
 if __name__ == '__main__':
-    video_path = '7562520943688535315_process.mp4'
+    video_path = '7541792805593566504.mp4'
     # process_and_crop_video(video_path)
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
@@ -1899,4 +1908,4 @@ if __name__ == '__main__':
     gen_new_video_robus(video_path)
     #
     # delete_all_mp4_in_dir(base_output_dir)
-    # delete_subdirs_except(base_output_dir)
+    delete_subdirs_except(base_output_dir)
