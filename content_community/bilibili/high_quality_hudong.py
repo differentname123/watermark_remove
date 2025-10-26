@@ -1329,7 +1329,7 @@ def pick_commenters(commenter_map, usage_path, n=3):
 
     selected = uids[:min(n, len(uids))]
     for uid in selected:
-        usage[uid] = usage.get(uid, 0) + 7 - usage_map.get(uid, 2)
+        usage[uid] = usage.get(uid, 0) + 8 - usage_map.get(uid, 2)
 
     save_json(usage_path, usage)
     selected_commenter = [commenter_map[uid] for uid in selected if uid in commenter_map]
