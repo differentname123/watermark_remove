@@ -1346,6 +1346,7 @@ def auto_upload() -> None:
         skipped_count = 0
         total_candidates = len(skippable_candidates)
         # --- 新增结束 ---
+        start_time = time.time()
 
         # 2. 处理进度：增加进度指示和详细信息
         for i, candidate in enumerate(skippable_candidates, 1):
@@ -1356,7 +1357,6 @@ def auto_upload() -> None:
             print(f"\n⏳ [{i}/{total_candidates}] 尝试处理候选任务: {parent_key}")
             print(f"   - 用户: {user_name} 包含视频ID: {video_ids}")
 
-            start_time = time.time()
             remaining_count = total_candidates - i
 
             try:
@@ -1365,7 +1365,7 @@ def auto_upload() -> None:
                 processing_duration = time.time() - start_time
 
                 # 3. 结果反馈：更清晰的结果说明
-                if processing_duration > 10:
+                if processing_duration > 60:
                     print(f"🎉 【有效处理完成】 任务 '{parent_key}' user_name {user_name} 耗时 {processing_duration:.2f} 秒 (> 10秒). [{i}/{total_candidates}]")
                     print("   - 目标达成，备用处理流程结束。")
                     effective_task_found = True

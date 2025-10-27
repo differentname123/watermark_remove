@@ -988,6 +988,9 @@ def gen_video_script(logical_scene_info, owner_asr_info, output_dir, no_is_adjus
     save_json(final_scene_info_path, final_scene_info)
 
     new_video_script = gen_new_video_script_llm(final_scene_info, output_dir, no_is_adjustable, has_author_voice=has_author_voice)
+    if new_video_script is None:
+        logger.error(f"生成新视频脚本失败！{output_dir}  {new_video_script}")
+        raise RuntimeError(f"生成新视频脚本失败！{output_dir}  {new_video_script}")
     save_json(new_video_script_path, new_video_script)
 
     return new_video_script
@@ -1957,14 +1960,14 @@ def gen_new_video(video_path, basename):
 
 
 if __name__ == '__main__':
-    video_path = '7541792805593566504.mp4'
+    video_path = '7329099224786734346_process.mp4'
     # process_and_crop_video(video_path)
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
     # compress_video_in_place(video_path)
 
     gen_new_video_script_robus(video_path)
-    gen_new_video_robus(video_path)
+    # gen_new_video_robus(video_path)
     #
     # delete_all_mp4_in_dir(base_output_dir)
     # delete_files_except(base_output_dir)
