@@ -65,7 +65,7 @@ accounts: Dict[str, str] = {
     "tao": "tao",
     "taoxiao": "taoxiao",
     "junxiao": "junxiao",
-    "junda": "junda",
+    # "junda": "junda",
     "ruru": "ruru",
     "nana": "nana",
     "jie": "jie",
@@ -74,7 +74,7 @@ accounts: Dict[str, str] = {
     "hong": "hong",
     "yan": "yan",
     "xue": "xue",
-    "cai": "cai",
+    # "cai": "cai",
     "jun": "jun",
     "xiaosu": "xiaosu",
     "chabian": "chabian",
@@ -86,6 +86,7 @@ accounts: Dict[str, str] = {
     "yang": "yang",
     "ruruxiao": "ruruxiao",
     "qiqixiao": "qiqixiao",
+    "mu": "mu",
     "yiyi": "yiyi",
     "xiaodan": "xiaodan",
     "xiaoxue": "xiaoxue",
@@ -133,6 +134,7 @@ group_info: Dict[str, List[str]] = {
         "junda",
         "ruruxiao",
         "qiqixiao",
+        "mu"
     ],
 }
 
