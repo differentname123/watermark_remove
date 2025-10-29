@@ -72,7 +72,7 @@ accounts: Dict[str, str] = {
     # "qiqi": "qiqi",
     "mama": "mama",
     "hong": "hong",
-    "yan": "yan",
+    # "yan": "yan",
     "xue": "xue",
     "cai": "cai",
     "jun": "jun",
