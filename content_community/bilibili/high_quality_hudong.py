@@ -1459,9 +1459,9 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     #     # time.sleep(random.uniform(5, 15))
     # hudong_info['danmu_used'] = danmu_used_list
 
-    max_success_comment_count = 10
+    max_success_comment_count = 5
     if uid in ['3632307990694238', '3632304865937878']:
-        max_success_comment_count = 20
+        max_success_comment_count = 10
     comment_list = hudong_info.get('comment_list', [])
     # comment_list = comment_list[:3]
     comment_used_list = hudong_info.get('comment_used', [])
