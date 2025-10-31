@@ -1181,7 +1181,6 @@ def auto_upload() -> None:
         if userName in right_now_user_list:
             wait_minutes = 0
 
-
         latest_upload_str = latest_timestamp
         interval_minutes_str = 0
 
@@ -1291,9 +1290,6 @@ def auto_upload() -> None:
         except Exception:
             video_duration_str = "00:00"
 
-        print(
-            f"🚀 准备为用户 {userName} 后台投稿 {key} (ID: {video_id_key}) - 《{upload_params.get('title')}》（按账号串行）"
-        )
 
 
 
@@ -1311,21 +1307,25 @@ def auto_upload() -> None:
         print(f"🧹 预处理完成，准备清理 {len(all_files_to_cleanup)} 个临时文件。排除{final_output_path}")
 
         # 按账号单线程执行上传
-        account_executor = account_executors[userName]
-        future = account_executor.submit(
-            upload_worker,
-            upload_params,
-            video_id_key,
-            updated_entry,
-            all_files_to_cleanup,
-            task_stage_times,
-            userName,
-            video_duration_str,
-        )
-        futures.append(future)
-        already_upload_users.append(userName)
-        this_time_upload_count += 1
+        if this_time_upload_count < 20:
+            print(
+                f"🚀 准备为用户 {userName} 后台投稿 {key} (ID: {video_id_key}) - 《{upload_params.get('title')}》（按账号串行）"
+            )
+            this_time_upload_count += 1
 
+            account_executor = account_executors[userName]
+            future = account_executor.submit(
+                upload_worker,
+                upload_params,
+                video_id_key,
+                updated_entry,
+                all_files_to_cleanup,
+                task_stage_times,
+                userName,
+                video_duration_str,
+            )
+            futures.append(future)
+        already_upload_users.append(userName)
 
     submitted_any_uploads = False
     user_candidate_counts = defaultdict(int)
@@ -1345,6 +1345,7 @@ def auto_upload() -> None:
         effective_task_found = False
 
         # --- 新增：用于统计跳过任务的数量 ---
+        # skippable_candidates = []
         skipped_count = 0
         total_candidates = len(skippable_candidates)
         # --- 新增结束 ---
@@ -1406,7 +1407,7 @@ def auto_upload() -> None:
         persistent_tasks.update(temp_set)
         save_json(persistent_tasks_file, list(persistent_tasks))
     # 等待所有后台上传完成
-    print(f"等待所有等待后台上传完成... 本次投稿数量 {this_time_upload_count}  用户{already_upload_users}  当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"等待所有等待后台上传完成... 本次投稿数量 {this_time_upload_count}  用户{already_upload_users}  当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')} {error_user_map}")
     concurrent.futures.wait(futures, timeout=None)
     print(f"{'用户名':<15} | {'本地':>6} | {'远程':>6} | {'待传':>6} | {'间隔(分)':>7} | {'最近上传时间':<19}")
 

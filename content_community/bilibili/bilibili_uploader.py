@@ -142,24 +142,47 @@ def fetch_bili_topics(cookie: str, type_pid=1029, type_id=21):
 def preupload_video(session: requests.Session, video_path: str) -> dict:
     """
     预上传视频，获取上传参数。
+    【优化】增加日志和超时，并更新为与最新浏览器一致的API参数以获取高速上传线路。
     """
+    # print("正在预上传视频，获取上传参数...")
     size = os.path.getsize(video_path)
     name = os.path.basename(video_path)
+
+    # --- 修改开始 ---
+    # 核心改动：添加 upcdn, zone, ssl 等参数，并更新所有版本号
+    # upcdn=txa 是获取高速上传线路的关键
+    params = {
+        "probe_version": "20250923",
+        "upcdn": "anbd",  # 指定上传线路为腾讯云(推测)，这是提速的关键！
+        "zone": "cs",  # 指定上传区域
+        "name": name,
+        "r": "upos",
+        "profile": "ugcfx/bup",
+        "ssl": "0",
+        "version": "2.14.0.0",
+        "build": "2140000",
+        "size": size,
+        "webVersion": "2.14.0",
+    }
+
+    # 增加与浏览器一致的 Referer
+    headers = {
+        "Referer": "https://member.bilibili.com/platform/upload/video/frame"
+    }
+
     resp = session.get(
         "https://member.bilibili.com/preupload",
-        params={
-            "name": name,
-            "r": "upos",
-            "profile": "ugcfx/bup",
-            "size": size,
-            "probe_version": "20221109",
-            "webVersion": "2.13.0",
-        }
+        params=params,
+        headers=headers,
+        timeout=30
     )
+    # --- 修改结束 ---
+
     resp.raise_for_status()
     data = resp.json()
     if data.get("OK") != 1:
         raise RuntimeError(f"预上传失败：{data}")
+    # print(f"✅ 预上传成功，获取到上传节点: {data.get('endpoint')}")
     return data
 
 
