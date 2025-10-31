@@ -1960,14 +1960,14 @@ def gen_new_video(video_path, basename):
 
 
 if __name__ == '__main__':
-    video_path = '7329099224786734346_process.mp4'
+    video_path = '7517314467504475419_process.mp4'
     # process_and_crop_video(video_path)
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
     # compress_video_in_place(video_path)
 
-    gen_new_video_script_robus(video_path)
-    # gen_new_video_robus(video_path)
+    # gen_new_video_script_robus(video_path)
+    gen_new_video_robus(video_path)
     #
     # delete_all_mp4_in_dir(base_output_dir)
     # delete_files_except(base_output_dir)

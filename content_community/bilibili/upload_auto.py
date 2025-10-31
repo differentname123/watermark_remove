@@ -567,7 +567,7 @@ def _basic_task_checks(key: str, value: Dict[str, Any], video_id_key: str) -> Tu
     if not video_id:
         return True, f"⏭️ 跳过 {key}：metadata 中缺少 id。"
 
-    video_path = value.get("video_path")
+    video_path = value.get("video_process_path")
     if not is_valid_target_file_simple(video_path):
         return True, f"⏭️ 跳过 {key} (ID: {video_id})：视频文件缺失 -> {video_path}"
 
@@ -1077,6 +1077,68 @@ def auto_upload() -> None:
     if not upload_log and (len(metadata_cache) - len(upload_log)) > 100:
         print(f"❌ 无可用任务：{UPLOAD_LOG_FILE} 为空或不存在。")
         return
+    user_processed_counts = defaultdict(int)
+
+    # ▼▼▼【核心修改点 1：新增任务优先级调度逻辑】▼▼▼
+    processed_tasks = []
+    unprocessed_tasks = []
+    print("🔍 正在进行任务预扫描，优先处理已生成的视频...")
+
+    for key, value in metadata_cache.items():
+        if key in upload_log:
+            continue
+        task_tuple = (key, value)
+        userName = value.get("userName", "other")
+
+        # 模拟 process_video_batch 的文件名确定逻辑
+        video_id_list = value.get("video_id_list", [key])
+        if not video_id_list:
+            unprocessed_tasks.append(task_tuple)
+            continue
+
+        # 1. 找到最后一个 video_id 对应的 video_info
+        last_video_id = sorted(video_id_list)[-1]
+        last_video_info = metadata_cache.get(last_video_id)
+
+        if not last_video_info or not last_video_info.get("video_process_path"):
+            # 如果信息不完整，无法预测路径，归为未处理
+            unprocessed_tasks.append(task_tuple)
+            continue
+
+        # 2. 获取用于命名产物的基础路径
+        base_path_for_naming = last_video_info.get("video_process_path")
+
+        # 3. 使用已有的函数预测所有产物路径
+        output_variants = compute_output_variants(base_path_for_naming)
+
+        # 4. 检查最终产物（带水印的视频）是否存在
+        final_watermark_path = output_variants.get("watermark")
+        remake_watermark_path = None  # 初始化为 None
+
+        # 仅当原始路径有效时，才构造 remake 文件的路径
+        if final_watermark_path:
+            # 1. 获取 final_watermark_path 所在的目录
+            directory = os.path.dirname(final_watermark_path)
+            # 2. 构造 remake_final_watermark.mp4 的完整路径
+            remake_watermark_path = os.path.join(directory, "remake_final_watermark.mp4")
+
+        # 3. 使用 or 条件检查：只要原始文件或 remake 文件中任何一个存在，就视为已处理
+        if (final_watermark_path and os.path.exists(final_watermark_path)) or \
+                (remake_watermark_path and os.path.exists(remake_watermark_path)):
+            # 如果最终带水印的文件或 remake 文件存在，则视为已处理
+            processed_tasks.append(task_tuple)
+            user_processed_counts[userName] += 1
+        else:
+            unprocessed_tasks.append(task_tuple)
+
+    # 5. 构建优先队列：已处理的在前，未处理的在后
+    prioritized_task_list = processed_tasks + unprocessed_tasks
+    sorted_users = sorted(user_processed_counts.items(), key=lambda item: item[1], reverse=True)
+
+    # 构建单行输出字符串
+    distribution_summary = ", ".join([f"{user}: {count}" for user, count in sorted_users])
+
+    print(f"✅ 发现 {len(processed_tasks)} 个已处理好的任务，将优先上传。一共 {len(prioritized_task_list)} 个任务待处理。📊 已处理任务分布: {distribution_summary}")
 
     futures: List[concurrent.futures.Future] = []
     error_count = 0
@@ -1093,8 +1155,10 @@ def auto_upload() -> None:
     user_uploads_info = analyze_user_uploads_by_day(upload_log_global, metadata_cache)
     save_json(USER_UPLOADS_INFO_FILE, user_uploads_info)
     this_time_upload_count = 0
-    # 遍历所有权威元数据任务
-    for key, value in metadata_cache.items():
+
+    # ▼▼▼【核心修改点 2：遍历经过优先级排序的列表】▼▼▼
+    for key, value in prioritized_task_list:
+        # ▲▲▲【核心修改点 2：结束】▲▲▲
         if key in processed_video_id:
             continue
         userName = value.get("userName", "other")
@@ -1307,7 +1371,7 @@ def auto_upload() -> None:
         print(f"🧹 预处理完成，准备清理 {len(all_files_to_cleanup)} 个临时文件。排除{final_output_path}")
 
         # 按账号单线程执行上传
-        if this_time_upload_count < 20:
+        if this_time_upload_count < 3:
             print(
                 f"🚀 准备为用户 {userName} 后台投稿 {key} (ID: {video_id_key}) - 《{upload_params.get('title')}》（按账号串行）"
             )
