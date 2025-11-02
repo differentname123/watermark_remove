@@ -1427,7 +1427,7 @@ def auto_upload() -> None:
         for i, candidate in enumerate(skippable_candidates, 1):
             user_name = candidate['userName']
             exist_count = user_processed_counts.get(user_name, 0)
-            if exist_count >= 5:
+            if exist_count >= 100:
                 continue
             parent_key = candidate['parent_key']
             video_ids = candidate['video_id_list']
