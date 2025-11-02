@@ -222,7 +222,7 @@ def get_llm_content_gemini_flash_video(
                 return response.prompt_feedback
             return response.text
         except Exception as e:
-            if 'overloaded' in str(e):
+            if 'overloaded' in str(e) or  'An internal error has occurred' in str(e):
                 last_error = e
                 print(f"[WARN] Key “{key_name}” 调用失败：{e}，切换下一个…{video_path}")
             else:
@@ -259,7 +259,7 @@ def get_llm_content_gemini2flash(prompt: str = '你好，Gemini！请介绍一�
             api_key_manager.record_success(key_name, model_name=model_name)
             return response.text
         except Exception as e:
-            if 'overloaded' in str(e):
+            if 'overloaded' in str(e) or  'An internal error has occurred' in str(e):
                 last_error = e
                 print(f"[WARN] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 正在尝试下一个...")
                 continue
@@ -294,7 +294,7 @@ def get_llm_content_sub(prompt: str = '你好，Gemini！请介绍一下你自�
                 return response.prompt_feedback
             return text
         except Exception as e:
-            if 'overloaded' in str(e):
+            if 'overloaded' in str(e) or  'An internal error has occurred' in str(e):
                 print(f"[WARN] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 正在尝试下一个... {e}")
                 last_error = e
                 continue

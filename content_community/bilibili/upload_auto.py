@@ -91,6 +91,7 @@ accounts: Dict[str, str] = {
     "xiaodan": "xiaodan",
     "xiaoxue": "xiaoxue",
     "dahao": "dahao",
+    "xiaocai": "xiaocai",
 }
 
 # 读取各账号 cookie
@@ -134,7 +135,8 @@ group_info: Dict[str, List[str]] = {
         "junda",
         "ruruxiao",
         "qiqixiao",
-        "mu"
+        "mu",
+        "xiaocai"
     ],
 }
 
@@ -1074,7 +1076,7 @@ def auto_upload() -> None:
         print(f"❌ 无可用任务：{METADATA_FILE} 为空或不存在。")
         return
 
-    if not upload_log and (len(metadata_cache) - len(upload_log)) > 100:
+    if not upload_log and (len(metadata_cache) - len(upload_log)) > 200:
         print(f"❌ 无可用任务：{UPLOAD_LOG_FILE} 为空或不存在。")
         return
     user_processed_counts = defaultdict(int)
@@ -1083,10 +1085,17 @@ def auto_upload() -> None:
     processed_tasks = []
     unprocessed_tasks = []
     print("🔍 正在进行任务预扫描，优先处理已生成的视频...")
-
+    upload_log_keys = set(upload_log.keys())
     for key, value in metadata_cache.items():
-        if key in upload_log:
+        is_contain = False
+        #判断key是否被包含在upload_log_keys的元素中
+        for log_key in upload_log_keys:
+            if key in log_key:
+                is_contain = True
+                break
+        if is_contain:
             continue
+
         task_tuple = (key, value)
         userName = value.get("userName", "other")
 
@@ -1393,7 +1402,6 @@ def auto_upload() -> None:
 
     submitted_any_uploads = False
     user_candidate_counts = defaultdict(int)
-
     # --- 新增备用处理逻辑 (日志优化 + 进度统计) ---
     if not submitted_any_uploads and skippable_candidates:
 
@@ -1418,6 +1426,9 @@ def auto_upload() -> None:
         # 2. 处理进度：增加进度指示和详细信息
         for i, candidate in enumerate(skippable_candidates, 1):
             user_name = candidate['userName']
+            exist_count = user_processed_counts.get(user_name, 0)
+            if exist_count >= 5:
+                continue
             parent_key = candidate['parent_key']
             video_ids = candidate['video_id_list']
 
