@@ -1382,7 +1382,7 @@ def auto_upload() -> None:
         print(f"🧹 预处理完成，准备清理 {len(all_files_to_cleanup)} 个临时文件。排除{final_output_path}")
 
         # 按账号单线程执行上传
-        if this_time_upload_count < 3:
+        if this_time_upload_count < 20:
             print(
                 f"🚀 准备为用户 {userName} 后台投稿 {key} (ID: {video_id_key}) - 《{upload_params.get('title')}》（按账号串行）"
             )
