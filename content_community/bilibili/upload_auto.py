@@ -92,6 +92,7 @@ accounts: Dict[str, str] = {
     "xiaoxue": "xiaoxue",
     "dahao": "dahao",
     "xiaocai": "xiaocai",
+    "shun": "shun",
 }
 
 # 读取各账号 cookie
@@ -118,6 +119,7 @@ group_info: Dict[str, List[str]] = {
         "jj",
         "ruru",
         "xiaosu",
+        "shun",
     ],
     "sport": ["nana", "jun"],
     "game": [
@@ -160,7 +162,7 @@ video_recommend_user_list = [
     "xiaoxue",
 ]
 
-right_now_user_list = ["qiqixiao", "jie"]
+right_now_user_list = ["qiqixiao", "jie", 'shun']
 video_recommend_user_list = []
 
 # 错误记录
@@ -1427,7 +1429,7 @@ def auto_upload() -> None:
         for i, candidate in enumerate(skippable_candidates, 1):
             user_name = candidate['userName']
             exist_count = user_processed_counts.get(user_name, 0)
-            if exist_count >= 100:
+            if exist_count >= 10:
                 continue
             parent_key = candidate['parent_key']
             video_ids = candidate['video_id_list']
