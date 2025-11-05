@@ -87,7 +87,7 @@ accounts: Dict[str, str] = {
     "ruruxiao": "ruruxiao",
     "qiqixiao": "qiqixiao",
     "mu": "mu",
-    "yiyi": "yiyi",
+    # "yiyi": "yiyi",
     "xiaodan": "xiaodan",
     "xiaoxue": "xiaoxue",
     "dahao": "dahao",
@@ -1167,6 +1167,19 @@ def auto_upload() -> None:
     save_json(USER_UPLOADS_INFO_FILE, user_uploads_info)
     this_time_upload_count = 0
 
+    remote_upload_dict = {}
+    today_start = datetime.datetime.combine(datetime.date.today(), datetime.time.min).timestamp()
+    # 检查用户今日上传数量（本地 + 平台）
+    try:
+        bvid_file_data = read_json(bvid_file_path)
+    except Exception as e:
+        print(f"❌ 读取 {bvid_file_path} 失败：{e}")
+        bvid_file_data = {}
+    for userName, user_videos in bvid_file_data.items():
+        recent_videos = [v for v in user_videos if v.get("created") and v["created"] >= today_start]
+        remote_upload_count = len(recent_videos)
+        remote_upload_dict[userName] = remote_upload_count
+
     # ▼▼▼【核心修改点 2：遍历经过优先级排序的列表】▼▼▼
     for key, value in prioritized_task_list:
         # ▲▲▲【核心修改点 2：结束】▲▲▲
@@ -1179,7 +1192,6 @@ def auto_upload() -> None:
             print(f"⏭️ 跳过 {key} {userName}：之前制作视频处理失败，状态为 error。")
             error_count += 1
             continue
-        today_start = datetime.datetime.combine(datetime.date.today(), datetime.time.min).timestamp()
 
 
         should_skip = False
@@ -1220,15 +1232,7 @@ def auto_upload() -> None:
             continue
         config = config_map.get(userName, config_map["base"])
 
-        # 检查用户今日上传数量（本地 + 平台）
-        try:
-            bvid_file_data = read_json(bvid_file_path)
-        except Exception as e:
-            print(f"❌ 读取 {bvid_file_path} 失败：{e}")
-            bvid_file_data = {}
-        user_videos = bvid_file_data.get(userName, [])
-        recent_videos = [v for v in user_videos if v.get("created") and v["created"] >= today_start]
-        remote_upload_count = len(recent_videos)
+        remote_upload_count = remote_upload_dict.get(userName, 0)
 
         user_info = user_uploads_info.setdefault(
             userName,
@@ -1382,7 +1386,7 @@ def auto_upload() -> None:
         print(f"🧹 预处理完成，准备清理 {len(all_files_to_cleanup)} 个临时文件。排除{final_output_path}")
 
         # 按账号单线程执行上传
-        if this_time_upload_count < 20:
+        if this_time_upload_count < 5:
             print(
                 f"🚀 准备为用户 {userName} 后台投稿 {key} (ID: {video_id_key}) - 《{upload_params.get('title')}》（按账号串行）"
             )
@@ -1429,7 +1433,7 @@ def auto_upload() -> None:
         for i, candidate in enumerate(skippable_candidates, 1):
             user_name = candidate['userName']
             exist_count = user_processed_counts.get(user_name, 0)
-            if exist_count >= 10:
+            if exist_count >= 20:
                 continue
             parent_key = candidate['parent_key']
             video_ids = candidate['video_id_list']
@@ -1515,7 +1519,7 @@ def auto_upload() -> None:
         print(
             f"{user_name:<18} | "
             f"{info.get('uploads_today', 0):>6} | "  # 宽度增加到 6
-            f"{info.get('remote_upload_count', 0):>6} | "  # 宽度增加到 6
+            f"{remote_upload_dict.get(user_name, 0):>6} | "  # 宽度增加到 6
             f"{need_to_upload:>6} | "  # 宽度增加到 6
             f"{interval_minutes_str:>9} | "  # 宽度增加到 9
             f"{info.get('latest_upload_time', 'N/A'):<19}"  # 指定宽度 19，确保对齐
