@@ -66,7 +66,7 @@ accounts: Dict[str, str] = {
     "taoxiao": "taoxiao",
     "junxiao": "junxiao",
     # "junda": "junda",
-    "ruru": "ruru",
+    # "ruru": "ruru",
     "nana": "nana",
     "jie": "jie",
     # "qiqi": "qiqi",
@@ -87,7 +87,7 @@ accounts: Dict[str, str] = {
     "ruruxiao": "ruruxiao",
     "qiqixiao": "qiqixiao",
     "mu": "mu",
-    # "yiyi": "yiyi",
+    "yiyi": "yiyi",
     "xiaodan": "xiaodan",
     "xiaoxue": "xiaoxue",
     "dahao": "dahao",
@@ -289,6 +289,7 @@ def analyze_user_uploads_by_day(
             "latest_timestamp": 0.0,
         }
 
+    upload_log_keys = set(metadata_cache_with_uploads.keys())
     # --- 2. 从原始投稿(metadata_cache)计算【当天】的总数、失败数、未处理数 ---
     for key, data in metadata_cache.items():
         try:
@@ -306,10 +307,20 @@ def analyze_user_uploads_by_day(
 
         user_stats["total_count_today"] += 1
 
+
+        is_contain = False
+        #判断key是否被包含在upload_log_keys的元素中
+        for log_key in upload_log_keys:
+            if key in log_key:
+                is_contain = True
+                break
+        if is_contain:
+            continue
+
         status = data.get("status")
         if status == "error":
             user_stats["error_count_today"] += 1
-        elif key not in metadata_cache_with_uploads:
+        elif is_contain is False:
             user_stats["unprocessed_count_today"] += 1
 
     # --- 3. 从已处理投稿(metadata_cache_with_uploads)计算【当天/小时】已处理数 (保留原始逻辑和字段) ---

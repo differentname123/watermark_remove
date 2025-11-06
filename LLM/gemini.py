@@ -34,9 +34,7 @@ def build_api_key_map():
 
 class ApiKeyManager:
     """
-    线程/进程安全的 API Key 使用统计与动态排序：
-    - 针对特定模型维度记录使用次数
-    - 使用文件锁避免并发读写冲突
+    通过原子性的“检出”操作，实现线程/进程安全的 API Key 负载均衡。
     """
 
     def __init__(self, api_key_map):
@@ -44,7 +42,8 @@ class ApiKeyManager:
         module_dir = os.path.dirname(os.path.abspath(__file__))
         self.stats_file = os.path.join(module_dir, 'api_key_usage.json')
         self.lock_file = self.stats_file + '.lock'
-        self.lock = FileLock(self.lock_file, timeout=10)
+        # 增加超时以防高并发场景下的锁等待
+        self.lock = FileLock(self.lock_file, timeout=20)
         self._initialize_stats()
 
     def _initialize_stats(self):
@@ -54,44 +53,73 @@ class ApiKeyManager:
                 with open(self.stats_file, 'w') as f:
                     json.dump(initial_stats, f, indent=4)
 
-    def get_ordered_keys(self, model_name: str):
-        with self.lock:
-            try:
-                with open(self.stats_file, 'r') as f:
-                    stats = json.load(f)
-                if stats and isinstance(next(iter(stats.values()), None), int):
-                    raise TypeError("Old stats format detected. Resetting.")
-            except (FileNotFoundError, json.JSONDecodeError, TypeError) as e:
-                print(f"[WARN] Failed to read or parse stats file ({e}), re-initializing.")
-                stats = {key: {} for key in self.api_key_map.keys()}
+    def _read_stats_safely(self):
+        """内部辅助函数，用于在锁内安全地读取和验证统计数据。"""
+        try:
+            with open(self.stats_file, 'r') as f:
+                stats = json.load(f)
+            # 兼容旧格式或修复损坏的数据
+            if stats and isinstance(next(iter(stats.values()), None), int):
+                raise TypeError("Old stats format detected. Resetting.")
 
+            # 确保所有当前的key都存在于统计文件中
             for key in self.api_key_map.keys():
                 if key not in stats or not isinstance(stats[key], dict):
                     stats[key] = {}
+            return stats
+        except (FileNotFoundError, json.JSONDecodeError, TypeError) as e:
+            print(f"[WARN] 无法读取或解析统计文件 ({e})，正在重新初始化。")
+            return {key: {} for key in self.api_key_map.keys()}
 
-        sorted_keys = sorted(stats.keys(), key=lambda k: stats.get(k, {}).get(model_name, 0))
-        print(f"[INFO] 针对模型 '{model_name}'，API 密钥将按以下动态顺序尝试: {sorted_keys}")
+    def checkout_key(self, model_name: str) -> str | None:
+        """
+        原子性地获取并标记一个使用次数最少的 Key。这是解决并发问题的核心。
+        """
+        with self.lock:
+            stats = self._read_stats_safely()
+
+            # 1. 找到使用次数最少的 key (仅在当前配置的 api_key_map 中寻找)
+            valid_keys = [k for k in self.api_key_map.keys()]
+            if not valid_keys:
+                return None
+
+            selected_key = min(valid_keys, key=lambda k: stats.get(k, {}).get(model_name, 0))
+
+            # 2. 立即增加其使用次数
+            stats[selected_key][model_name] = stats.get(selected_key, {}).get(model_name, 0) + 1
+
+            # 3. 写回文件
+            with open(self.stats_file, 'w') as f:
+                json.dump(stats, f, indent=4)
+
+            print(
+                f"[INFO] 检出 Key: '{selected_key}' 用于模型 '{model_name}'。新计数: {stats[selected_key][model_name]}. 时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+            # 4. 返回被选中的 key
+            return selected_key
+
+    def get_ordered_keys(self, model_name: str):
+        """
+        获取一个基于当前使用计数的有序列表。
+        注意：此方法本身不是为并发选择key而设计的，主要用于非并发场景或调试。
+        """
+        with self.lock:
+            stats = self._read_stats_safely()
+
+        # 仅对存在于当前配置中的 key 进行排序
+        sorted_keys = sorted(
+            [k for k in self.api_key_map.keys()],
+            key=lambda k: stats.get(k, {}).get(model_name, 0)
+        )
+        print(f"[INFO] 针对模型 '{model_name}'，API 密钥当前的使用顺序 (仅供参考): {sorted_keys}")
         return sorted_keys
 
     def record_success(self, key_name: str, model_name: str):
-        with self.lock:
-            try:
-                with open(self.stats_file, 'r') as f:
-                    stats = json.load(f)
-                if stats and isinstance(next(iter(stats.values()), None), int):
-                    raise TypeError("Old stats format detected. Resetting.")
-            except (FileNotFoundError, json.JSONDecodeError, TypeError) as e:
-                print(f"[WARN] Failed to read or parse stats file ({e}), re-initializing.")
-                stats = {key: {} for key in self.api_key_map.keys()}
-
-            if key_name not in stats or not isinstance(stats.get(key_name), dict):
-                stats[key_name] = {}
-
-            stats[key_name][model_name] = stats[key_name].get(model_name, 0) + 1
-
-            with open(self.stats_file, 'w') as f:
-                json.dump(stats, f, indent=4)
-            print(f"[INFO] 密钥 '{key_name}' 模型 '{model_name}' 使用次数已更新为: {stats[key_name][model_name]} 当前时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}")
+        """
+        在新的 checkout 模式下，此方法是多余的，因为计数已在检出时增加。
+        保留此方法以兼容旧代码，但它不执行任何操作。
+        """
+        pass  # 在 checkout 模式下，计数在检出时完成。
 
 
 API_KEY_MAP = build_api_key_map()
@@ -135,7 +163,9 @@ def build_generate_content_config(model_name: str | None) -> types.GenerateConte
         safety_settings=safety_settings
     )
 
-def safe_generate_content(client: genai.Client, model: str, contents, config: types.GenerateContentConfig, timeout: int | None = None):
+
+def safe_generate_content(client: genai.Client, model: str, contents, config: types.GenerateContentConfig,
+                          timeout: int | None = None):
     """
     统一模型调用，兼容部分 SDK 版本不接受 timeout 的情况。
     """
@@ -175,24 +205,33 @@ def with_proxy(func):
                 del os.environ['HTTP_PROXY']
             if 'HTTPS_PROXY' in os.environ:
                 del os.environ['HTTPS_PROXY']
+
     return wrapper
 
 
 # ========== 业务函数（无兼容层，保持原功能） ==========
 
-
 @with_proxy
 def get_llm_content_gemini_flash_video(
-    prompt: str = '视频中的内容是什么',
-    video_path: str = 'test.mp4',
-    model_name: str = "gemini-flash-latest",
-    max_attempts: int = 10
+        prompt: str = '视频中的内容是什么',
+        video_path: str = 'test.mp4',
+        model_name: str = "gemini-flash-latest",
+        max_attempts: int = 10
 ) -> str:
     last_error = None
-    ordered_keys = api_key_manager.get_ordered_keys(model_name=model_name)
 
-    for key_name in ordered_keys[:max_attempts]:
+    # 尝试次数不能超过可用 key 的数量
+    num_available_keys = len(API_KEY_MAP)
+    attempts = min(max_attempts, num_available_keys)
+
+    for attempt in range(attempts):
+        key_name = api_key_manager.checkout_key(model_name=model_name)
+        if not key_name:
+            print("[ERROR] 无法检出任何 API Key，停止尝试。")
+            break
+
         api_key = API_KEY_MAP.get(key_name)
+        # 这个检查理论上多余，因为 checkout_key 基于 API_KEY_MAP，但作为安全措施保留
         if not api_key:
             continue
 
@@ -202,9 +241,10 @@ def get_llm_content_gemini_flash_video(
 
         video_file = None
         try:
-            print(f"[INFO] 使用 API Key “{key_name}” prompt length: {len(prompt)} 上传视频… {model_name}， {video_path}")
-            # 保持原行为：调用前先记一次成功（影响排序）
-            api_key_manager.record_success(key_name, model_name=model_name)
+            # 日志更新以反映新的尝试逻辑
+            print(
+                f"[INFO] 第 {attempt + 1}/{attempts} 次尝试。使用 Key “{key_name}” prompt length: {len(prompt)} 上传视频… {model_name}， {video_path}")
+            # 不再需要手动调用 record_success
 
             video_file = client.files.upload(file=video_path)
             video_file = wait_until_file_ready(client, video_file, poll_interval=10)
@@ -220,14 +260,16 @@ def get_llm_content_gemini_flash_video(
             if not response.text:
                 print(f"[WARN] 模型返回了空响应{response.prompt_feedback} {video_path}")
                 return response.prompt_feedback
+            # 成功则直接返回
             return response.text
         except Exception as e:
-            if 'overloaded' in str(e) or  'An internal error has occurred' in str(e):
+            if 'overloaded' in str(e) or 'An internal error has occurred' in str(e):
                 last_error = e
                 print(f"[WARN] Key “{key_name}” 调用失败：{e}，切换下一个…{video_path}")
+                # 继续循环以检出下一个key
             else:
                 print(f"[ERROR] Key “{key_name}” 调用失败：{e}，停止尝试。 {video_path}")
-                raise e
+                raise e  # 对于不可恢复的错误，直接抛出
         finally:
             if video_file is not None:
                 try:
@@ -236,15 +278,22 @@ def get_llm_content_gemini_flash_video(
                 except Exception as de:
                     print(f"[ERROR] 删除文件 {video_file.name} 失败：{de}")
 
-    return f"所有 API Key 均尝试失败 ({max_attempts}次)。最后一次错误：{last_error} {video_path}"
+    return f"所有 API Key 均尝试失败 ({attempts}次)。最后一次错误：{last_error} {video_path}"
 
 
 def get_llm_content_gemini2flash(prompt: str = '你好，Gemini！请介绍一下你自己。') -> str:
     last_error = None
     model_name = "gemini-flash-latest"
-    ordered_keys = api_key_manager.get_ordered_keys(model_name=model_name)
     last_key_name = None
-    for key_name in ordered_keys:
+
+    # 尝试所有可用的key
+    num_available_keys = len(API_KEY_MAP)
+    for attempt in range(num_available_keys):
+        key_name = api_key_manager.checkout_key(model_name=model_name)
+        if not key_name:
+            print("[ERROR] 无法检出任何 API Key，停止尝试。")
+            break
+
         last_key_name = key_name
         api_key = API_KEY_MAP.get(key_name)
         if not api_key:
@@ -256,10 +305,10 @@ def get_llm_content_gemini2flash(prompt: str = '你好，Gemini！请介绍一�
             config = build_generate_content_config(model_name)
             response = safe_generate_content(client, model_name, contents, config, timeout=None)
 
-            api_key_manager.record_success(key_name, model_name=model_name)
+            # 不再需要手动调用 record_success
             return response.text
         except Exception as e:
-            if 'overloaded' in str(e) or  'An internal error has occurred' in str(e):
+            if 'overloaded' in str(e) or 'An internal error has occurred' in str(e):
                 last_error = e
                 print(f"[WARN] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 正在尝试下一个...")
                 continue
@@ -273,15 +322,20 @@ def get_llm_content_sub(prompt: str = '你好，Gemini！请介绍一下你自�
                         model_name: str = "gemini-flash-latest") -> str:
     print(f"[INFO] 使用模型: {model_name}")
     last_error = None
-    ordered_keys = api_key_manager.get_ordered_keys(model_name=model_name)
-    for key_name in ordered_keys:
+
+    # 尝试所有可用的key
+    num_available_keys = len(API_KEY_MAP)
+    for attempt in range(num_available_keys):
+        key_name = api_key_manager.checkout_key(model_name=model_name)
+        if not key_name:
+            print("[ERROR] 无法检出任何 API Key，停止尝试。")
+            break
+
         api_key = API_KEY_MAP.get(key_name)
         if not api_key:
             continue
         try:
-            # 保持原始行为：先记成功再调用
-            api_key_manager.record_success(key_name, model_name=model_name)
-
+            # 不再需要手动调用 record_success
             print(f"[INFO] 正在使用名为 '{key_name}' 的 API Key... prompt length: {len(prompt)}")
             client = genai.Client(api_key=api_key)
             contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
@@ -294,7 +348,7 @@ def get_llm_content_sub(prompt: str = '你好，Gemini！请介绍一下你自�
                 return response.prompt_feedback
             return text
         except Exception as e:
-            if 'overloaded' in str(e) or  'An internal error has occurred' in str(e):
+            if 'overloaded' in str(e) or 'An internal error has occurred' in str(e):
                 print(f"[WARN] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 正在尝试下一个... {e}")
                 last_error = e
                 continue
@@ -326,10 +380,12 @@ def get_llm_content(prompt: str = '你好，Gemini！请介绍一下你自己。
 def valid_all_api_keys():
     """
     测试所有 API Key 的有效性。
+    此函数按顺序测试，不涉及并发，因此使用 get_ordered_keys 是合适的。
     """
     failed_key_list = []
     success_key_list = []
     test_model = "gemini-flash-latest"
+    # 这里使用 get_ordered_keys 保持原样，以便按使用频率顺序测试
     ordered_keys = api_key_manager.get_ordered_keys(model_name=test_model)
     results = {}
     for key_name in ordered_keys:
