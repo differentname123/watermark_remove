@@ -1174,8 +1174,7 @@ def auto_upload() -> None:
     skippable_candidates: List[Dict[str, Any]] = []
     already_upload_users = []
     # --- 变量新增结束 ---
-    user_uploads_info = analyze_user_uploads_by_day(upload_log_global, metadata_cache)
-    save_json(USER_UPLOADS_INFO_FILE, user_uploads_info)
+
     this_time_upload_count = 0
 
     remote_upload_dict = {}
@@ -1190,6 +1189,13 @@ def auto_upload() -> None:
         recent_videos = [v for v in user_videos if v.get("created") and v["created"] >= today_start]
         remote_upload_count = len(recent_videos)
         remote_upload_dict[userName] = remote_upload_count
+
+    user_uploads_info = analyze_user_uploads_by_day(upload_log_global, metadata_cache)
+    for user, count in remote_upload_dict.items():
+        if user in user_uploads_info:
+            user_uploads_info[user]['remote_upload_count'] = count
+
+    save_json(USER_UPLOADS_INFO_FILE, user_uploads_info)
 
     # ▼▼▼【核心修改点 2：遍历经过优先级排序的列表】▼▼▼
     for key, value in prioritized_task_list:
