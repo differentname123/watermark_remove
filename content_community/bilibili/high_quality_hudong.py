@@ -1335,7 +1335,11 @@ def pick_commenters(commenter_map, usage_path, n=3):
     selected_commenter = [commenter_map[uid] for uid in selected if uid in commenter_map]
     return selected_commenter
 
+
 def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
+    # --- 新增：为线程等待定义统一的超时时间 (单位：秒) ---
+    THREAD_JOIN_TIMEOUT = 900  # 15分钟
+
     if not today:
         today = datetime.date.today().isoformat()
     if hudong_info.get('last_processed_date'):
@@ -1408,56 +1412,8 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     danmu_used_list = hudong_info.get('danmu_used', [])
     danmu_used_list.extend(exist_danmu_text)
 
-    t, stop_event, result = start_send_danmu_background(danmu_list, other_commenters, bvid, max_success_other_danmu_count)
-
-    # random.shuffle(other_commenters)  # 在循环前打乱顺序
-    # senders = deque(other_commenters)
-    # for detail_danmu in danmu_list:
-    #     danmaku_time_ms = int(detail_danmu['建议时间戳'] * 1000)
-    #     danmu_text_list = detail_danmu.get('推荐弹幕内容', [])
-    #
-    #     if success_other_danmu_count >= max_success_other_danmu_count:
-    #         print("已达到最大成功弹幕数，停止处理。", success_other_danmu_count)
-    #         break
-    #
-    #     for danmu_text in danmu_text_list:
-    #         if not danmu_text or danmu_text in danmu_used_list:
-    #             continue
-    #
-    #         # 取一个发送者尝试（取出队首）
-    #         sender = senders.popleft()
-    #
-    #         danmaku_sent = sender.send_danmaku(
-    #             bvid=bvid,
-    #             msg=danmu_text,
-    #             progress=danmaku_time_ms,
-    #             is_up=False
-    #         )
-    #
-    #         # 无论成功还是失败都把该发送者放到队尾，实现轮转
-    #         senders.append(sender)
-    #
-    #         if danmaku_sent:
-    #             danmu_used_list.append(danmu_text)
-    #             success_other_danmu_count += 1
-    #             print(
-    #                 f"{success_other_danmu_count} 弹幕发送流程成功完成！ {danmu_text} BVID: {bvid} name {sender.all_params['name']}")
-    #             # 成功后可以选择跳出当前 detail 的循环（如果每个 detail 只需一条），
-    #             # 或者继续让下一个发送者发送下一条（取决于你的业务）
-    #             # 如果你希望每个 detail 只发一条，取消下面注释：
-    #             # break
-    #         else:
-    #             print(f"弹幕发送失败：{danmu_text} name {sender.all_params['name']}, 等待后继续...")
-    #             time.sleep(random.uniform(5, 10))
-    #         time.sleep(random.uniform(1, 3))
-    #
-    #         if success_other_danmu_count >= max_success_other_danmu_count:
-    #             break
-    #
-    #     # 可选短暂随机延时，减少速率突发
-    #     # time.sleep(random.uniform(0.5, 2.0))
-    #     # time.sleep(random.uniform(5, 15))
-    # hudong_info['danmu_used'] = danmu_used_list
+    t, stop_event, result = start_send_danmu_background(danmu_list, other_commenters, bvid,
+                                                        max_success_other_danmu_count)
 
     max_success_comment_count = 5
     if uid in ['3632307990694238', '3632304865937878', '3632309148322699']:
@@ -1466,8 +1422,8 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     # comment_list = comment_list[:3]
     comment_used_list = hudong_info.get('comment_used', [])
     comment_used_list.extend(exist_comment_text)
-    comment_commenters = pick_commenters(commenter_map, '../../LLM/TikTokDownloader/back_up/commenter_usage.json', n=max_success_comment_count)
-
+    comment_commenters = pick_commenters(commenter_map, '../../LLM/TikTokDownloader/back_up/commenter_usage.json',
+                                         n=max_success_comment_count)
 
     post_comments_once(
         commenter_list=comment_commenters,
@@ -1486,15 +1442,31 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     else:
         hudong_info['last_processed_date_count'] = 1
     hudong_info['last_processed_date'] = today
+
+    # --- 修改点 1: 为主人弹幕线程的 join 增加超时 ---
     if danmaku_thread and danmaku_thread.is_alive():
-        print("现在开始等待弹幕发送线程执行完毕...")
-        danmaku_thread.join()  # 阻塞主线程，直到danmaku_thread执行完成
-        print("弹幕发送线程已执行完毕，主程序现在可以安全退出了。")
+        print("现在开始等待主人弹幕发送线程执行完毕...")
+        danmaku_thread.join(timeout=THREAD_JOIN_TIMEOUT)  # 增加超时
+        if danmaku_thread.is_alive():
+            # 如果线程在超时后仍然存活，打印警告并继续执行
+            print(f"警告: 主人弹幕发送线程在 {THREAD_JOIN_TIMEOUT} 秒后仍未结束，可能已卡死。将继续执行。")
+        else:
+            print("主人弹幕发送线程已成功执行完毕。")
     else:
-        print("弹幕发送任务未启动或已执行完毕。")
+        print("主人弹幕发送任务未启动或已执行完毕。")
+
     hudong_info['owner_danmu_used'] = owner_danmu_used_list
 
-    t.join()  # 如果线程是 daemon=True，程序退出时线程也会被终止；join 会等待完成
+    # --- 修改点 2: 为其他用户弹幕线程的 join 增加超时 ---
+    print("等待其他用户弹幕发送线程执行完毕...")
+    t.join(timeout=THREAD_JOIN_TIMEOUT)  # 增加超时
+    if t.is_alive():
+        # 如果线程超时后仍然存活，打印警告，并尝试发送停止信号
+        print(f"警告: 其他用户弹幕发送线程在 {THREAD_JOIN_TIMEOUT} 秒后仍未结束，可能已卡死。将尝试发送停止信号并继续。")
+        stop_event.set()
+    else:
+        print("其他用户弹幕发送线程已成功执行完毕。")
+
     hudong_info['danmu_used'] = result.sent_texts
 
     return hudong_info, False
@@ -1588,7 +1560,7 @@ def fun():
             name = config_map[uid].get('name', uid)
             # if uid in ['3546965562362625']:
             #     continue
-            if name in ['yan' ,'hao', 'shuijun1', 'shuijun2', 'shuijun3', 'xiaodan', 'xiaoxiaosu']:
+            if name in ['mama' ,'hao', 'shuijun1', 'shuijun2', 'shuijun3', 'xiaodan', 'xiaoxiaosu']:
                 continue
 
             if NEED_UPDATE_SIGN:
