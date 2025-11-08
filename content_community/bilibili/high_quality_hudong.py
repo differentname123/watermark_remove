@@ -7,7 +7,7 @@ import traceback
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from types import SimpleNamespace
-
+from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED
 import requests
 import time
 import logging
@@ -1087,120 +1087,134 @@ def post_comments_once(commenter_list,
                        max_workers=5,
                        jitter=(0.4, 1.0)):
     """
-    最终版：放弃 with 语句，手动管理线程池和总超时，防止僵尸线程阻塞主流程。
+    最终修订版V3：
+    1. 使用 futures.wait() 实现可靠的全局超时。
+    2. 修复了 comment_used_list 的同步BUG，只记录真正成功的评论。
+    3. 将 jitter 延迟放回 worker 线程以实现并发延迟。
+    4. 确保返回的 success_count 是在超时前确定的值。
     """
-    # --- 前面的逻辑保持完全不变 ---
+    # --- 1. 准备工作：分配评论任务 (逻辑保持不变) ---
     random.shuffle(commenter_list)
     selected = commenter_list[:max_success_comment_count]
+
+    # 锁和共享状态
     used_lock = threading.Lock()
-    used = set(comment_used_list)
+    successful_texts_lock = threading.Lock()
+    used_texts = set(comment_used_list)
+    successful_texts = [] # 只存储本次调用中成功发送的评论文本
+
     assignments = []
     for c in selected:
         assigned = None
+        # 从 comment_list 中找到一条未被使用的评论
         for detail in comment_list:
-            text = detail[0] if detail else ''
-            if not text or len(text) <= 1: continue
+            text = detail[0] if detail and len(detail) > 0 else None
+            if not text or len(text) <= 1:
+                continue
+
             with used_lock:
-                if text in used: continue
-                used.add(text)
-            assigned = detail
-            break
+                if text in used_texts:
+                    continue
+                # 预先锁定，防止被其他任务分配
+                used_texts.add(text)
+                assigned = detail
+                break # 找到一条就跳出内层循环
+
         if assigned:
             assignments.append((c, assigned))
         else:
-            break
+            break # 如果找不到可用的评论了，就停止分配
 
     if not assignments:
         print("没有可分配的评论或 commenter，退出。")
         return 0
 
-    success_count = 0
-    count_lock = threading.Lock()
-
+    # --- 2. Worker 函数定义 (修订版) ---
     def worker(pair):
-        # worker 函数逻辑保持不变
-        nonlocal success_count
-        commenter, detail = pair
-        text, image_path = detail[0], (detail[2] if len(detail) > 2 else None)
+        # 4. jitter放回worker，实现并发延迟
         time.sleep(random.uniform(*jitter))
-        rpid = None
+
+        commenter, detail = pair
+        text = detail[0]
+        image_path = detail[2] if len(detail) > 2 else None
+
         try:
+            # 执行评论操作
             if image_path and path_exists(image_path):
-                rpid = commenter.post_comment(bvid, text, 1, like_video=True, image_path=image_path,
-                                              forward_to_dynamic=False)
+                rpid = commenter.post_comment(bvid, text, 1, like_video=True, image_path=image_path, forward_to_dynamic=False)
             else:
                 rpid = commenter.post_comment(bvid, text, 1, like_video=True, forward_to_dynamic=False)
+
+            if rpid:
+                # 3. 只有成功时，才将文本记录到 successful_texts
+                with successful_texts_lock:
+                    successful_texts.append(text)
+                name = commenter.all_params.get('name', 'unknown')
+                print(f"[评论成功] by {name} rpid:{rpid}: {text}")
+                return True # 返回成功状态
+            else:
+                print(f"[评论失败] by {getattr(commenter, 'name', 'unknown')} (接口返回): {text}")
+                return False # 返回失败状态
+
         except Exception as e:
+            print(f"[评论异常] by {getattr(commenter, 'name', 'unknown')}: {text} -> {e}")
+            return False # 异常也视为失败
+        finally:
+            # 无论成功、失败还是异常，都要从“预锁定”集合中释放
+            # 因为只有 successful_texts 里的才算真正“已使用”
             with used_lock:
-                if text in used: used.remove(text)
-            print(f"异常发送: {text} -> {e}")
-            raise
-
-        if rpid:
-            with count_lock:
-                success_count += 1
-            with used_lock:
-                if text not in comment_used_list: comment_used_list.append(text)
-            name = commenter.all_params.get('name', 'unknown')
-            print(f"[评论成功个数 {success_count}]: {text} by {name} rpid:{rpid}")
-        else:
-            with used_lock:
-                if text in used: used.remove(text)
-            print(f"失败: {text} by {getattr(commenter, 'name', 'unknown')} (接口返回)")
-        return rpid
+                if text in used_texts:
+                    used_texts.remove(text)
 
     # ==========================================================
-    # ==================== 核心修改区域 =======================
+    # ==================== 核心执行区域 =======================
     # ==========================================================
 
-    # 1. 定义总超时和单个任务超时
     TOTAL_TIMEOUT = 300  # 整个评论环节最多执行5分钟
-    SINGLE_TASK_TIMEOUT = 90  # 单个任务超时90秒
-
-    # 2. 手动创建线程池，不使用 with 语句
     executor = ThreadPoolExecutor(max_workers=min(max_workers, len(assignments)))
 
+    # 将任务和原始信息关联起来
+    future_to_info = {executor.submit(worker, a): a[1][0] for a in assignments}
+
+    # 局部变量，用于统计在超时前确认的成功数
+    confirmed_success_count = 0
+
     try:
-        future_to_info = {
-            executor.submit(worker, a): {
-                "name": a[0].all_params.get('name', 'unknown'),
-                "text": a[1][0]
-            } for a in assignments
-        }
+        done, not_done = wait(future_to_info.keys(), timeout=TOTAL_TIMEOUT, return_when=ALL_COMPLETED)
 
-        # 3. 使用带总超时的 as_completed 循环
-        # 注意：as_completed 本身的 timeout 是指等待下一个任务完成的超时时间，
-        # 我们在这里结合外部计时来实现总超时。
-        start_time = time.time()
-        for future in as_completed(future_to_info):
-            # 检查总超时
-            if time.time() - start_time > TOTAL_TIMEOUT:
-                print(f"[评论总超时] 评论环节执行超过 {TOTAL_TIMEOUT} 秒，强制结束。")
-                break
-
-            info = future_to_info[future]
+        # 处理已完成的任务
+        for future in done:
             try:
-                # 仍然为每个任务获取结果设置单独的超时
-                future.result(timeout=SINGLE_TASK_TIMEOUT)
-            except TimeoutError:
-                print(f"[评论单任务超时] 用户 '{info['name']}' 任务超时 {SINGLE_TASK_TIMEOUT} 秒。")
-                text_to_release = info['text']
+                # 获取worker的返回结果 (True/False)
+                if future.result():
+                    confirmed_success_count += 1
+            except Exception:
+                # worker内部的异常已经被捕获并返回False，这里只是为了代码健壮性
+                pass
+
+        # 处理未完成/超时的任务
+        if not_done:
+            print(f"[评论总超时] {len(not_done)} 个任务在 {TOTAL_TIMEOUT} 秒后仍未完成，将被放弃。")
+            for future in not_done:
+                text = future_to_info[future]
+                print(f"  - 超时任务的评论: '{text[:30]}...'")
+                # 【重要】超时任务也需要从“预锁定”集合中释放，worker 的 finally 无法执行
                 with used_lock:
-                    if text_to_release in used: used.remove(text_to_release)
-            except Exception as exc:
-                print(f"[评论任务异常] 用户 '{info['name']}' 任务失败: {exc}")
+                    if text in used_texts:
+                        used_texts.remove(text)
 
     finally:
-        # 4. 手动关闭线程池。
-        # 使用 wait=False，主线程不会在这里等待僵尸线程，而是立即继续执行。
-        # 这是防止被僵尸线程卡住的关键！
-        print("评论任务分发完成，正在关闭线程池...")
+        print(f"在超时前确认成功的评论数: {confirmed_success_count}")
+        # 将本次调用中所有确认成功的评论文本，同步回原始的list中
+        # 过滤掉可能重复的项
+        new_successes = [text for text in successful_texts if text not in comment_used_list]
+        comment_used_list.extend(new_successes)
+
+        # 立即关闭线程池，不等待僵尸线程
         executor.shutdown(wait=False)
         print("线程池已发出关闭信号，主流程继续。")
 
-    # ==========================================================
-
-    return success_count
+    return confirmed_success_count
 
 def send_danmaku_thread_function(owner_commenter, owner_danmu_list, max_success_owner_danmu_count, bvid,
                                  owner_danmu_used_list):
