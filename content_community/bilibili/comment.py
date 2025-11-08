@@ -159,6 +159,8 @@ class BilibiliCommenter:
         :param csrf_token: Bilibili 的 CSRF Token (即 bili_jct 的值)。
         """
         self.session = requests.Session()
+        self.session.timeout = (10, 20)
+
         self.csrf_token = csrf_token
         self.total_cookie = total_cookie
         self.all_params = all_params

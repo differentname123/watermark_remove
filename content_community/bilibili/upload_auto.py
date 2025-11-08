@@ -90,7 +90,7 @@ accounts: Dict[str, str] = {
     "yiyi": "yiyi",
     "xiaodan": "xiaodan",
     "xiaoxue": "xiaoxue",
-    "dahao": "dahao",
+    # "dahao": "dahao",
     "xiaocai": "xiaocai",
     "shun": "shun",
 }

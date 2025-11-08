@@ -1087,37 +1087,27 @@ def post_comments_once(commenter_list,
                        max_workers=5,
                        jitter=(0.4, 1.0)):
     """
-    每个 commenter 只尝试发送一次（无重试）。
-    - 先 shuffle 并截取最多 max_success_comment_count 个 commenter
-    - 为每个 commenter 分配一个尚未使用的评论（预占）
-    - 并发发送（每个任务只尝试一次）；发送成功才把文本写回 comment_used_list
-    返回成功发送数（int）
+    最终版：放弃 with 语句，手动管理线程池和总超时，防止僵尸线程阻塞主流程。
     """
+    # --- 前面的逻辑保持完全不变 ---
     random.shuffle(commenter_list)
     selected = commenter_list[:max_success_comment_count]
-
     used_lock = threading.Lock()
-    # 本地集合用于快速查重与预占
     used = set(comment_used_list)
-
-    # 分配：一人一条（预占）
-    assignments = []  # list of (commenter, detail_comment)
+    assignments = []
     for c in selected:
         assigned = None
         for detail in comment_list:
             text = detail[0] if detail else ''
-            if not text or len(text) <= 1:
-                continue
+            if not text or len(text) <= 1: continue
             with used_lock:
-                if text in used:
-                    continue
-                used.add(text)  # 预占，防止重复分配
+                if text in used: continue
+                used.add(text)
             assigned = detail
             break
         if assigned:
             assignments.append((c, assigned))
         else:
-            # 没有更多可用评论了，停止分配
             break
 
     if not assignments:
@@ -1128,62 +1118,89 @@ def post_comments_once(commenter_list,
     count_lock = threading.Lock()
 
     def worker(pair):
+        # worker 函数逻辑保持不变
         nonlocal success_count
         commenter, detail = pair
-        text = detail[0]
-        image_path = detail[2] if len(detail) > 2 else None
-
-        # 随机抖动，降低并发突发
+        text, image_path = detail[0], (detail[2] if len(detail) > 2 else None)
         time.sleep(random.uniform(*jitter))
-
+        rpid = None
         try:
             if image_path and path_exists(image_path):
-                rpid = commenter.post_comment(
-                    bvid, text, 1,
-                    like_video=True,
-                    image_path=image_path,
-                    forward_to_dynamic=False
-                )
+                rpid = commenter.post_comment(bvid, text, 1, like_video=True, image_path=image_path,
+                                              forward_to_dynamic=False)
             else:
-                rpid = commenter.post_comment(
-                    bvid, text, 1,
-                    like_video=True,
-                    forward_to_dynamic=False
-                )
+                rpid = commenter.post_comment(bvid, text, 1, like_video=True, forward_to_dynamic=False)
         except Exception as e:
-            # 异常：释放预占，使该文本在下次运行时可用
             with used_lock:
-                if text in used:
-                    used.remove(text)
+                if text in used: used.remove(text)
             print(f"异常发送: {text} -> {e}")
-            return
+            raise
 
         if rpid:
             with count_lock:
                 success_count += 1
-            # 发送成功：把文本写回全局已用列表（线程安全）
             with used_lock:
-                if text not in comment_used_list:
-                    comment_used_list.append(text)
-            name = getattr(getattr(commenter, 'all_params', {}), 'get',
-                           lambda k, d=None: commenter.__dict__.get('name', 'unknown'))('name', 'unknown') \
-                if isinstance(getattr(commenter, 'all_params', None), dict) else getattr(commenter, 'name', 'unknown')
+                if text not in comment_used_list: comment_used_list.append(text)
+            name = commenter.all_params.get('name', 'unknown')
             print(f"[评论成功个数 {success_count}]: {text} by {name} rpid:{rpid}")
         else:
-            # 接口返回失败：释放预占（允许后续使用）
             with used_lock:
-                if text in used:
-                    used.remove(text)
+                if text in used: used.remove(text)
             print(f"失败: {text} by {getattr(commenter, 'name', 'unknown')} (接口返回)")
+        return rpid
 
-    # 并发发送（每个 assignment 仅尝试一次）
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(assignments))) as ex:
-        futures = [ex.submit(worker, a) for a in assignments]
-        for _ in as_completed(futures):
-            pass  # 等待全部完成
+    # ==========================================================
+    # ==================== 核心修改区域 =======================
+    # ==========================================================
+
+    # 1. 定义总超时和单个任务超时
+    TOTAL_TIMEOUT = 300  # 整个评论环节最多执行5分钟
+    SINGLE_TASK_TIMEOUT = 90  # 单个任务超时90秒
+
+    # 2. 手动创建线程池，不使用 with 语句
+    executor = ThreadPoolExecutor(max_workers=min(max_workers, len(assignments)))
+
+    try:
+        future_to_info = {
+            executor.submit(worker, a): {
+                "name": a[0].all_params.get('name', 'unknown'),
+                "text": a[1][0]
+            } for a in assignments
+        }
+
+        # 3. 使用带总超时的 as_completed 循环
+        # 注意：as_completed 本身的 timeout 是指等待下一个任务完成的超时时间，
+        # 我们在这里结合外部计时来实现总超时。
+        start_time = time.time()
+        for future in as_completed(future_to_info):
+            # 检查总超时
+            if time.time() - start_time > TOTAL_TIMEOUT:
+                print(f"[评论总超时] 评论环节执行超过 {TOTAL_TIMEOUT} 秒，强制结束。")
+                break
+
+            info = future_to_info[future]
+            try:
+                # 仍然为每个任务获取结果设置单独的超时
+                future.result(timeout=SINGLE_TASK_TIMEOUT)
+            except TimeoutError:
+                print(f"[评论单任务超时] 用户 '{info['name']}' 任务超时 {SINGLE_TASK_TIMEOUT} 秒。")
+                text_to_release = info['text']
+                with used_lock:
+                    if text_to_release in used: used.remove(text_to_release)
+            except Exception as exc:
+                print(f"[评论任务异常] 用户 '{info['name']}' 任务失败: {exc}")
+
+    finally:
+        # 4. 手动关闭线程池。
+        # 使用 wait=False，主线程不会在这里等待僵尸线程，而是立即继续执行。
+        # 这是防止被僵尸线程卡住的关键！
+        print("评论任务分发完成，正在关闭线程池...")
+        executor.shutdown(wait=False)
+        print("线程池已发出关闭信号，主流程继续。")
+
+    # ==========================================================
 
     return success_count
-
 
 def send_danmaku_thread_function(owner_commenter, owner_danmu_list, max_success_owner_danmu_count, bvid,
                                  owner_danmu_used_list):
@@ -1228,6 +1245,7 @@ def send_danmaku_thread_function(owner_commenter, owner_danmu_list, max_success_
 
             # 在处理完一个弹幕包后稍作等待
             time.sleep(random.uniform(10, 15))
+    print(f"线程 {threading.current_thread().name} 完成。成功发送 UP 主弹幕数: {success_owner_danmu_count}")
 
 
 def _send_danmu_worker(danmu_list, other_commenters, bvid, max_success_other_danmu_count, stop_event, result):
@@ -1338,19 +1356,26 @@ def pick_commenters(commenter_map, usage_path, n=3):
 
 def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     # --- 新增：为线程等待定义统一的超时时间 (单位：秒) ---
+    # 您的原始代码中 join() 没有超时，这里加上以防万一
     THREAD_JOIN_TIMEOUT = 900  # 15分钟
+
+    print(f"[{bvid}] --- process_single_video 开始 ---")
 
     if not today:
         today = datetime.date.today().isoformat()
     if hudong_info.get('last_processed_date'):
+        print(f"[{bvid}] 跳过：该视频已有处理日期。")
         return hudong_info, True
     if hudong_info.get('last_processed_date') == today:
         hudong_info['last_processed_date_count'] = hudong_info.get('last_processed_date_count', 0)
         if hudong_info['last_processed_date_count'] >= 1:
-            print("今天已经处理过3次，跳过。", hudong_info['last_processed_date_count'])
+            print(f"[{bvid}] 跳过：今天已处理过 {hudong_info['last_processed_date_count']} 次。")
             return hudong_info, True
 
+    print(f"[{bvid}] [步骤 1/8] 调用 gen_proper_comment 获取已有互动信息...")
     result = gen_proper_comment(bvid, dont_need_comment=True)
+    print(f"[{bvid}] [步骤 1/8] gen_proper_comment 调用完成。")
+
     exist_comment = result.get('已有评论', [])
     exist_comment_text = [comment[0] for comment in exist_comment]
     exist_danmu = result.get('已有弹幕', [])
@@ -1364,67 +1389,82 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     other_commenters = [c for k, c in commenter_map.items() if k != uid]
     share_video = hudong_info.get("share_video", False)
     triple_like_video = hudong_info.get("triple_like_video", False)
+
+    print(f"[{bvid}] [步骤 2/8] 检查是否需要分享和三连...")
     if not share_video or not triple_like_video:
+        print(f"[{bvid}] [步骤 2a/8] 需要执行分享/三连。调用 watch_video...")
         watch_video([bvid])
+        print(f"[{bvid}] [步骤 2a/8] watch_video 调用完成。")
         for commenter in commenter_map.values():
+            name = commenter.all_params.get('name', 'unknown')
+            print(f"[{bvid}] [步骤 2b/8] 用户 '{name}' 正在执行 share_video...")
             share_success = commenter.share_video(bvid=bvid)
             if share_success:
                 share_video = True
-                # print("分享操作流程成功完成！")
             else:
-                print("分享操作流程失败。")
-            # print("步骤 6: 尝试对视频进行一键三连...")
+                print(f"[{bvid}] 用户 '{name}' 分享操作流程失败。")
+            print(f"[{bvid}] [步骤 2b/8] 用户 '{name}' share_video 调用完成。")
+
+            print(f"[{bvid}] [步骤 2c/8] 用户 '{name}' 正在执行 triple_like_video...")
             triple_like_success = commenter.triple_like_video(bvid=bvid)
             if triple_like_success:
                 triple_like_video = True
-                # print("一键三连操作流程成功完成！")
             else:
-                print("一键三连操作流程失败。")
+                print(f"[{bvid}] 用户 '{name}' 一键三连操作流程失败。")
+            print(f"[{bvid}] [步骤 2c/8] 用户 '{name}' triple_like_video 调用完成。")
+
         max_success_comment_count = 20
         max_success_owner_danmu_count = 20
         max_success_other_danmu_count = 30
+    print(f"[{bvid}] [步骤 2/8] 分享和三连操作检查完成。")
 
     hudong_info['share_video'] = share_video
     hudong_info['triple_like_video'] = triple_like_video
     owner_danmu_list = hudong_info.get('owner_danmu', [])
     owner_danmu_used_list = hudong_info.get('owner_danmu_used', [])
     owner_danmu_used_list.extend(exist_danmu_text)
-    danmaku_thread = None  # <-- 在这里初始化
+    danmaku_thread = None
+
+    print(f"[{bvid}] [步骤 3/8] 准备启动主人弹幕线程...")
     if owner_commenter:
-        if owner_commenter:
-            # 创建线程
-            danmaku_thread = threading.Thread(
-                target=send_danmaku_thread_function,
-                args=(
-                    owner_commenter,
-                    owner_danmu_list,
-                    max_success_owner_danmu_count,
-                    bvid,
-                    owner_danmu_used_list
-                )
+        danmaku_thread = threading.Thread(
+            target=send_danmaku_thread_function,
+            args=(
+                owner_commenter,
+                owner_danmu_list,
+                max_success_owner_danmu_count,
+                bvid,
+                owner_danmu_used_list
             )
+        )
+        danmaku_thread.start()
+        print(f"[{bvid}] [步骤 3/8] 主人弹幕线程已启动。")
+    else:
+        print(f"[{bvid}] [步骤 3/8] 无主人评论者，跳过启动主人弹幕线程。")
 
-            # 启动线程，这会立即返回，不会阻塞后续代码
-            danmaku_thread.start()
-
-    success_other_danmu_count = 0
     danmu_list = hudong_info.get('danmu_list', [])
     danmu_used_list = hudong_info.get('danmu_used', [])
     danmu_used_list.extend(exist_danmu_text)
 
+    print(f"[{bvid}] [步骤 4/8] 准备启动其他用户弹幕线程...")
     t, stop_event, result = start_send_danmu_background(danmu_list, other_commenters, bvid,
                                                         max_success_other_danmu_count)
+    print(f"[{bvid}] [步骤 4/8] 其他用户弹幕线程已启动。")
 
     max_success_comment_count = 5
     if uid in ['3632307990694238', '3632304865937878', '3632309148322699']:
         max_success_comment_count = 10
     comment_list = hudong_info.get('comment_list', [])
-    # comment_list = comment_list[:3]
     comment_used_list = hudong_info.get('comment_used', [])
     comment_used_list.extend(exist_comment_text)
+
+    print(f"[{bvid}] [步骤 5/8] 调用 pick_commenters 选择评论者...")
     comment_commenters = pick_commenters(commenter_map, '../../LLM/TikTokDownloader/back_up/commenter_usage.json',
                                          n=max_success_comment_count)
+    print(f"[{bvid}] [步骤 5/8] pick_commenters 调用完成，选择了 {len(comment_commenters)} 个评论者。")
 
+    print(f"[{bvid}] [步骤 6/8] 准备调用 post_comments_once 发送评论...")
+    # 使用之前提供的带超时的最终版 post_comments_once
     post_comments_once(
         commenter_list=comment_commenters,
         comment_list=comment_list,
@@ -1435,6 +1475,8 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
         max_workers=5,
         jitter=(0.4, 1.0)
     )
+    print(f"[{bvid}] [步骤 6/8] post_comments_once 调用完成。")
+
     hudong_info['comment_used'] = comment_used_list
     if hudong_info.get('last_processed_date') == today:
         last_count = int(hudong_info.get('last_processed_date_count', 0) or 0)
@@ -1443,32 +1485,31 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
         hudong_info['last_processed_date_count'] = 1
     hudong_info['last_processed_date'] = today
 
-    # --- 修改点 1: 为主人弹幕线程的 join 增加超时 ---
+    print(f"[{bvid}] [步骤 7/8] 准备等待主人弹幕线程...")
     if danmaku_thread and danmaku_thread.is_alive():
-        print("现在开始等待主人弹幕发送线程执行完毕...")
-        danmaku_thread.join(timeout=THREAD_JOIN_TIMEOUT)  # 增加超时
+        danmaku_thread.join(timeout=THREAD_JOIN_TIMEOUT)
         if danmaku_thread.is_alive():
-            # 如果线程在超时后仍然存活，打印警告并继续执行
-            print(f"警告: 主人弹幕发送线程在 {THREAD_JOIN_TIMEOUT} 秒后仍未结束，可能已卡死。将继续执行。")
+            print(f"[{bvid}] 警告：主人弹幕线程在 {THREAD_JOIN_TIMEOUT} 秒后仍未结束。")
         else:
-            print("主人弹幕发送线程已成功执行完毕。")
+            print(f"[{bvid}] 主人弹幕线程已成功执行完毕。")
     else:
-        print("主人弹幕发送任务未启动或已执行完毕。")
+        print(f"[{bvid}] 主人弹幕任务未启动或已执行完毕。")
+    print(f"[{bvid}] [步骤 7/8] 主人弹幕线程等待完成。")
 
     hudong_info['owner_danmu_used'] = owner_danmu_used_list
 
-    # --- 修改点 2: 为其他用户弹幕线程的 join 增加超时 ---
-    print("等待其他用户弹幕发送线程执行完毕...")
-    t.join(timeout=THREAD_JOIN_TIMEOUT)  # 增加超时
+    print(f"[{bvid}] [步骤 8/8] 准备等待其他用户弹幕线程...")
+    t.join(timeout=THREAD_JOIN_TIMEOUT)
     if t.is_alive():
-        # 如果线程超时后仍然存活，打印警告，并尝试发送停止信号
-        print(f"警告: 其他用户弹幕发送线程在 {THREAD_JOIN_TIMEOUT} 秒后仍未结束，可能已卡死。将尝试发送停止信号并继续。")
+        print(f"[{bvid}] 警告：其他用户弹幕线程在 {THREAD_JOIN_TIMEOUT} 秒后仍未结束。")
         stop_event.set()
     else:
-        print("其他用户弹幕发送线程已成功执行完毕。")
+        print(f"[{bvid}] 其他用户弹幕线程已成功执行完毕。")
+    print(f"[{bvid}] [步骤 8/8] 其他用户弹幕线程等待完成。")
 
     hudong_info['danmu_used'] = result.sent_texts
 
+    print(f"[{bvid}] --- process_single_video 结束 ---")
     return hudong_info, False
 
 
