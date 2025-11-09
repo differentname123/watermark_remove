@@ -1089,7 +1089,7 @@ def auto_upload() -> None:
         print(f"❌ 无可用任务：{METADATA_FILE} 为空或不存在。")
         return
 
-    if not upload_log and (len(metadata_cache) - len(upload_log)) > 200:
+    if not upload_log and (len(metadata_cache) - len(upload_log)) > 400:
         print(f"❌ 无可用任务：{UPLOAD_LOG_FILE} 为空或不存在。")
         return
     user_processed_counts = defaultdict(int)
@@ -1450,7 +1450,7 @@ def auto_upload() -> None:
         for i, candidate in enumerate(skippable_candidates, 1):
             user_name = candidate['userName']
             exist_count = user_processed_counts.get(user_name, 0)
-            if exist_count >= 100:
+            if exist_count >= 50:
                 continue
             parent_key = candidate['parent_key']
             video_ids = candidate['video_id_list']
@@ -1484,6 +1484,8 @@ def auto_upload() -> None:
                 # --- 新增：打印当前进度 ---
                 # 注意：失败的任务不算入“跳过”计数，但仍然消耗了一次机会
                 print(f"   - 📊 进度: 已处理 {i} 个 (其中1个失败), 剩余 {remaining_count} 个待检查。")
+                if parent_key not in upload_log_global:
+                    upload_log_global[parent_key] = {}
                 upload_log_global[parent_key]["status"] = "error"
                 continue
 
