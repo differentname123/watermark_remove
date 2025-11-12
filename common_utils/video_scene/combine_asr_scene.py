@@ -1327,7 +1327,7 @@ def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_bo
     merge_videos_ffmpeg(need_merge_video_file_list, output_path=final_output_path)
     tags = final_video_script.get('tags', [])
     bgm_path = get_bgm_path(tags, logger)
-    rate = 1
+    rate = 0.5
     cut_type = final_video_script.get('cut_type', '未知')
     if has_overall_bgm and cut_type != 'all':
         print("有原始bgm，不增加bgm")
@@ -1960,14 +1960,14 @@ def gen_new_video(video_path, basename):
 
 
 if __name__ == '__main__':
-    video_path = '7517314467504475419_process.mp4'
+    video_path = '7459006816400198964.mp4'
     # process_and_crop_video(video_path)
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
     # compress_video_in_place(video_path)
 
-    # gen_new_video_script_robus(video_path)
-    gen_new_video_robus(video_path)
+    gen_new_video_script_robus(video_path)
+    # gen_new_video_robus(video_path)
     #
     # delete_all_mp4_in_dir(base_output_dir)
     # delete_files_except(base_output_dir)
