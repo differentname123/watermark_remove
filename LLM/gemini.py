@@ -122,8 +122,59 @@ class ApiKeyManager:
         pass  # 在 checkout 模式下，计数在检出时完成。
 
 
+# ==================== 新增：违禁视频管理器 ====================
+class ProhibitedVideoManager:
+    """
+    通过文件锁，实现一个进程安全的、持久化的违禁视频路径列表。
+    """
+
+    def __init__(self):
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+        self.list_file = os.path.join(module_dir, 'prohibited_videos.json')
+        self.lock_file = self.list_file + '.lock'
+        self.lock = FileLock(self.lock_file, timeout=20)
+        self._initialize_list()
+
+    def _initialize_list(self):
+        """如果列表文件不存在，则创建一个包含空列表的初始文件。"""
+        with self.lock:
+            if not os.path.exists(self.list_file) or os.path.getsize(self.list_file) == 0:
+                with open(self.list_file, 'w') as f:
+                    json.dump([], f)
+
+    def _read_list_safely(self) -> list:
+        """在锁内安全地读取视频列表，处理文件不存在或格式错误的情况。"""
+        try:
+            with open(self.list_file, 'r') as f:
+                data = json.load(f)
+                # 确保读取到的是一个列表
+                return data if isinstance(data, list) else []
+        except (FileNotFoundError, json.JSONDecodeError):
+            # 如果文件损坏或不存在，返回空列表
+            return []
+
+    def add_video(self, video_path: str):
+        """原子性地将一个视频路径添加到违禁列表中。"""
+        with self.lock:
+            video_list = self._read_list_safely()
+            # 确保不重复添加
+            if video_path not in video_list:
+                video_list.append(video_path)
+                with open(self.list_file, 'w') as f:
+                    json.dump(video_list, f, indent=4)
+                print(f"[INFO] 已将违禁视频 '{video_path}' 添加到记录中。")
+
+    def is_prohibited(self, video_path: str) -> bool:
+        """原子性地检查一个视频路径是否在违禁列表中。"""
+        with self.lock:
+            video_list = self._read_list_safely()
+            return video_path in video_list
+
+
 API_KEY_MAP = build_api_key_map()
 api_key_manager = ApiKeyManager(API_KEY_MAP)
+# 新增：实例化违禁视频管理器，使其在整个应用中可用
+prohibited_video_manager = ProhibitedVideoManager()
 
 
 # ========== 统一的思考预算与调用工具函数 ==========
@@ -209,7 +260,7 @@ def with_proxy(func):
     return wrapper
 
 
-# ========== 业务函数（无兼容层，保持原功能） ==========
+# ========== 业务函数（修改核心视频处理逻辑） ==========
 
 @with_proxy
 def get_llm_content_gemini_flash_video(
@@ -218,6 +269,15 @@ def get_llm_content_gemini_flash_video(
         model_name: str = "gemini-flash-latest",
         max_attempts: int = 10
 ) -> str:
+    # ==================== 新增：前置检查 ====================
+    # 在处理前，先检查该视频是否已在违禁列表中
+    if prohibited_video_manager.is_prohibited(video_path):
+        error_msg = f"视频处理被跳过：'{video_path}' 已被标记为包含禁止内容。"
+        print(f"[ERROR] {error_msg}")
+        # 直接抛出异常，避免浪费资源
+        raise ValueError(error_msg)
+    # ======================================================
+
     last_error = None
 
     # 尝试次数不能超过可用 key 的数量
@@ -263,6 +323,16 @@ def get_llm_content_gemini_flash_video(
             # 成功则直接返回
             return response.text
         except Exception as e:
+            # ==================== 新增：违禁内容错误处理 ====================
+            # 专门捕获包含 'PROHIBITED_CONTENT' 的错误
+            if 'PROHIBITED_CONTENT' in str(e):
+                print(f"[CRITICAL] 检测到禁止内容于视频: {video_path}。正在记录并停止尝试。")
+                # 安全地将出问题的视频路径记录下来
+                prohibited_video_manager.add_video(video_path)
+                # 这是一个针对该视频的终结性错误，直接抛出，不再尝试其他key
+                raise e
+            # ==============================================================
+
             if 'overloaded' in str(e) or 'An internal error has occurred' in str(e):
                 last_error = e
                 print(f"[WARN] Key “{key_name}” 调用失败：{e}，切换下一个…{video_path}")
