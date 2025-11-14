@@ -318,21 +318,21 @@ def get_llm_content_gemini_flash_video(
                 timeout=1200
             )
             if not response.text:
-                print(f"[WARN] 模型返回了空响应{response.prompt_feedback} {video_path}")
-                return response.prompt_feedback
+                # 将 response.prompt_feedback 转换为字符串进行通用检查
+                feedback_str = str(response.prompt_feedback)
+                if 'PROHIBITED_CONTENT' in feedback_str:
+                    # 现在只要反馈信息中包含关键字，就能触发
+                    print(f"[PROHIBITED_CONTENT] 检测到禁止内容于视频: {video_path}。正在记录并停止尝试。")
+                    prohibited_video_manager.add_video(video_path)
+                    # 抛出一个明确的异常，通知上层调用者这是一个不可恢复的错误
+                    raise ValueError(f"PROHIBITED_CONTENT '{video_path}' contains prohibited content.")
+
+                # 对于其他原因导致的空响应，保持原有逻辑，并确保返回字符串
+                print(f"[WARN] 模型返回了空响应{feedback_str} {video_path}")
+                return feedback_str
             # 成功则直接返回
             return response.text
         except Exception as e:
-            # ==================== 新增：违禁内容错误处理 ====================
-            # 专门捕获包含 'PROHIBITED_CONTENT' 的错误
-            if 'PROHIBITED_CONTENT' in str(e):
-                print(f"[CRITICAL] 检测到禁止内容于视频: {video_path}。正在记录并停止尝试。")
-                # 安全地将出问题的视频路径记录下来
-                prohibited_video_manager.add_video(video_path)
-                # 这是一个针对该视频的终结性错误，直接抛出，不再尝试其他key
-                raise e
-            # ==============================================================
-
             if 'overloaded' in str(e) or 'An internal error has occurred' in str(e):
                 last_error = e
                 print(f"[WARN] Key “{key_name}” 调用失败：{e}，切换下一个…{video_path}")

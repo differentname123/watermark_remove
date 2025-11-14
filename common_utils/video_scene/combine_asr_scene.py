@@ -299,7 +299,7 @@ def check_owner_asr(owner_asr_info, video_duration, logger):
     return True
 
 
-def gen_owner_asr_by_llm(video_path, has_author_voice, logger):
+def gen_owner_asr_by_llm(video_path, has_author_voice, logger, base_prompt):
     """
     通过大模型生成带说话人识别的ASR文本。
     （已重构，提升可读性和健壮性）
@@ -339,7 +339,7 @@ def gen_owner_asr_by_llm(video_path, has_author_voice, logger):
     except Exception as e:
         logger.error(f"读取Prompt文件失败: {PROMPT_FILE_PATH}, 错误: {e}")
         return None
-
+    prompt = f"{prompt}{base_prompt}"
     # --- 5. 带重试机制的核心逻辑 ---
     for attempt in range(1, MAX_RETRIES + 1):
         logger.info(f"尝试生成ASR信息... (第 {attempt}/{MAX_RETRIES} 次)")
@@ -396,7 +396,7 @@ def gen_owner_asr_by_llm(video_path, has_author_voice, logger):
 
 
 @timeit_print
-def gen_asr(video_path, output_dir, has_author_voice):
+def gen_asr(video_path, output_dir, has_author_voice, base_prompt):
     """
     生成修复后的asr以及句子时间段
     """
@@ -407,7 +407,7 @@ def gen_asr(video_path, output_dir, has_author_voice):
     speech_asr_output_file = os.path.join(output_dir, 'speech_asr_with_owner.json')
 
     if not is_valid_target_file_simple(speech_asr_output_file, min_size_bytes=10):
-        owner_asr_info = gen_owner_asr_by_llm(video_path, has_author_voice, logger)
+        owner_asr_info = gen_owner_asr_by_llm(video_path, has_author_voice, logger, base_prompt)
         # 判断owner_asr_info是否为dict
         if owner_asr_info is None:
             logger.error("生成asr文本失败，返回空结果")
@@ -483,7 +483,7 @@ def check_new_video_script(new_video_script, scene_info, logger):
     return True
 
 
-def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, has_author_voice=True):
+def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, base_prompt,  has_author_voice=True):
     """
     生成新的视频方案
     """
@@ -519,6 +519,7 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, has_autho
                     other_prompt += f"\n注意：最后一个场景的位置不能够改变。"
         if no_is_adjustable:
             other_prompt = f"\n注意：所有场景的顺序都不能够改变。只用在方案中体现不同的on_screen_text就行"
+            other_prompt += f"\n注意：所有场景的顺序都不能够改变。只用在方案中体现不同的on_screen_text就行"
 
     for temp in scene_info:
         for key in need_pop_list:
@@ -526,6 +527,7 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, has_autho
                 temp.pop(key)
 
     prompt = read_file_to_str(prompt_file_path)
+    prompt = f"{prompt}{base_prompt}"
     full_prompt = f'{prompt}\n{scene_info}\n{other_prompt}'
     raw = ""
     for attempt in range(1, max_retries + 1):
@@ -681,7 +683,7 @@ def check_optimized_video_plan(optimized_video_plan, video_duration_ms):
     return True, "优化方案检查通过。"
 
 
-def gen_optimized_video_plan_llm(video_path, logger):
+def gen_optimized_video_plan_llm(video_path, logger, base_prompt):
     """
     生成新的视频优化方案
     """
@@ -699,6 +701,7 @@ def gen_optimized_video_plan_llm(video_path, logger):
     prompt_file_path = '../../content_community/app/视频质量提高生成画面文字.txt'
     prompt = read_file_to_str(prompt_file_path)
     full_prompt = f'{prompt}'
+    full_prompt += f'\n{base_prompt}'
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
@@ -722,7 +725,7 @@ def gen_optimized_video_plan_llm(video_path, logger):
                 return None  # 达到最大重试次数后返回 None
             logger.exception("详细堆栈信息：")
 
-def gen_logical_scene_llm(video_path, logger):
+def gen_logical_scene_llm(video_path, logger, base_prompt):
     """
     生成新的视频方案
     """
@@ -741,6 +744,7 @@ def gen_logical_scene_llm(video_path, logger):
     prompt_file_path = '../../content_community/app/视频场景逻辑切分只根据视频内容.txt'
     prompt = read_file_to_str(prompt_file_path)
     full_prompt = f'{prompt}'
+    full_prompt += f'\n{base_prompt}'
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
@@ -971,7 +975,7 @@ def process_narration_clips(start, end, data, min_duration=500):
     return final_clips
 
 @timeit_print
-def gen_video_script(logical_scene_info, owner_asr_info, output_dir, no_is_adjustable, has_author_voice=False):
+def gen_video_script(logical_scene_info, owner_asr_info, output_dir, no_is_adjustable, base_prompt, has_author_voice=False):
     """
     生成新视频的文本脚本
     """
@@ -987,7 +991,7 @@ def gen_video_script(logical_scene_info, owner_asr_info, output_dir, no_is_adjus
     final_scene_info = process_scenes_improved(logical_scene_info, owner_asr_info)
     save_json(final_scene_info_path, final_scene_info)
 
-    new_video_script = gen_new_video_script_llm(final_scene_info, output_dir, no_is_adjustable, has_author_voice=has_author_voice)
+    new_video_script = gen_new_video_script_llm(final_scene_info, output_dir, no_is_adjustable, base_prompt, has_author_voice=has_author_voice)
     if new_video_script is None:
         logger.error(f"生成新视频脚本失败！{output_dir}  {new_video_script}")
         raise RuntimeError(f"生成新视频脚本失败！{output_dir}  {new_video_script}")
@@ -1604,7 +1608,7 @@ def get_scene(video_path, output_dir):
     return kept_sorted
 
 @timeit_print
-def gen_logical_scene(video_path, output_dir, logger):
+def gen_logical_scene(video_path, output_dir, logger, base_prompt):
     """
     直接根据视频生成逻辑性场景划分
     """
@@ -1614,7 +1618,7 @@ def gen_logical_scene(video_path, output_dir, logger):
     if is_valid_target_file_simple(output_file_logical_scene_info_path, 10):
         logical_scene_info = read_json(output_file_logical_scene_info_path)
     else:
-        logical_scene_info = gen_logical_scene_llm(video_path, logger)
+        logical_scene_info = gen_logical_scene_llm(video_path, logger, base_prompt)
         save_json(output_file_logical_scene_info_path, logical_scene_info)
         kept_sorted = get_scene(video_path, output_dir)
         logical_scene_info = fix_logical_scene_info(video_path, kept_sorted, logical_scene_info, output_dir,logger, max_delta_ms=1000)
@@ -1720,7 +1724,7 @@ def fix_logical_scene_info(video_path, scenes, logical_scene_info, output_dir, l
     return logical_scene_info
 
 
-def gen_optimized_video_plan(video_path, output_dir, logger):
+def gen_optimized_video_plan(video_path, output_dir, logger, base_prompt):
     """
     生成优化的视频方案
     """
@@ -1728,10 +1732,23 @@ def gen_optimized_video_plan(video_path, output_dir, logger):
     if is_valid_target_file_simple(output_file_optimized_video_plan_path, 10):
         optimized_video_plan = read_json(output_file_optimized_video_plan_path)
     else:
-        optimized_video_plan = gen_optimized_video_plan_llm(video_path, logger)
+        optimized_video_plan = gen_optimized_video_plan_llm(video_path, logger, base_prompt)
         save_json(output_file_optimized_video_plan_path, optimized_video_plan)
     return optimized_video_plan
 
+def gen_base_prompt(params, video_path):
+    """
+    生成基础的通用提示词
+    """
+    duration = probe_duration(video_path)
+    base_prompt = f"\n视频相关信息如下:\n视频时长为: {duration}"
+    desc = params.get('desc', '')
+    comment_list = params.get('temp_comments', [])
+    if desc:
+        base_prompt += f"\n视频描述为: {desc}"
+    if comment_list:
+        base_prompt += f"\n视频已有评论列表 (数字表示已获赞数量): {comment_list}"
+    return base_prompt
 
 def gen_new_video_script(video_path, basename, params={}):
     """
@@ -1742,20 +1759,21 @@ def gen_new_video_script(video_path, basename, params={}):
     output_dir = os.path.join(base_output_dir, basename)
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
+    base_prompt = gen_base_prompt(params, video_path)
 
     has_author_voice = params.get('has_author_voice', False)
     need_optimized_video_plan = params.get('need_optimized_video_plan', True)
     if need_optimized_video_plan:
-        gen_optimized_video_plan(video_path, output_dir, logger)
+        gen_optimized_video_plan(video_path, output_dir, logger, base_prompt)
         logger.info(f"{basename} 优化视频方案生成完成")
 
     # 生成asr信息
-    owner_asr_info = gen_asr(video_path, output_dir, has_author_voice)
+    owner_asr_info = gen_asr(video_path, output_dir, has_author_voice, base_prompt)
 
     # 获取场景分割信息
-    logical_scene_info = gen_logical_scene(video_path, output_dir, logger)
+    logical_scene_info = gen_logical_scene(video_path, output_dir, logger, base_prompt)
     logger.info(f"{basename} 场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info'))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene'))}")
-    no_is_adjustable = check_logical_scene_info(logical_scene_info)
+    no_is_adjustable = check_logical_scene_info(logical_scene_info, video_path)
 
     # 后续处理
     logger.info(f"场景逻辑合并完成:数量{len(logical_scene_info.get('new_scene_info', []))} 删除的子场景数量:{len(logical_scene_info.get('deleted_scene', []))}")
@@ -1769,7 +1787,7 @@ def gen_new_video_script(video_path, basename, params={}):
     has_author_voice = has_author_voice and fact_has_author_voice
 
     start_time = time.time()
-    new_video_script = gen_video_script(logical_scene_info, owner_asr_info, output_dir, no_is_adjustable, has_author_voice=has_author_voice)
+    new_video_script = gen_video_script(logical_scene_info, owner_asr_info, output_dir, no_is_adjustable, base_prompt, has_author_voice=has_author_voice)
     logger.info(f"新视频脚本生成完成。耗时: {time.time() - start_time:.2f} 秒")
 
 def fuse_all_info(owner_asr_info, final_scene_info, new_video_script_list):
@@ -1893,7 +1911,7 @@ def gen_new_video_robus(video_path):
                 time.sleep(2)  # 等待一段时间后再重试
 
 
-def check_logical_scene_info(logical_scene_info):
+def check_logical_scene_info(logical_scene_info, video_path):
     """
     检测 "new_scene_info" 中每个sequence_info的is_adjustable是否都为Fasle
     """
@@ -1904,7 +1922,7 @@ def check_logical_scene_info(logical_scene_info):
         if is_adjustable:
             print(f"警告: 场景 {i + 1} 的 sequence_info 中 is_adjustable 为 True")
             return False
-    print("所有场景的 sequence_info 中 is_adjustable 均为 False")
+    print(f"{video_path} 所有场景的 sequence_info 中 is_adjustable 均为 False")
     return True
 
 def gen_new_video(video_path, basename):

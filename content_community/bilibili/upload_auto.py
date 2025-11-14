@@ -121,7 +121,7 @@ group_info: Dict[str, List[str]] = {
         "xiaosu",
         "shun",
     ],
-    "sport": ["nana", "jun"],
+    "sport": ["nana", "jun", "xiaomu"],
     "game": [
         "cai",
         "tao",
@@ -138,7 +138,8 @@ group_info: Dict[str, List[str]] = {
         "ruruxiao",
         "qiqixiao",
         "mu",
-        "xiaocai"
+        "xiaocai",
+        "qizhu"
     ],
 }
 
@@ -162,7 +163,7 @@ video_recommend_user_list = [
     "xiaoxue",
 ]
 
-right_now_user_list = ["qiqixiao", "jie", 'shun']
+right_now_user_list = ["qiqixiao", "jie"]
 video_recommend_user_list = []
 
 # 错误记录
