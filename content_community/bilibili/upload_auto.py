@@ -87,6 +87,7 @@ accounts: Dict[str, str] = {
     "ruruxiao": "ruruxiao",
     "qiqixiao": "qiqixiao",
     "mu": "mu",
+    "xiaomu": "xiaomu",
     "yiyi": "yiyi",
     "xiaodan": "xiaodan",
     "xiaoxue": "xiaoxue",
