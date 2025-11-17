@@ -93,6 +93,7 @@ accounts: Dict[str, str] = {
     # "dahao": "dahao",
     "xiaocai": "xiaocai",
     "shun": "shun",
+    "qizhu": "qizhu",
 }
 
 # 读取各账号 cookie
@@ -164,7 +165,7 @@ video_recommend_user_list = [
 ]
 
 right_now_user_list = ["qiqixiao", "jie"]
-video_recommend_user_list = []
+video_recommend_user_list = ['nana', 'hong', 'jie', 'xue', 'cai', 'xiaosu', 'jun', 'dan', 'yiyi', 'qiqixiao', 'shun']
 
 # 错误记录
 error_user_map: Dict[str, str] = {}
@@ -1305,7 +1306,7 @@ def auto_upload() -> None:
         # if userName in limit_user_list:
         #     uploads_today_max = 25
 
-        if uploads_today >= uploads_today_max or remote_upload_count >= 20:
+        if uploads_today >= uploads_today_max or remote_upload_count >= 22:
             is_cooldown_or_limit = True
             cooldown_reason = f"今日已本地上传 {uploads_today} 个视频， 实际平台数据：{remote_upload_count} ，达到上限 {uploads_today_max}。"
         elif latest_timestamp and (time.time() - latest_timestamp) < wait_minutes * 60 and uploads_last_hour >= 1:
@@ -1451,7 +1452,7 @@ def auto_upload() -> None:
         for i, candidate in enumerate(skippable_candidates, 1):
             user_name = candidate['userName']
             exist_count = user_processed_counts.get(user_name, 0)
-            if exist_count >= 50:
+            if exist_count >= 20:
                 continue
             parent_key = candidate['parent_key']
             video_ids = candidate['video_id_list']

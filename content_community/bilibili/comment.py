@@ -51,6 +51,66 @@ except ImportError:
         return configs.get(key)
 
 
+def get_my_bilibili_tasks(cookie: str, csrf: str):
+    """
+    获取B站“我的任务”信息，模拟浏览器fetch请求。
+
+    Args:
+        cookie (str): 你的B站登录cookie字符串。
+        csrf (str): 你的B站CSRF token (即bili_jct)。
+
+    Returns:
+        dict: 如果请求成功，返回API响应的JSON数据（字典格式）。
+        None: 如果请求失败，返回None。
+    """
+    # 1. 目标URL
+    url = "https://api.bilibili.com/x/up-activity-interface/arena/v2/my/tasks"
+
+    # 2. URL查询参数 (Query Parameters)
+    # fetch请求中的 "?csrf=...&web_location=0.0" 部分
+    params = {
+        'csrf': csrf,
+        'web_location': '0.0'
+    }
+
+    # 3. 请求头 (Headers)
+    # 从你的fetch请求中复制，并添加最重要的 Cookie
+    headers = {
+        "accept": "*/*",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+        # 'User-Agent' 是一个非常常见的请求头，最好加上以模拟真实浏览器
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"142\", \"Microsoft Edge\";v=\"142\", \"Not_A Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-site",
+        "priority": "u=1, i",
+        # 'Referer' 头也很重要，表明请求来源
+        "Referer": "https://member.bilibili.com/",
+        # 将传入的cookie字符串放入 'Cookie' 头中
+        "Cookie": cookie
+    }
+
+    try:
+        # 4. 发送GET请求
+        # 使用 requests.get() 方法，传入url, headers, 和 params
+        response = requests.get(url, headers=headers, params=params)
+
+        # 5. 检查响应状态
+        # raise_for_status() 会在遇到 4xx 或 5xx 的错误状态码时抛出异常
+        response.raise_for_status()
+
+        # 6. 解析并返回JSON数据
+        # B站的API通常返回JSON格式的数据
+        return response.json()
+
+    except requests.exceptions.RequestException as e:
+        # 捕获所有requests可能抛出的异常 (如网络问题、超时、HTTP错误等)
+        print(f"请求发生错误: {e}")
+        return None
+
 def upload_bilibili_image(image_path: str, cookies: dict, csrf_token: str):
     """
     模拟浏览器上传图片到Bilibili动态。
@@ -971,16 +1031,32 @@ def send_one_comment_per_user(config_map, bvid, like_video=False, delay=2, retri
 
     return results
 
+def get_video_comment_user():
+    """
+    查询哪些用户有好片推荐这个任务
+    """
+    config_map = init_config()
+    user_list = []
+    for uid, target_value in config_map.items():
+        user_name = target_value.get('name', uid)
+        data = get_my_bilibili_tasks(target_value['total_cookie'], target_value['BILI_JCT'])
+        if 'B站好片有奖种草' in str(data):
+            print(f"用户 {user_name} ({uid}) 有好片推荐任务")
+            user_list.append(user_name)
+    print(f"总共有 {len(user_list)} 个用户有好片推荐任务：\n {user_list}")
+
 # --- 主逻辑 ---
 if __name__ == "__main__":
-    config_map = init_config()
-    target_bvid = "BV1mu43zFETB"
-    res = send_one_comment_per_user(config_map, target_bvid, like_video=False, delay=2, retries=2)
-    print(res)
-
-    #
     # config_map = init_config()
-    # user_name = 'mama'
+    # target_bvid = "BV1mu43zFETB"
+    # res = send_one_comment_per_user(config_map, target_bvid, like_video=False, delay=2, retries=2)
+    # print(res)
+
+    get_video_comment_user()
+
+
+    # config_map = init_config()
+    # user_name = 'yiyi'
     # target_value = None
     # for uid, value in config_map.items():
     #     if value.get('name') == user_name:
@@ -992,8 +1068,12 @@ if __name__ == "__main__":
     # comment_text = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}]"
     # comment_type = 1
     #
-    # commenter = BilibiliCommenter(total_cookie=target_value['total_cookie'], csrf_token=target_value['BILI_JCT'],all_params=target_value['all_params'])
-    # # commenter.pin_comment(target_bvid, 271871684816)
+    # # commenter = BilibiliCommenter(total_cookie=target_value['total_cookie'], csrf_token=target_value['BILI_JCT'],all_params=target_value['all_params'])
+    # data = get_my_bilibili_tasks(target_value['total_cookie'], target_value['BILI_JCT'])
+    # print(data)
+
+
+    # commenter.pin_comment(target_bvid, 271871684816)
     # #
     # # --- 步骤 1: 发送一条顶级评论 (现在会先点赞视频) ---
     # # print("-" * 30)
