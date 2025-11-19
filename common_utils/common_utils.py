@@ -1564,7 +1564,7 @@ def init_config():
     # 账号配置：key 是 config_map 中的 UID，value 是账号的前缀（name）
     accounts = {
         # '3546973573482600': 'shuijun3',
-        '3690972783315441': 'mama',
+        # '3690972783315441': 'mama',
         '3546717871934392': 'nana',
         # '3546979686681114': 'ruru',
         # '3546973825141556': 'tao',
@@ -1600,9 +1600,9 @@ def init_config():
         # '3632306870814900': 'xiaodan',
         '3632309148322699': 'xiaoxue',
 
-        '3690973307603884': 'dahao',
+        # '3690973307603884': 'dahao',
         '3632313749473288': 'shun',
-        # '3632314758203558': 'xiaocai',
+        '3632314758203558': 'xiaocai',
         '1516147639': 'qizhu',
         '3632318595991783': 'xiaomu',
 
@@ -1887,3 +1887,35 @@ def first_greater(target_num, num_list):
         if x > target_num:
             return x
     return None
+
+
+def find_files_with_mtime(directory, target_filename):
+    """
+    扫描指定目录及其所有子目录，查找目标文件，并返回其完整路径和修改时间戳。
+
+    Args:
+        directory (str): 要扫描的根目录路径。
+        target_filename (str): 要查找的目标文件名 (例如 'config.ini')。
+
+    Returns:
+        list: 一个元组列表。每个元组包含 (文件完整路径, 修改时间戳)。
+              如果目录不存在或未找到文件，则返回一个空列表。
+    """
+    # 将输入的字符串路径转换为 Path 对象
+    root_path = Path(directory)
+
+    # 检查路径是否存在且是否为一个目录
+    if not root_path.is_dir():
+        print(f"错误：目录 '{directory}' 不存在或不是一个有效的目录。")
+        return []
+
+    # 使用 rglob(target_filename) 递归查找所有名为 target_filename 的路径
+    # Path.stat().st_mtime 可以直接获取文件的修改时间戳
+    # 使用列表推导式可以使代码非常简洁
+    found_files = [
+        (str(file_path), file_path.stat().st_mtime)
+        for file_path in root_path.rglob(target_filename)
+        if file_path.is_file()  # 确保找到的是文件，而不是同名目录
+    ]
+
+    return found_files
