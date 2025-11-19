@@ -1069,7 +1069,7 @@ def get_wait_minutes():
         return 15
 
     else:  # 深夜 22:00 - 23:59，准备休息，等待时间最短
-        return 5
+        return 0
 
 
 def auto_upload() -> None:
