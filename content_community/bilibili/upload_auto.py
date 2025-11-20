@@ -91,7 +91,7 @@ accounts: Dict[str, str] = {
     "yiyi": "yiyi",
     "xiaodan": "xiaodan",
     "xiaoxue": "xiaoxue",
-    # "dahao": "dahao",
+    "dahao": "dahao",
     "xiaocai": "xiaocai",
     "shun": "shun",
     "qizhu": "qizhu",
@@ -105,7 +105,7 @@ for name, map_key in accounts.items():
     config_map[map_key] = (sessdata, bili_jct, total_cookie)
 
 # 题材分组
-group_info: Dict[str, List[str]] = {
+group_info = {
     "fun": [
         "ruru",
         "jj",
@@ -114,7 +114,6 @@ group_info: Dict[str, List[str]] = {
         "yiyi",
         "yang",
         "xiaodan",
-        "dahao",
         "lin",
         "xiaohao",
         "xue",
@@ -141,7 +140,8 @@ group_info: Dict[str, List[str]] = {
         "qiqixiao",
         "mu",
         "xiaocai",
-        "qizhu"
+        "qizhu",
+        "dahao"
     ],
 }
 
@@ -1054,16 +1054,16 @@ def get_wait_minutes():
     # 规则：越早时间越长，越晚时间越短
 
     if current_hour <= 5:  # 凌晨 00:00 - 05:59，大部分人休息，等待最长
-        return 60
+        return 40
 
     elif current_hour <= 8:  # 清晨 06:00 - 08:59，开始苏醒，等待时间减少
-        return 45
+        return 35
 
     elif current_hour <= 11:  # 上午 09:00 - 11:59，工作时间，等待时间减少
         return 30
 
     elif current_hour <= 17:  # 中午及下午 12:00 - 17:59，活跃时间
-        return 20
+        return 25
 
     elif current_hour <= 21:  # 傍晚 18:00 - 21:59，晚上休息前
         return 15
