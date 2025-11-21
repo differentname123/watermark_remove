@@ -96,6 +96,7 @@ accounts: Dict[str, str] = {
     "shun": "shun",
     "qizhu": "qizhu",
     "ping": "ping",
+    "zhong": "zhong",
 }
 
 # 读取各账号 cookie
@@ -143,7 +144,8 @@ group_info = {
         "mu",
         "xiaocai",
         "qizhu",
-        "dahao"
+        "dahao",
+        "zhong"
     ],
 }
 
