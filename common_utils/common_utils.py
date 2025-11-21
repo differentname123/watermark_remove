@@ -1582,7 +1582,7 @@ def init_config():
         '3632311899786168':'xiaosu',
         '3494364332427809':'xiaoxiaosu',
         '3546978046708266':'jun',
-        '3632306801609223': 'shuijun2',
+        # '3632306801609223': 'shuijun2',
         '3632301781026991': 'junxiao',
         # '3546978952677812': 'junda',
         # '3546972143225467':'lin',
@@ -1596,7 +1596,7 @@ def init_config():
         '3546981674781282': 'qiqixiao',
         '386484632': 'mu',
         # '3546970887031023': 'yang',
-        '3546982836603594': 'ruruxiao',
+        # '3546982836603594': 'ruruxiao',
         # '3632306870814900': 'xiaodan',
         '3632309148322699': 'xiaoxue',
 
@@ -1919,3 +1919,25 @@ def find_files_with_mtime(directory, target_filename):
     ]
 
     return found_files
+
+
+def validate_dict_keys(data, key_list):
+    """
+    检查 data (dict) 中是否包含 key_list 中的所有 key，
+    并且对应的值不为空（不是空字符串、空列表、None 等）。
+    """
+    for key in key_list:
+        # 1. 首先检查 key 是否在字典中
+        if key not in data:
+            return False
+
+        # 2. 获取值
+        value = data[key]
+
+        # 3. 检查值是否为空
+        # 在 Python 中，None, "", [], {}, 0, False 都会被视为 False (即为空)
+        if not value:
+            return False
+
+    # 如果循环顺利结束，说明所有 key 都存在且不为空
+    return True

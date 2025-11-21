@@ -84,7 +84,7 @@ accounts: Dict[str, str] = {
     "dan": "dan",
     "ning": "ning",
     "yang": "yang",
-    "ruruxiao": "ruruxiao",
+    # "ruruxiao": "ruruxiao",
     "qiqixiao": "qiqixiao",
     "mu": "mu",
     "xiaomu": "xiaomu",
@@ -1096,6 +1096,7 @@ def auto_upload() -> None:
         print(f"❌ 无可用任务：{UPLOAD_LOG_FILE} 为空或不存在。")
         return
     user_processed_counts = defaultdict(int)
+    all_start_time = time.time()
 
     # ▼▼▼【核心修改点 1：新增任务优先级调度逻辑】▼▼▼
     processed_tasks = []
@@ -1447,7 +1448,6 @@ def auto_upload() -> None:
         skipped_count = 0
         total_candidates = len(skippable_candidates)
         # --- 新增结束 ---
-        start_time = time.time()
 
         # 2. 处理进度：增加进度指示和详细信息
         for i, candidate in enumerate(skippable_candidates, 1):
@@ -1465,11 +1465,10 @@ def auto_upload() -> None:
 
             try:
                 # 以只处理不上传的方式调用视频处理流水线
-                process_video_batch(**candidate)
-                processing_duration = time.time() - start_time
+                processing_duration = time.time() - all_start_time
 
                 # 3. 结果反馈：更清晰的结果说明
-                if processing_duration > 60:
+                if processing_duration > 200:
                     print(f"🎉 【有效处理完成】 任务 '{parent_key}' user_name {user_name} 耗时 {processing_duration:.2f} 秒 (> 10秒). [{i}/{total_candidates}]")
                     print("   - 目标达成，备用处理流程结束。")
                     effective_task_found = True
@@ -1479,6 +1478,7 @@ def auto_upload() -> None:
                     print(f"ℹ️  【跳过】 任务 '{parent_key}' 耗时 {processing_duration:.2f} 秒 (≤ 10秒).")
                     # --- 新增：打印当前进度 ---
                     print(f"   - 📊 进度: 已跳过 {skipped_count} 个, 剩余 {remaining_count} 个待检查。")
+                process_video_batch(**candidate)
 
             except Exception as e:
                 print(f"❌ 【处理失败】 候选任务 '{parent_key}' 发生错误: {e}")
