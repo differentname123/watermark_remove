@@ -148,26 +148,7 @@ group_info = {
         "zhong"
     ],
 }
-
-# 推荐话题用户列表
-video_recommend_user_list = [
-    "cai",
-    "yang",
-    "dahao",
-    "ruru",
-    "yiyi",
-    "lin",
-    "mama",
-    "hong",
-    "yan",
-    "jie",
-    "qiqi",
-    "xiaosu",
-    "jun",
-    "jj",
-    "qiqixiao",
-    "xiaoxue",
-]
+fun_user_list = ['dan', 'yiyi']
 
 right_now_user_list = ["qiqixiao", "jie"]
 video_recommend_user_list = ['nana', 'hong', 'jie', 'xue', 'cai', 'xiaosu', 'jun', 'dan', 'yiyi', 'qiqixiao', 'shun']
@@ -711,6 +692,8 @@ def _build_upload_params(
     origin_tag = metadata[0].get("tag", [])
     if userName in video_recommend_user_list:
         origin_tag.insert(0, "B站好片有奖种草")
+    if userName in fun_user_list:
+        origin_tag.insert(0, "娱乐盘点")
     origin_tag.extend(metadata[0].get("text_extra", []))
 
     title = best_scheme.get("标题", "欢迎来看我的视频！")
@@ -1457,7 +1440,7 @@ def auto_upload() -> None:
         for i, candidate in enumerate(skippable_candidates, 1):
             user_name = candidate['userName']
             exist_count = user_processed_counts.get(user_name, 0)
-            if exist_count >= 20:
+            if exist_count >= 50:
                 continue
             parent_key = candidate['parent_key']
             video_ids = candidate['video_id_list']
