@@ -29,6 +29,8 @@ import os
 import threading
 import time
 import traceback
+import shutil
+import tempfile
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -70,7 +72,7 @@ accounts: Dict[str, str] = {
     "nana": "nana",
     "jie": "jie",
     # "qiqi": "qiqi",
-    # "mama": "mama",
+    "mama": "mama",
     "hong": "hong",
     # "yan": "yan",
     "xue": "xue",
@@ -81,7 +83,7 @@ accounts: Dict[str, str] = {
     # "lin": "lin",
     "jj": "jj",
     "hao": "hao",
-    "dan": "dan",
+    # "dan": "dan",
     "ning": "ning",
     "yang": "yang",
     # "ruruxiao": "ruruxiao",
@@ -227,6 +229,56 @@ def _deep_update(orig: Dict[str, Any], new: Dict[str, Any]) -> None:
             orig[k] = v
 
 
+# ---------- 新增的安全保存逻辑 ----------
+
+def local_safe_save_log():
+    """
+    本地实现的原子保存函数。
+    直接将内存中的 upload_log_global 写入磁盘，不读取旧文件，防止读到空文件。
+    使用写临时文件 + 替换的方式，防止断电/崩溃导致文件损坏。
+    """
+    global upload_log_global
+
+    # 1. 写入临时文件
+    dir_name = os.path.dirname(os.path.abspath(UPLOAD_LOG_FILE))
+    os.makedirs(dir_name, exist_ok=True)
+
+    try:
+        # delete=False 保证文件关闭后不会自动删除，以便我们手动移动
+        with tempfile.NamedTemporaryFile(mode='w', dir=dir_name, delete=False, encoding='utf-8') as tmp:
+            json.dump(upload_log_global, tmp, indent=4, ensure_ascii=False)
+            tmp_path = tmp.name
+
+        # 2. 原子替换（这一步极快，不容易出错）
+        shutil.move(tmp_path, UPLOAD_LOG_FILE)
+
+    except Exception as e:
+        print(f"🔥 [严重错误] 日志写入失败: {e}")
+        # 如果写入失败，尝试清理临时文件
+        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except:
+                pass
+
+
+def update_log_status(key: str, updates: Dict[str, Any]):
+    """
+    线程安全的更新并保存日志。
+    替代代码中零散的 upload_log_global[key] = ... 和 save_json 调用。
+    """
+    with upload_lock:
+        # 1. 更新内存
+        if key not in upload_log_global:
+            upload_log_global[key] = {}
+
+        # 简单的深度合并或直接更新
+        _deep_update(upload_log_global[key], updates)
+
+        # 2. 调用上面的安全保存
+        local_safe_save_log()
+
+
 def analyze_user_uploads_by_day(
         metadata_cache_with_uploads: Any,
         metadata_cache: Any  # 原始投稿信息
@@ -295,9 +347,8 @@ def analyze_user_uploads_by_day(
 
         user_stats["total_count_today"] += 1
 
-
         is_contain = False
-        #判断key是否被包含在upload_log_keys的元素中
+        # 判断key是否被包含在upload_log_keys的元素中
         for log_key in upload_log_keys:
             if key in log_key:
                 is_contain = True
@@ -345,7 +396,6 @@ def analyze_user_uploads_by_day(
         })
 
     return stats_result
-
 
 
 def get_user_type(user_name: str) -> str:
@@ -428,13 +478,13 @@ def file_valid(path: Optional[str]) -> bool:
 
 # ---------- 上传后台任务 ----------
 def upload_worker(
-    upload_params: Dict[str, Any],
-    key: str,
-    updated_entry: Dict[str, Any],
-    files_to_cleanup: List[Optional[str]],
-    stage_times: Dict[str, float],
-    userName: str,
-    video_duration_str: str,
+        upload_params: Dict[str, Any],
+        key: str,
+        updated_entry: Dict[str, Any],
+        files_to_cleanup: List[Optional[str]],
+        stage_times: Dict[str, float],
+        userName: str,
+        video_duration_str: str,
 ) -> None:
     """
     后台上传任务（在各自账号的单线程 executor 中运行，保证同账号串行）；
@@ -475,9 +525,9 @@ def upload_worker(
                 if final_duration_sec is not None:
                     formatted_duration = format_seconds_to_mmss(final_duration_sec)
                     if (
-                        "metadata" in updated_entry
-                        and isinstance(updated_entry["metadata"], list)
-                        and updated_entry["metadata"]
+                            "metadata" in updated_entry
+                            and isinstance(updated_entry["metadata"], list)
+                            and updated_entry["metadata"]
                     ):
                         updated_entry["metadata"][0]["duration"] = formatted_duration
                 else:
@@ -507,21 +557,20 @@ def upload_worker(
         if "metadata" in updated_entry and isinstance(updated_entry["metadata"], list) and updated_entry["metadata"]:
             updated_entry["metadata"][0]["duration"] = video_duration_str
 
-        # 更新全局 upload_log 并持久化
-        with upload_lock:
-            upload_log_global[key] = updated_entry
-            try:
-                save_json(UPLOAD_LOG_FILE, upload_log_global)
-                if stage_times:
-                    stage_lines = [f"{k}: {v:.2f} 秒" for k, v in stage_times.items()]
-                    print(
-                        f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE}。阶段耗时：{' | '.join(stage_lines)} "
-                        f"{userName} {key} {datetime.datetime.now().isoformat()}"
-                    )
-                else:
-                    print(f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE} {userName}.")
-            except Exception as e:
-                print(f"🔥 后台写入日志文件失败：{e}")
+        # 更新全局 upload_log 并持久化 - 替换为安全更新
+        try:
+            update_log_status(key, updated_entry)
+
+            if stage_times:
+                stage_lines = [f"{k}: {v:.2f} 秒" for k, v in stage_times.items()]
+                print(
+                    f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE}。阶段耗时：{' | '.join(stage_lines)} "
+                    f"{userName} {key} {datetime.datetime.now().isoformat()}"
+                )
+            else:
+                print(f"✅ 后台上传日志已更新 -> {UPLOAD_LOG_FILE} {userName}.")
+        except Exception as e:
+            print(f"🔥 后台写入日志文件失败：{e}")
 
     else:
         # 上传失败：记录 error_user_map，并把错误信息写到 upload_log
@@ -531,14 +580,12 @@ def upload_worker(
             err = str(result)
         error_user_map[userName] = err or "未知错误"
         print(f"❌ 后台投稿失败 user={userName} key={key}：{err}")
-        with upload_lock:
-            upload_log_global[key] = upload_log_global.get(key, {})
-            upload_log_global[key]["status"] = "error"
-            upload_log_global[key]["error_message"] = err
-            try:
-                save_json(UPLOAD_LOG_FILE, upload_log_global)
-            except Exception as e:
-                print(f"🔥 后台写入失败（失败记录）：{e}")
+
+        # 写入失败日志 - 替换为安全更新
+        try:
+            update_log_status(key, {"status": "error", "error_message": err})
+        except Exception as e:
+            print(f"🔥 后台写入失败（失败记录）：{e}")
 
 
 # ---------- 加载与检查 ----------
@@ -586,10 +633,10 @@ def _basic_task_checks(key: str, value: Dict[str, Any], video_id_key: str) -> Tu
 
 # ---------- 媒体预处理 ----------
 def _preprocess_media_steps(
-    key: str,
-    value: Dict[str, Any],
-    best_scheme: Dict[str, Any],
-    userName: str,
+        key: str,
+        value: Dict[str, Any],
+        best_scheme: Dict[str, Any],
+        userName: str,
 ) -> Tuple[str, str, Dict[str, float]]:
     """
     执行视频 / 封面的一系列预处理步骤（顺序与原逻辑一致）。
@@ -633,15 +680,13 @@ def _preprocess_media_steps(
                         best_scheme.setdefault("封面", {}).setdefault("配文", cover_text)
             else:
                 print("❌ 重制失败（结果文件不存在），记录错误状态。")
-                upload_log_global[key] = upload_log_global.get(key, {})
-                upload_log_global[key]["status"] = "error"
-                save_json(UPLOAD_LOG_FILE, upload_log_global)
+                # 替换为安全更新
+                update_log_status(key, {"status": "error"})
             stage_times["重制视频"] = time.time() - t0
         except Exception as e:
             stage_times["重制视频"] = time.time() - t0
-            upload_log_global[key] = upload_log_global.get(key, {})
-            upload_log_global[key]["status"] = "error"
-            save_json(UPLOAD_LOG_FILE, upload_log_global)
+            # 替换为安全更新
+            update_log_status(key, {"status": "error"})
             print(f"❌ 重制失败：{e}")
             return
 
@@ -680,12 +725,12 @@ def _preprocess_media_steps(
 
 
 def _build_upload_params(
-    metadata_entry: Dict[str, Any],
-    best_scheme: Dict[str, Any],
-    cover_path: str,
-    video_path: str,
-    config: Tuple[Optional[str], Optional[str], Optional[str]],
-    userName: str,
+        metadata_entry: Dict[str, Any],
+        best_scheme: Dict[str, Any],
+        cover_path: str,
+        video_path: str,
+        config: Tuple[Optional[str], Optional[str], Optional[str]],
+        userName: str,
 ) -> Dict[str, Any]:
     """基于 best_scheme 与 metadata 生成 upload_params（保留原逻辑）"""
     metadata = metadata_entry.get("metadata", [])
@@ -851,11 +896,11 @@ def compute_output_variants(base_video_path: str) -> Dict[str, str]:
 
 
 def process_video_batch(
-    parent_key: str,
-    video_id_list: List[str],
-    metadata_cache: Dict[str, Any],
-    base_value: Dict[str, Any],
-    userName: str,
+        parent_key: str,
+        video_id_list: List[str],
+        metadata_cache: Dict[str, Any],
+        base_value: Dict[str, Any],
+        userName: str,
 ) -> Tuple[str, Optional[Dict[str, Any]], Optional[str], List[Any], Dict[str, float], List[str], List[str], bool]:
     """
     封装“多视频 -> 合并 -> 尾部引导 -> 水印”的完整流水线，支持断点续跑（按产物存在跳过）。
@@ -928,7 +973,8 @@ def process_video_batch(
         except Exception as e:
             print(f"⚠️ 处理媒体过程中出现异常：{e} {video_id} {userName}")
             traceback.print_exc()
-            upload_log_global[video_id]["status"] = "error"
+            # 替换为安全更新
+            update_log_status(video_id, {"status": "error"})
             # 与原逻辑一致：不中断整批，后续步骤依赖文件存在自行决策
             continue
 
@@ -1092,7 +1138,7 @@ def auto_upload() -> None:
     upload_log_keys = set(upload_log.keys())
     for key, value in metadata_cache.items():
         is_contain = False
-        #判断key是否被包含在upload_log_keys的元素中
+        # 判断key是否被包含在upload_log_keys的元素中
         for log_key in upload_log_keys:
             if key in log_key:
                 is_contain = True
@@ -1151,7 +1197,8 @@ def auto_upload() -> None:
     # 构建单行输出字符串
     distribution_summary = ", ".join([f"{user}: {count}" for user, count in sorted_users])
 
-    print(f"✅ 发现 {len(processed_tasks)} 个已处理好的任务，将优先上传。一共 {len(prioritized_task_list)} 个任务待处理。📊 已处理任务分布: {distribution_summary}")
+    print(
+        f"✅ 发现 {len(processed_tasks)} 个已处理好的任务，将优先上传。一共 {len(prioritized_task_list)} 个任务待处理。📊 已处理任务分布: {distribution_summary}")
 
     futures: List[concurrent.futures.Future] = []
     error_count = 0
@@ -1201,7 +1248,6 @@ def auto_upload() -> None:
             error_count += 1
             continue
 
-
         should_skip = False
 
         updated_entry = full_video_info(value)  # 补全
@@ -1230,7 +1276,7 @@ def auto_upload() -> None:
             continue
 
         if userName in error_user_map:
-            print(f"⚠️ 跳过 {userName} 用户上传：之前上传失败，错误信息：{error_user_map[userName]}")
+            print(f"⚠️ 跳过 {userName} 用户上传：之前上传失败，错误信息：{error_user_map[userName]} {key}")
             error_count += 1
             continue
 
@@ -1253,7 +1299,6 @@ def auto_upload() -> None:
         )
         # 将remote_upload_count更新到user_uploads_info中
         user_info['remote_upload_count'] = remote_upload_count
-
 
         uploads_today = user_info.get("uploads_today", 0)
         uploads_last_hour = user_info["uploads_last_hour"]
@@ -1305,8 +1350,6 @@ def auto_upload() -> None:
             is_cooldown_or_limit = True
             cooldown_reason = "与上一个上传用户相同，避免连续上传。"
 
-
-
         # 判断当前时间是否在 5 点 到 24 点之间
         if not (5 <= datetime.datetime.now().hour < 24) and not is_real_time:
             is_cooldown_or_limit = True
@@ -1354,7 +1397,8 @@ def auto_upload() -> None:
             print(f"❌ 视频处理流水线失败：{e} | {key} | {userName}")
             traceback.print_exc()
             error_count += 1
-            upload_log_global[key]["status"] = "error"
+            # 替换为安全更新
+            update_log_status(key, {"status": "error"})
             continue
 
         if had_missing_scheme:
@@ -1373,12 +1417,10 @@ def auto_upload() -> None:
         # 时长字符串
         try:
             video_duration_sec = probe_duration(final_output_path)  # 原逻辑：返回秒
-            video_duration_str = ms_to_time(int(video_duration_sec * 1000)) if video_duration_sec is not None else "00:00"
+            video_duration_str = ms_to_time(
+                int(video_duration_sec * 1000)) if video_duration_sec is not None else "00:00"
         except Exception:
             video_duration_str = "00:00"
-
-
-
 
         # --- 更新任务提交状态 ---
         submitted_any_uploads = True
@@ -1420,7 +1462,8 @@ def auto_upload() -> None:
     if not submitted_any_uploads and skippable_candidates:
 
         # 1. 启动信息：更详细的启动摘要
-        print(f"💡 本轮未提交任何新投稿，启动【备用视频预处理】流程以充分利用计算资源。 共 {len(skippable_candidates)} 个候选任务。 当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(
+            f"💡 本轮未提交任何新投稿，启动【备用视频预处理】流程以充分利用计算资源。 共 {len(skippable_candidates)} 个候选任务。 当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
 
         for c in skippable_candidates:
             user_candidate_counts[c['userName']] += 1
@@ -1440,7 +1483,7 @@ def auto_upload() -> None:
         for i, candidate in enumerate(skippable_candidates, 1):
             user_name = candidate['userName']
             exist_count = user_processed_counts.get(user_name, 0)
-            if exist_count >= 50:
+            if exist_count >= 20:
                 continue
             parent_key = candidate['parent_key']
             video_ids = candidate['video_id_list']
@@ -1456,7 +1499,8 @@ def auto_upload() -> None:
 
                 # 3. 结果反馈：更清晰的结果说明
                 if processing_duration > 200:
-                    print(f"🎉 【有效处理完成】 任务 '{parent_key}' user_name {user_name} 耗时 {processing_duration:.2f} 秒 (> 10秒). [{i}/{total_candidates}]")
+                    print(
+                        f"🎉 【有效处理完成】 任务 '{parent_key}' user_name {user_name} 耗时 {processing_duration:.2f} 秒 (> 10秒). [{i}/{total_candidates}]")
                     print("   - 目标达成，备用处理流程结束。")
                     effective_task_found = True
                     break  # 目标达成，退出备用处理循环
@@ -1474,9 +1518,8 @@ def auto_upload() -> None:
                 # --- 新增：打印当前进度 ---
                 # 注意：失败的任务不算入“跳过”计数，但仍然消耗了一次机会
                 print(f"   - 📊 进度: 已处理 {i} 个 (其中1个失败), 剩余 {remaining_count} 个待检查。")
-                if parent_key not in upload_log_global:
-                    upload_log_global[parent_key] = {}
-                upload_log_global[parent_key]["status"] = "error"
+                # 替换为安全更新
+                update_log_status(parent_key, {"status": "error"})
                 continue
 
         # 4. 最终总结：根据是否找到有效任务给出不同的总结
@@ -1497,7 +1540,8 @@ def auto_upload() -> None:
         persistent_tasks.update(temp_set)
         save_json(persistent_tasks_file, list(persistent_tasks))
     # 等待所有后台上传完成
-    print(f"等待所有等待后台上传完成... 本次投稿数量 {this_time_upload_count}  用户{already_upload_users}  当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')} {error_user_map}")
+    print(
+        f"等待所有等待后台上传完成... 本次投稿数量 {this_time_upload_count}  用户{already_upload_users}  当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')} {error_user_map}")
     concurrent.futures.wait(futures, timeout=None)
     print(f"{'用户名':<15} | {'本地':>6} | {'远程':>6} | {'待传':>6} | {'间隔(分)':>7} | {'最近上传时间':<19}")
 
@@ -1534,7 +1578,6 @@ def auto_upload() -> None:
             f"{info.get('latest_upload_time', 'N/A'):<19}"  # 指定宽度 19，确保对齐
         )
     print(f"错误数量为{len(error_user_map)}  全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
-
 
 
 # ---------- CLI ----------

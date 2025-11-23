@@ -421,7 +421,7 @@ def gen_asr(video_path, output_dir, has_author_voice, base_prompt):
     return owner_asr_info
 
 
-def check_new_video_script(new_video_script, scene_info, logger):
+def check_new_video_script(new_video_script, scene_info, logger, has_author_voice):
     """
     检测 new_video_script 的有效性，确保：
     1. 每个场景的 original_scene_number 都能在 scene_info 中找到。
@@ -470,13 +470,14 @@ def check_new_video_script(new_video_script, scene_info, logger):
                     return False
 
             # 比较两个集合是否相等。集合比较能确保元素和数量都一致，且忽略顺序。
-            if original_clip_ids != new_clip_ids:
-                logger.error(
-                    f"在方案 '{solution_title}' 的第 {scene_index + 1} 个场景 (对应 original_scene_number: {original_scene_num}) 中：")
-                logger.error(f"  - source_clip_id 不匹配！")
-                logger.error(f"  - 期望的 ID 集合 (来自 scene_info): {original_clip_ids or '空'}")
-                logger.error(f"  - 实际的 ID 集合 (来自 new_script): {new_clip_ids or '空'}")
-                return False
+            if has_author_voice:
+                if original_clip_ids != new_clip_ids:
+                    logger.error(
+                        f"在方案 '{solution_title}' 的第 {scene_index + 1} 个场景 (对应 original_scene_number: {original_scene_num}) 中：")
+                    logger.error(f"  - source_clip_id 不匹配！")
+                    logger.error(f"  - 期望的 ID 集合 (来自 scene_info): {original_clip_ids or '空'}")
+                    logger.error(f"  - 实际的 ID 集合 (来自 new_script): {new_clip_ids or '空'}")
+                    return False
 
     # 如果所有循环都正常完成，说明没有发现错误
     logger.info("检测通过！所有场景引用均有效，且 source_clip_id 完全匹配。")
@@ -537,7 +538,7 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, base_prom
             raw = get_llm_content(prompt=full_prompt, model_name=model_name)
 
             new_video_script = string_to_object(raw)
-            check_result = check_new_video_script(new_video_script, scene_info, logger)
+            check_result = check_new_video_script(new_video_script, scene_info, logger, has_author_voice)
             if not check_result:
                 raise ValueError(f"生成的视频脚本检查未通过 {output_dir}")
 
@@ -1746,8 +1747,8 @@ def gen_base_prompt(params, video_path):
     comment_list = params.get('temp_comments', [])
     if desc:
         base_prompt += f"\n视频描述为: {desc}"
-    if comment_list:
-        base_prompt += f"\n视频已有评论列表 (数字表示已获赞数量): {comment_list}"
+    # if comment_list:
+    #     base_prompt += f"\n视频已有评论列表 (数字表示已获赞数量): {comment_list}"
     return base_prompt
 
 def gen_new_video_script(video_path, basename, params={}):
@@ -1978,7 +1979,7 @@ def gen_new_video(video_path, basename):
 
 
 if __name__ == '__main__':
-    video_path = '7459006816400198964.mp4'
+    video_path = '7337597031713770764.mp4'
     # process_and_crop_video(video_path)
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))
