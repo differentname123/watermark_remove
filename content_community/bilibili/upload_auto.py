@@ -112,7 +112,6 @@ for name, map_key in accounts.items():
 group_info = {
     "fun": [
         "ruru",
-        "jj",
         "chabian",
         "dan",
         "yiyi",
@@ -121,7 +120,6 @@ group_info = {
         "lin",
         "xiaohao",
         "xue",
-        "jj",
         "ruru",
         "xiaosu",
         "shun",
@@ -147,7 +145,9 @@ group_info = {
         "xiaocai",
         "qizhu",
         "dahao",
-        "zhong"
+        "zhong",
+        "jj",
+
     ],
 }
 fun_user_list = ['dan', 'yiyi']
@@ -1093,13 +1093,13 @@ def get_wait_minutes():
         return 35
 
     elif current_hour <= 11:  # 上午 09:00 - 11:59，工作时间，等待时间减少
-        return 30
-
-    elif current_hour <= 17:  # 中午及下午 12:00 - 17:59，活跃时间
         return 25
 
+    elif current_hour <= 17:  # 中午及下午 12:00 - 17:59，活跃时间
+        return 20
+
     elif current_hour <= 21:  # 傍晚 18:00 - 21:59，晚上休息前
-        return 15
+        return 10
 
     else:  # 深夜 22:00 - 23:59，准备休息，等待时间最短
         return 0
