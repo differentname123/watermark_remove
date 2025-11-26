@@ -218,10 +218,33 @@ def generate_audio_and_get_duration_sync(
     return None
 
 
+async def list_chinese_voices():
+    # 获取所有语音包
+    voices = await edge_tts.list_voices()
+
+    # 筛选包含 "zh-" 的语音 (包括简体、繁体、粤语等)
+    chinese_voices = [v for v in voices if "zh-CN" in v["ShortName"]]
+
+    print(f"{'语音代号 (Voice ID)':<35} | {'性别':<5} | {'区域/名称'}")
+    print("-" * 80)
+
+    for v in chinese_voices:
+        # 提取关键信息
+        voice_id = v["ShortName"]
+        gender = v["Gender"]
+        # FriendlyName 通常包含 "Microsoft Server Speech Text to Speech Voice..." 比较长，这里做简化展示
+        friendly_name = v["FriendlyName"].split(" - ")[1] if " - " in v["FriendlyName"] else v["FriendlyName"]
+
+        print(f"{voice_id:<35} | {gender:<5} | {friendly_name}")
+
+
 # ================================================================
 # 演示代码
 # ================================================================
 if __name__ == "__main__":
+    # asyncio.run(list_chinese_voices())
+
+
     print("🚀 演示使用专业响度归一化 (`loudnorm`) 生成高质量语音。\n")
 
     text_list = [
@@ -232,8 +255,9 @@ if __name__ == "__main__":
     pitch_list = ['+0Hz', '+10Hz', '+20Hz', '+30Hz', '+40Hz', '+50Hz', '+60Hz', '+70Hz']
     rate_list = ['+0%', '+10%', '+20%', '+30%', '+40%', '+50%', '+60%']
     voice_name_list = [
-            "zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural","zh-CN-YunjianNeural"
-        ]
+        "zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-YunjianNeural", "zh-CN-YunxiNeural",
+        "zh-CN-YunxiaNeural", "zh-CN-YunyangNeural", "zh-CN-liaoning-XiaobeiNeural", "zh-CN-shaanxi-XiaoniNeural"
+    ]
     for voice_name in voice_name_list:
         for pitch in pitch_list:
             for rate in rate_list:
