@@ -1479,17 +1479,25 @@ def auto_upload() -> None:
         total_candidates = len(skippable_candidates)
         # --- 新增结束 ---
 
+        # ▼▼▼【核心优化点：按“已处理任务数”对候选任务进行升序排序】▼▼▼
+        # 这样可以确保优先处理那些“已处理任务很少”的用户的视频
+        print("🔃 正在重新排序候选任务，优先处理存量任务较少的用户...")
+        skippable_candidates.sort(key=lambda x: user_processed_counts.get(x['userName'], 0))
+
         # 2. 处理进度：增加进度指示和详细信息
         for i, candidate in enumerate(skippable_candidates, 1):
             user_name = candidate['userName']
             exist_count = user_processed_counts.get(user_name, 0)
-            if exist_count >= 20:
-                continue
+
+            # 【已修改】：移除了 exist_count > 20 的硬性跳过逻辑。
+            # 因为列表已经按任务数从小到大排序，如果轮到这个大户，说明前面的小户都已经处理完了或者没有任务，
+            # 此时处理大户的任务也比闲置算力要好。
+
             parent_key = candidate['parent_key']
             video_ids = candidate['video_id_list']
 
             print(f"\n⏳ [{i}/{total_candidates}] 尝试处理候选任务: {parent_key}")
-            print(f"   - 用户: {user_name} 包含视频ID: {video_ids}")
+            print(f"   - 用户: {user_name} (已处理任务数: {exist_count}) 包含视频ID: {video_ids}")
 
             remaining_count = total_candidates - i
 
@@ -1510,6 +1518,9 @@ def auto_upload() -> None:
                     # --- 新增：打印当前进度 ---
                     print(f"   - 📊 进度: 已跳过 {skipped_count} 个, 剩余 {remaining_count} 个待检查。")
                 process_video_batch(**candidate)
+
+                # 成功处理后，实时更新该用户的计数，防止同一轮连续处理该大户（虽然break了，但保持逻辑严谨）
+                user_processed_counts[user_name] += 1
 
             except Exception as e:
                 print(f"❌ 【处理失败】 候选任务 '{parent_key}' 发生错误: {e}")
