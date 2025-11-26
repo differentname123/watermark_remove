@@ -83,7 +83,7 @@ accounts: Dict[str, str] = {
     # "lin": "lin",
     "jj": "jj",
     "hao": "hao",
-    # "dan": "dan",
+    "dan": "dan",
     "ning": "ning",
     "yang": "yang",
     # "ruruxiao": "ruruxiao",
