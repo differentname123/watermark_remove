@@ -80,7 +80,7 @@ accounts: Dict[str, str] = {
     "jun": "jun",
     "xiaosu": "xiaosu",
     "chabian": "chabian",
-    # "lin": "lin",
+    "lin": "lin",
     "jj": "jj",
     "hao": "hao",
     "dan": "dan",
@@ -117,7 +117,6 @@ group_info = {
         "yiyi",
         "yang",
         "xiaodan",
-        "lin",
         "xiaohao",
         "xue",
         "ruru",
@@ -147,7 +146,7 @@ group_info = {
         "dahao",
         "zhong",
         "jj",
-
+        "lin",
     ],
 }
 fun_user_list = ['dan', 'yiyi']
