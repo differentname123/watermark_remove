@@ -1487,11 +1487,6 @@ def auto_upload() -> None:
         for i, candidate in enumerate(skippable_candidates, 1):
             user_name = candidate['userName']
             exist_count = user_processed_counts.get(user_name, 0)
-
-            # 【已修改】：移除了 exist_count > 20 的硬性跳过逻辑。
-            # 因为列表已经按任务数从小到大排序，如果轮到这个大户，说明前面的小户都已经处理完了或者没有任务，
-            # 此时处理大户的任务也比闲置算力要好。
-
             parent_key = candidate['parent_key']
             video_ids = candidate['video_id_list']
 
@@ -1500,35 +1495,36 @@ def auto_upload() -> None:
 
             remaining_count = total_candidates - i
 
+            # --- 改动 1：获取后台上传状态 ---
+            pending_uploads_count = sum(1 for f in futures if not f.done())
+            is_uploading = pending_uploads_count > 0
+
             try:
-                # 以只处理不上传的方式调用视频处理流水线
                 processing_duration = time.time() - all_start_time
 
-                # 3. 结果反馈：更清晰的结果说明
-                if processing_duration > 200:
-                    print(
-                        f"🎉 【有效处理完成】 任务 '{parent_key}' user_name {user_name} 耗时 {processing_duration:.2f} 秒 (> 10秒). [{i}/{total_candidates}]")
+                # --- 改动 2：修改退出判断逻辑 ---
+                # 只有当【超时】且【没在上传】时，才退出。
+                # 否则（没超时 或 正在上传），直接跳过这个if，继续往下执行 process_video_batch
+                if processing_duration > 200 and not is_uploading:
+                    print(f"🎉 【有效处理完成】 任务 '{parent_key}' 耗时 {processing_duration:.2f} 秒. 且无后台投稿。")
                     print("   - 目标达成，备用处理流程结束。")
                     effective_task_found = True
-                    break  # 目标达成，退出备用处理循环
+                    break
+
+                # 如果超时但正在上传，这里可以补一句简单的日志（可选，不写也不影响逻辑）
+                if processing_duration > 200:
+                    print(f"   ⚡ [算力压榨] 耗时已超 {processing_duration:.2f}s，利用 {pending_uploads_count} 个后台上传间隙继续处理...")
                 else:
-                    skipped_count += 1  # 仅在“太快”时才算作跳过
-                    print(f"ℹ️  【跳过】 任务 '{parent_key}' 耗时 {processing_duration:.2f} 秒 (≤ 10秒).")
-                    # --- 新增：打印当前进度 ---
-                    print(f"   - 📊 进度: 已跳过 {skipped_count} 个, 剩余 {remaining_count} 个待检查。")
+                    print(f"   ⚡ 未进行实际的处理 处理太快了 {processing_duration:.2f}s，继续处理...")
+
                 process_video_batch(**candidate)
 
-                # 成功处理后，实时更新该用户的计数，防止同一轮连续处理该大户（虽然break了，但保持逻辑严谨）
                 user_processed_counts[user_name] += 1
 
             except Exception as e:
                 print(f"❌ 【处理失败】 候选任务 '{parent_key}' 发生错误: {e}")
                 traceback.print_exc()
-                print("   - 将跳过此任务，继续处理下一个候选。")
-                # --- 新增：打印当前进度 ---
-                # 注意：失败的任务不算入“跳过”计数，但仍然消耗了一次机会
-                print(f"   - 📊 进度: 已处理 {i} 个 (其中1个失败), 剩余 {remaining_count} 个待检查。")
-                # 替换为安全更新
+                print(f"   - 📊 进度: 处理失败，剩余 {remaining_count} 个待检查。")
                 update_log_status(parent_key, {"status": "error"})
                 continue
 
