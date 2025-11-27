@@ -1086,22 +1086,22 @@ def get_wait_minutes():
     # 规则：越早时间越长，越晚时间越短
 
     if current_hour <= 5:  # 凌晨 00:00 - 05:59，大部分人休息，等待最长
-        return 40
+        return 60
 
     elif current_hour <= 8:  # 清晨 06:00 - 08:59，开始苏醒，等待时间减少
-        return 35
+        return 50
 
     elif current_hour <= 11:  # 上午 09:00 - 11:59，工作时间，等待时间减少
-        return 25
+        return 40
 
     elif current_hour <= 17:  # 中午及下午 12:00 - 17:59，活跃时间
-        return 20
+        return 30
 
     elif current_hour <= 21:  # 傍晚 18:00 - 21:59，晚上休息前
-        return 10
+        return 20
 
     else:  # 深夜 22:00 - 23:59，准备休息，等待时间最短
-        return 0
+        return 10
 
 
 def auto_upload() -> None:
@@ -1435,7 +1435,7 @@ def auto_upload() -> None:
         print(f"🧹 预处理完成，准备清理 {len(all_files_to_cleanup)} 个临时文件。排除{final_output_path}")
 
         # 按账号单线程执行上传
-        if this_time_upload_count < 5:
+        if this_time_upload_count < 10:
             print(
                 f"🚀 准备为用户 {userName} 后台投稿 {key} (ID: {video_id_key}) - 《{upload_params.get('title')}》（按账号串行）"
             )
