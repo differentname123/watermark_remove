@@ -529,11 +529,14 @@ def add_replay_comment_for_video(user_name='qiqi'):
     config_map = init_config()
     all_records_file = f"{BASE_DIR}/{user_name}_replay_video_info.json"
     # 找到对应的 UID
-    uid = '443415885'
+    uid = ''
     for key, value in config_map.items():
         if value['name'] == user_name:
             uid = key
             break
+    if not uid:
+        print(f"未找到用户 {user_name} 的配置，程序终止。")
+        return
     # update_local_goods_info(user_name)
     total_cookie = config_map[uid]['total_cookie']
     csrf_token = config_map[uid].get('BILI_JCT', '')

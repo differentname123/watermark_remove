@@ -1086,19 +1086,19 @@ def get_wait_minutes():
     # 规则：越早时间越长，越晚时间越短
 
     if current_hour <= 5:  # 凌晨 00:00 - 05:59，大部分人休息，等待最长
-        return 60
-
-    elif current_hour <= 8:  # 清晨 06:00 - 08:59，开始苏醒，等待时间减少
         return 50
 
-    elif current_hour <= 11:  # 上午 09:00 - 11:59，工作时间，等待时间减少
+    elif current_hour <= 8:  # 清晨 06:00 - 08:59，开始苏醒，等待时间减少
         return 40
 
-    elif current_hour <= 17:  # 中午及下午 12:00 - 17:59，活跃时间
+    elif current_hour <= 11:  # 上午 09:00 - 11:59，工作时间，等待时间减少
         return 30
 
-    elif current_hour <= 21:  # 傍晚 18:00 - 21:59，晚上休息前
+    elif current_hour <= 17:  # 中午及下午 12:00 - 17:59，活跃时间
         return 20
+
+    elif current_hour <= 21:  # 傍晚 18:00 - 21:59，晚上休息前
+        return 10
 
     else:  # 深夜 22:00 - 23:59，准备休息，等待时间最短
         return 0
