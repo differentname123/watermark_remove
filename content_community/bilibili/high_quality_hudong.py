@@ -1311,7 +1311,7 @@ def _send_danmu_worker(danmu_list, other_commenters, bvid, max_success_other_dan
                     time.sleep(random.uniform(5, 10))
 
                 # 控制速率
-                time.sleep(random.uniform(1, 3))
+                time.sleep(random.uniform(1, 2))
 
         result.success_count = success_count
         result.sent_texts = sent_texts
@@ -1370,7 +1370,6 @@ def pick_commenters(commenter_map, usage_path, n=3):
 
 def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     # --- 新增：为线程等待定义统一的超时时间 (单位：秒) ---
-    # 您的原始代码中 join() 没有超时，这里加上以防万一
     THREAD_JOIN_TIMEOUT = 900  # 15分钟
 
     print(f"[{bvid}] --- process_single_video 开始 ---")
@@ -1404,11 +1403,25 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     share_video = hudong_info.get("share_video", False)
     triple_like_video = hudong_info.get("triple_like_video", False)
 
+    # 初始化 watch_thread 变量，防止后续引用报错
+    watch_thread = None
+
     print(f"[{bvid}] [步骤 2/8] 检查是否需要分享和三连...")
     if not share_video or not triple_like_video:
-        print(f"[{bvid}] [步骤 2a/8] 需要执行分享/三连。调用 watch_video...")
-        watch_video([bvid])
-        print(f"[{bvid}] [步骤 2a/8] watch_video 调用完成。")
+        print(f"[{bvid}] [步骤 2a/8] 需要执行分享/三连。正在启动 watch_video 后台线程...")
+
+        # --- 修改点：将 watch_video 放入后台线程启动 ---
+        try:
+            watch_thread = threading.Thread(
+                target=watch_video,
+                args=([bvid],)
+            )
+            watch_thread.start()
+            print(f"[{bvid}] [步骤 2a/8] watch_video 后台线程已启动，主程序继续执行分享操作。")
+        except Exception as e:
+            print(f"[{bvid}] 启动 watch_video 线程失败: {e}")
+        # -------------------------------------------
+
         for commenter in commenter_map.values():
             name = commenter.all_params.get('name', 'unknown')
             print(f"[{bvid}] [步骤 2b/8] 用户 '{name}' 正在执行 share_video...")
@@ -1430,7 +1443,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
         max_success_comment_count = 20
         max_success_owner_danmu_count = 20
         max_success_other_danmu_count = 30
-    print(f"[{bvid}] [步骤 2/8] 分享和三连操作检查完成。")
+    print(f"[{bvid}] [步骤 2/8] 分享和三连操作检查完成（观看任务可能仍在后台进行）。")
 
     hudong_info['share_video'] = share_video
     hudong_info['triple_like_video'] = triple_like_video
@@ -1478,7 +1491,6 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     print(f"[{bvid}] [步骤 5/8] pick_commenters 调用完成，选择了 {len(comment_commenters)} 个评论者。")
 
     print(f"[{bvid}] [步骤 6/8] 准备调用 post_comments_once 发送评论...")
-    # 使用之前提供的带超时的最终版 post_comments_once
     post_comments_once(
         commenter_list=comment_commenters,
         comment_list=comment_list,
@@ -1522,6 +1534,19 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
     print(f"[{bvid}] [步骤 8/8] 其他用户弹幕线程等待完成。")
 
     hudong_info['danmu_used'] = result.sent_texts
+
+    # --- 新增：最后等待 watch_video 线程结束 ---
+    if watch_thread:
+        print(f"[{bvid}] 准备等待 watch_video 后台线程...")
+        if watch_thread.is_alive():
+            watch_thread.join(timeout=THREAD_JOIN_TIMEOUT)
+            if watch_thread.is_alive():
+                print(f"[{bvid}] 警告：watch_video 线程在 {THREAD_JOIN_TIMEOUT} 秒后仍未结束。")
+            else:
+                print(f"[{bvid}] watch_video 线程已成功执行完毕。")
+        else:
+            print(f"[{bvid}] watch_video 线程此前已自动完成。")
+    # ---------------------------------------
 
     print(f"[{bvid}] --- process_single_video 结束 ---")
     return hudong_info, False
@@ -1576,6 +1601,44 @@ signatures = [
 ]
 
 
+def filter_recent_data(data_dict, days=10):
+    """
+    根据 last_processed_date 保留最近 N 天的数据。
+    兼容 import datetime 的导入方式。
+    """
+    # 1. 计算时间阈值
+    now = datetime.datetime.now()
+    cutoff_date = now - datetime.timedelta(days=days)
+
+    # 2. 遍历并过滤
+    filtered_data = {}
+    for key, val in data_dict.items():
+        # 尝试获取日期字符串
+        date_str = val.get('hudong', {}).get('last_processed_date')
+        if date_str:
+            try:
+                # 将字符串解析为时间对象
+                dt = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+                # 保留 大于等于 截止时间的数据
+                if dt >= cutoff_date:
+                    filtered_data[key] = val
+            except ValueError:
+                # 如果日期格式不对，默认跳过
+                continue
+
+    # 3. 打印高信息密度日志
+    total_cnt = len(data_dict)
+    kept_cnt = len(filtered_data)
+    dropped_cnt = total_cnt - kept_cnt
+    drop_rate = (dropped_cnt / total_cnt * 100) if total_cnt > 0 else 0
+
+    # 日志包含：当前时间、截止日期、输入->输出变化、移除数量及占比
+    print(f"[FilterLog] {now.strftime('%Y-%m-%d %H:%M:%S')} | "
+          f"Cutoff: {cutoff_date.strftime('%Y-%m-%d')} (Past {days}d) | "
+          f"Items: {total_cnt} -> {kept_cnt} (Dropped {dropped_cnt}, {drop_rate:.1f}%)")
+
+    return filtered_data
+
 def fun():
     global NEED_UPDATE_SIGN
     try:
@@ -1603,6 +1666,8 @@ def fun():
         print(f"共创建 {len(commenter_map)} 个评论者实例。")
 
         interaction_data = load_processed_dict(interaction_data_file)
+        interaction_data = filter_recent_data(interaction_data, days=1)
+
         UPLOAD_LOG_FILE = "../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json"  # 上传日志
 
         metadata_cache_with_uploads = read_json(UPLOAD_LOG_FILE) or {}
