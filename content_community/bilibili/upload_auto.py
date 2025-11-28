@@ -428,7 +428,7 @@ def get_watermark_path(user_type: str, user_name: str) -> str:
     selected_index = user_hash_int % len(filtered_files)
     selected_file = filtered_files[selected_index]
     watermark_path = os.path.join(asset_dir, selected_file)
-    print(f"{user_name} ✅ 使用水印图片 {watermark_path} 筛选池大小 {len(filtered_files)}")
+    print(f"{user_name} ✅ 使用水印图片 {watermark_path} 筛选池大小 {len(filtered_files)} {time.strftime('%Y-%m-%d %H:%M:%S')}")
     return watermark_path
 
 
@@ -921,7 +921,7 @@ def process_video_batch(
       - video_path_list: 参与合并的实际视频路径集合
       - had_missing_scheme: 是否存在“无法选取投稿方案”的子视频（用于 persistent 标记）
     """
-    start_time = time.time()
+    this_fun_start_time = time.time()
     video_path_list: List[str] = []
     origin_video_path_list: List[str] = []
     comment_list_all: List[Any] = []
@@ -1056,7 +1056,7 @@ def process_video_batch(
     except Exception as e:
         print(f"⚠️ 水印增加失败，继续使用原视频：{e}")
         final_output_path_ready = active_path
-    print(f"🎬 处理完成，{userName}，时间：{time.strftime('%Y-%m-%d %H:%M:%S')}：{final_output_path_ready}，总耗时 {time.time() - start_time:.2f} 秒。")
+    print(f"🎬 处理完成，{userName}，时间：{time.strftime('%Y-%m-%d %H:%M:%S')}：{final_output_path_ready}，总耗时 {time.time() - this_fun_start_time:.2f} 秒。")
     return (
         final_output_path_ready,
         best_scheme_final,
@@ -1340,7 +1340,7 @@ def auto_upload() -> None:
         # if userName in limit_user_list:
         #     uploads_today_max = 25
 
-        if uploads_today >= uploads_today_max or remote_upload_count >= 22:
+        if uploads_today >= uploads_today_max or remote_upload_count >= 21:
             is_cooldown_or_limit = True
             cooldown_reason = f"今日已本地上传 {uploads_today} 个视频， 实际平台数据：{remote_upload_count} ，达到上限 {uploads_today_max}。"
         elif latest_timestamp and (all_start_time - latest_timestamp) < wait_minutes * 60 and uploads_last_hour >= 1:

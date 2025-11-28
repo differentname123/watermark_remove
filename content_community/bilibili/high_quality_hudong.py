@@ -1706,7 +1706,7 @@ def fun():
         one_hour_ago = time.time() - 3600 * 3
         all_found_videos = [video for video in all_found_videos if video.get('created', 0) >= one_hour_ago]
 
-        all_found_videos = all_found_videos[:100]
+        all_found_videos = all_found_videos
         print(f"共找到 {len(all_found_videos)} 个视频。")
         count = 0
         for video in all_found_videos:
