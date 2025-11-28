@@ -921,6 +921,7 @@ def process_video_batch(
       - video_path_list: 参与合并的实际视频路径集合
       - had_missing_scheme: 是否存在“无法选取投稿方案”的子视频（用于 persistent 标记）
     """
+    start_time = time.time()
     video_path_list: List[str] = []
     origin_video_path_list: List[str] = []
     comment_list_all: List[Any] = []
@@ -1055,7 +1056,7 @@ def process_video_batch(
     except Exception as e:
         print(f"⚠️ 水印增加失败，继续使用原视频：{e}")
         final_output_path_ready = active_path
-
+    print(f"🎬 处理完成，{userName}，时间：{time.strftime('%Y-%m-%d %H:%M:%S')}：{final_output_path_ready}，总耗时 {time.time() - start_time:.2f} 秒。")
     return (
         final_output_path_ready,
         best_scheme_final,
@@ -1342,7 +1343,7 @@ def auto_upload() -> None:
         if uploads_today >= uploads_today_max or remote_upload_count >= 22:
             is_cooldown_or_limit = True
             cooldown_reason = f"今日已本地上传 {uploads_today} 个视频， 实际平台数据：{remote_upload_count} ，达到上限 {uploads_today_max}。"
-        elif latest_timestamp and (time.time() - latest_timestamp) < wait_minutes * 60 and uploads_last_hour >= 1:
+        elif latest_timestamp and (all_start_time - latest_timestamp) < wait_minutes * 60 and uploads_last_hour >= 1:
             is_cooldown_or_limit = True
             cooldown_reason = f"距离上次上传少于 {wait_minutes} 分钟。 上次上传时间：{latest_upload_time}，当前时间：{time.strftime('%Y-%m-%d %H:%M:%S')}"
         elif userName == latest_user:
