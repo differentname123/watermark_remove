@@ -7,6 +7,9 @@ import tempfile
 import time
 import traceback
 from pathlib import Path
+import random
+
+from common_utils.common_utils import read_json
 
 # --- 依赖：librosa, soundfile, numpy, edge_tts ---
 try:
@@ -21,6 +24,77 @@ except ImportError:
     print("   请运行 `pip install librosa soundfile numpy`。")
 
 import edge_tts
+all_voice_name_list = [
+        "zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-YunjianNeural", "zh-CN-YunxiNeural",
+        "zh-CN-YunxiaNeural", "zh-CN-YunyangNeural", "zh-CN-liaoning-XiaobeiNeural", "zh-CN-shaanxi-XiaoniNeural"
+    ]
+
+
+
+def parse_tts_filename(output_file, voice_name_list):
+    """
+    解析 TTS 文件名。
+    如果解析成功，返回 (原始voice_name, pitch, rate)。
+    如果文件名格式不对，或者找不到对应的 voice_name，voice_name 将返回 None，不抛出错误。
+    """
+
+    # 1. 建立 [简称 -> 完整 voice_name] 的映射字典
+    voice_map = {}
+    if voice_name_list:
+        for original_name in voice_name_list:
+            # 你的生成逻辑：取横杠最后一段，去掉 Neural
+            short_name = original_name.split('-')[-1].replace('Neural', '')
+            voice_map[short_name] = original_name
+
+    # 2. 获取文件名（去除路径）
+    filename = os.path.basename(output_file)
+
+    # 3. 正则提取
+    # 匹配：说话人(内容)_音调(内容)_语速(内容)_句子
+    pattern = r"说话人(?P<short_name>[^_]+)_音调(?P<pitch>[^_]+)_语速(?P<rate>[^_]+)_句子"
+
+    match = re.search(pattern, filename)
+
+    if match:
+        short_name = match.group("short_name")
+        pitch = match.group("pitch")
+        rate = match.group("rate")
+
+        # 4. 查表 (如果找不到，get 方法默认返回 None)
+        original_voice_name = voice_map.get(short_name)
+
+        # 返回结果：(可能为None的name, pitch, rate)
+        return original_voice_name, pitch, rate
+    else:
+        # 文件名格式完全不匹配，全部返回 None
+        return None, None, None
+
+
+def get_voice_info(tags):
+    # 1. 把输入的 tags 字典里的所有列表展平，变成一个集合
+    user_tags = {t for sublist in tags.values() for t in sublist}
+
+    # 2. 读取数据
+    voice_info = read_json(r"W:\project\python_project\watermark_remove\content_community\app\voice_info.json")
+
+    # 3. 一行代码计算所有音色的匹配分
+    # 逻辑：遍历音色 -> 展平该音色的所有标签 -> 计算和用户标签的交集数量
+    scores = [
+        (name, len(user_tags & {t for v in data.values() for t in v}))
+        for name, data in voice_info.items()
+    ]
+
+    # 4. 排序(降序) -> 取前3 -> 随机选一个 -> 返回名字
+    # if scores 用于防止文件为空报错
+    final_voice_name = random.choice(sorted(scores, key=lambda x: x[1], reverse=True)[:2])[0] if scores else None
+    original_voice_name, pitch, rate = parse_tts_filename(final_voice_name, all_voice_name_list)
+    final_voice_infp = {
+        "voice_name": original_voice_name,
+        "pitch": pitch,
+        "rate": rate
+    }
+    print(f"ⓘ 根据标签推荐音色: {final_voice_infp}")
+    return final_voice_infp
 
 def _get_volume_info(file_path: str) -> dict:
     """

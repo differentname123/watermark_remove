@@ -511,15 +511,17 @@ def gen_ending_video(text, output_path, origin_ending_video_path):
         os.remove(with_audio_path)
     return str(output_path.resolve())
 
-def gen_video(text, output_path, origin_video_path, voice_name="zh-CN-XiaoxiaoNeural",keep_original_audio=False, fixed_rect=None):
+def gen_video(text, output_path, origin_video_path,keep_original_audio=False, fixed_rect=None, voice_info=None):
     """
     生成结尾视频（测试用），结尾语为txt
     """
-    if voice_name is None:
-        voice_name = random.choice([
-            "zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-YunjianNeural", "zh-CN-YunxiNeural",
-            "zh-CN-YunxiaNeural", "zh-CN-YunyangNeural"
-        ])
+    voice_name="zh-CN-XiaoxiaoNeural"
+    rate = "+30%"
+    pitch = '+30Hz'
+    if voice_info is not None:
+        voice_name = voice_info.get('voice_name', voice_name)
+        rate = voice_info.get('rate', "+30%")
+        pitch = voice_info.get('pitch', '+30Hz')
     output_path = pathlib.Path(output_path)
     audio_path = output_path.with_suffix(".mp3")
     duration = generate_audio_and_get_duration_sync(
@@ -527,8 +529,8 @@ def gen_video(text, output_path, origin_video_path, voice_name="zh-CN-XiaoxiaoNe
         output_filename=str(audio_path),
         voice_name=voice_name,
         trim_silence=False,
-        rate="+30%",
-        pitch='+30Hz',
+        rate=rate,
+        pitch=pitch,
     )
     video_duration = probe_duration(origin_video_path)
     segments_info = [{

@@ -25,6 +25,7 @@ from common_utils.image_utils import save_frames_around_timestamp
 from common_utils.ocr.paddle_ocr_utils import find_overall_subtitle_box_target_number
 from common_utils.split_audio import separate_with_cli
 from common_utils.split_scenes import split_scenes_json
+from common_utils.tts.edge_tts_utils import get_voice_info
 from common_utils.video_utils import extract_audio_from_video, clip_video_ms, merge_videos_ffmpeg, probe_duration, \
     cover_subtitle, reduce_video_size_robust, reduce_and_replace_video, probe_video_new, compress_video_in_place
 from common_utils.video_utils2 import add_bgm_to_video
@@ -1001,7 +1002,7 @@ def gen_video_script(logical_scene_info, owner_asr_info, output_dir, no_is_adjus
     return new_video_script
 
 
-def process_video_with_owner_text(video_path, split_scene, output_dir, name_key, subtitle_box):
+def process_video_with_owner_text(video_path, split_scene, output_dir, name_key, subtitle_box, voice_info):
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
     new_narration_script = split_scene.get('new_narration_script', '')
@@ -1030,7 +1031,7 @@ def process_video_with_owner_text(video_path, split_scene, output_dir, name_key,
             # replace_video_audio(segment_output_scene_file,seg_start, seg_end, pure_audio_path, segment_output_scene_background_file)
             # origin_video_path = segment_output_scene_background_file
             # keep_original_audio = True
-            gen_video(new_narration_script, output_path, origin_video_path, keep_original_audio=keep_original_audio, fixed_rect=subtitle_box)
+            gen_video(new_narration_script, output_path, origin_video_path, keep_original_audio=keep_original_audio, fixed_rect=subtitle_box, voice_info=voice_info)
         need_merge_video_file = output_path
     else:
         need_merge_video_file = segment_output_scene_file
@@ -1273,7 +1274,9 @@ def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_bo
     final_output_path = os.path.join(output_dir, 'remake.mp4')
     final_with_bgm_path = final_output_path.replace('.mp4', '_with_bgm.mp4')
     final_video_script = choose_script(fused_new_video_script_info, need_different=True)
+    tags = final_video_script.get('tags', [])
 
+    voice_info = get_voice_info(tags)
     if is_valid_target_file_simple(final_output_path, 100):
         logger.info("检测到已存在的输出文件，直接加载返回")
         return final_output_path, final_video_script
@@ -1324,13 +1327,12 @@ def gen_new_video_by_script(video_path, fused_new_video_script_info, subtitle_bo
         for split_scene in split_scene_list:
             count += 1
             name_key_full = f"{name_key}_part{count}"
-            need_merge_video_file = process_video_with_owner_text(video_path, split_scene, output_dir, name_key_full, subtitle_box)
+            need_merge_video_file = process_video_with_owner_text(video_path, split_scene, output_dir, name_key_full, subtitle_box, voice_info)
             if need_merge_video_file:
                 need_merge_video_file_list.append(need_merge_video_file)
         logger.info(f'处理新场景:{name_key} 分割后的场景数量{len(split_scene_list)} 进度: {new_scene_list.index(fused_new_scene) + 1}/{len(new_scene_list)} 耗时: {time.time() - start_time:.2f} 秒')
 
     merge_videos_ffmpeg(need_merge_video_file_list, output_path=final_output_path)
-    tags = final_video_script.get('tags', [])
     bgm_path = get_bgm_path(tags, logger)
     rate = 0.5
     cut_type = final_video_script.get('cut_type', '未知')
@@ -1737,11 +1739,10 @@ def gen_optimized_video_plan(video_path, output_dir, logger, base_prompt):
         save_json(output_file_optimized_video_plan_path, optimized_video_plan)
     return optimized_video_plan
 
-def gen_base_prompt(params, video_path):
+def gen_base_prompt(params, video_path, duration):
     """
     生成基础的通用提示词
     """
-    duration = probe_duration(video_path)
     base_prompt = f"\n视频相关信息如下:\n视频时长为: {duration}"
     desc = params.get('desc', '')
     comment_list = params.get('temp_comments', [])
@@ -1760,7 +1761,9 @@ def gen_new_video_script(video_path, basename, params={}):
     output_dir = os.path.join(base_output_dir, basename)
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
-    base_prompt = gen_base_prompt(params, video_path)
+    duration = probe_duration(video_path)
+
+    base_prompt = gen_base_prompt(params, video_path, duration)
 
     has_author_voice = params.get('has_author_voice', False)
     need_optimized_video_plan = params.get('need_optimized_video_plan', True)
@@ -1822,12 +1825,13 @@ def fuse_all_info(owner_asr_info, final_scene_info, new_video_script_list):
     return new_video_script_list
 
 
-def correct_owner_timestamps(asr_result: list) -> list:
+def correct_owner_timestamps(asr_result, duration):
     """
     对ASR结果列表中speaker为owner的文本时间进行纠正。
 
     Args:
         asr_result: ASR结果列表。
+        duration: 视频总时长（毫秒）。
 
     Returns:
         带有 'fix_start' 和 'fix_end' 字段的ASR结果列表。
@@ -1857,7 +1861,7 @@ def correct_owner_timestamps(asr_result: list) -> list:
                         current_segment['fix_start'] = current_segment['start'] - movement
 
             # --- 向后修正逻辑 (修正 end) ---
-            # 查看下一个文本
+            # 查看下一个文本是否存在
             if i < len(asr_result) - 1:
                 next_segment = asr_result[i + 1]
 
@@ -1887,6 +1891,17 @@ def correct_owner_timestamps(asr_result: list) -> list:
                         # 最多移动500ms
                         movement = min(500, gap / 2)
                         current_segment['fix_end'] = current_segment['end'] + movement
+
+            else:
+                # --- 新增逻辑：这是最后一个片段 ---
+                # 如果当前片段是 owner，且是整个列表的最后一个
+                gap = duration - current_segment['end']
+
+                # 只有当视频还有剩余时间时才延伸
+                if gap > 0:
+                    # 向后延伸最多 500ms，或者直到视频结束 (取较小值)
+                    movement = min(500, gap)
+                    current_segment['fix_end'] = current_segment['end'] + movement
 
     return asr_result
 
@@ -1933,6 +1948,7 @@ def gen_new_video(video_path, basename):
     output_dir = os.path.join(base_output_dir, basename)
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
+    duration = probe_duration(video_path)
 
     output_file_final_path = os.path.join(output_dir, 'new_video_script.json')
     final_scene_info_path = os.path.join(output_dir, 'final_scene_info.json')
@@ -1953,7 +1969,7 @@ def gen_new_video(video_path, basename):
 
     cut_type = new_video_script[0].get('cut_type', 'all')
     owner_asr_info = read_json(owner_asr_path)
-    fixed_owner_asr_info = correct_owner_timestamps(owner_asr_info)
+    fixed_owner_asr_info = correct_owner_timestamps(owner_asr_info, duration)
     save_json(fixed_owner_asr_path, fixed_owner_asr_info)
     logical_scene_info = read_json(logical_scene_info_path)
     has_overall_bgm = logical_scene_info.get('has_overall_bgm', True)
@@ -1986,7 +2002,7 @@ if __name__ == '__main__':
     # compress_video_in_place(video_path)
 
     gen_new_video_script_robus(video_path)
-    # gen_new_video_robus(video_path)
+    gen_new_video_robus(video_path)
     #
     # delete_all_mp4_in_dir(base_output_dir)
     # delete_files_except(base_output_dir)
