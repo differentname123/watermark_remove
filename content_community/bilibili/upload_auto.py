@@ -96,7 +96,7 @@ accounts: Dict[str, str] = {
     "dahao": "dahao",
     "xiaocai": "xiaocai",
     "shun": "shun",
-    "qizhu": "qizhu",
+    # "qizhu": "qizhu",
     "ping": "ping",
     "zhong": "zhong",
 }
@@ -163,6 +163,7 @@ UPLOAD_LOG_FILE = "../../LLM/TikTokDownloader/back_up/metadata_cache_with_upload
 USER_UPLOADS_INFO_FILE = "../../LLM/TikTokDownloader/back_up/user_uploads_info.json"  # 用户上传统计
 persistent_tasks_file = "../../LLM/TikTokDownloader/back_up/persistent_tasks.json"
 bvid_file_path = "../../LLM/TikTokDownloader/back_up/bvid_file.json"
+SKIPPED_CANDIDATES_FILE = "../../LLM/TikTokDownloader/back_up/skipped_candidates.json"
 
 # ---------- 并发与日志 ----------
 # 每个账号使用一个单独的 ThreadPoolExecutor(max_workers=1) —— 保证同账号串行上传
@@ -1085,11 +1086,7 @@ def get_wait_minutes():
 
     # 2. 根据不同的时间段，返回不同的等待时间
     # 规则：越早时间越长，越晚时间越短
-
-    if current_hour <= 5:  # 凌晨 00:00 - 05:59，大部分人休息，等待最长
-        return 50
-
-    elif current_hour <= 8:  # 清晨 06:00 - 08:59，开始苏醒，等待时间减少
+    if current_hour <= 8:  # 清晨 06:00 - 08:59，开始苏醒，等待时间减少
         return 40
 
     elif current_hour <= 11:  # 上午 09:00 - 11:59，工作时间，等待时间减少
@@ -1584,6 +1581,9 @@ def auto_upload() -> None:
             f"{interval_minutes_str:>9} | "  # 宽度增加到 9
             f"{info.get('latest_upload_time', 'N/A'):<19}"  # 指定宽度 19，确保对齐
         )
+
+    # 将user_candidate_counts保存到文件
+    save_json(SKIPPED_CANDIDATES_FILE, user_candidate_counts)
     print(f"错误数量为{len(error_user_map)}  全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 
