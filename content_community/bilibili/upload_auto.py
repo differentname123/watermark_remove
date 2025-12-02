@@ -1074,6 +1074,14 @@ def auto_upload() -> None:
         sessdata = detail_info.get("SESSDATA", f"SESSDATA")
         bili_jct = detail_info.get("BILI_JCT", f"user_{uid}")
         total_cookie = detail_info.get("total_cookie", f"user_{uid}")
+        # 判断total_cookie是否和之前的不一样，如果不一样则更新
+        before_total_cookie = config_map.get(name, (None, None, None))[2]
+        if before_total_cookie != total_cookie:
+            print(f"🔄 检测到用户 {name} 的 total_cookie 发生变化，已更新。")
+            # 如果name在error_user_map中，删除对应的错误记录
+            if name in error_user_map:
+                del error_user_map[name]
+
         config_map[name] = (sessdata, bili_jct, total_cookie)
     temp_set: Set[str] = set()
     metadata_cache, upload_log = _load_metadata_and_log()
