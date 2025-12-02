@@ -19,8 +19,6 @@
   - 若封面增强 _enhanced.jpg 已存在，则跳过再次生成。
 - 保持上传前参数构建、上传重试、日志更新、清理与节流策略不变。
 """
-from collections import defaultdict
-
 import concurrent.futures
 import datetime
 import hashlib
@@ -40,7 +38,7 @@ from common_utils.common_utils import (
     read_json,
     is_valid_target_file_simple,
     scan_generated_files,
-    ms_to_time,
+    ms_to_time, init_config,
 )
 from common_utils.video_scene.combine_asr_scene import gen_new_video_robus
 from common_utils.video_utils import (
@@ -62,51 +60,6 @@ base_BILI_JCT = get_config("bilibili_csrf_token")
 base_total_cookie = get_config("bilibili_total_cookie")
 config_map["base"] = (base_SESSDATA, base_BILI_JCT, base_total_cookie)
 
-# 账号映射
-accounts: Dict[str, str] = {
-    "tao": "tao",
-    "taoxiao": "taoxiao",
-    "junxiao": "junxiao",
-    "junda": "junda",
-    # "ruru": "ruru",
-    "nana": "nana",
-    "jie": "jie",
-    # "qiqi": "qiqi",
-    "mama": "mama",
-    "hong": "hong",
-    # "yan": "yan",
-    "xue": "xue",
-    "cai": "cai",
-    "jun": "jun",
-    "xiaosu": "xiaosu",
-    "chabian": "chabian",
-    "lin": "lin",
-    "jj": "jj",
-    "hao": "hao",
-    "dan": "dan",
-    "ning": "ning",
-    "yang": "yang",
-    # "ruruxiao": "ruruxiao",
-    "qiqixiao": "qiqixiao",
-    # "mu": "mu",
-    "xiaomu": "xiaomu",
-    "yiyi": "yiyi",
-    "xiaodan": "xiaodan",
-    "xiaoxue": "xiaoxue",
-    "dahao": "dahao",
-    "xiaocai": "xiaocai",
-    "shun": "shun",
-    "qizhu": "qizhu",
-    "ping": "ping",
-    "zhong": "zhong",
-}
-
-# 读取各账号 cookie
-for name, map_key in accounts.items():
-    sessdata = get_config(f"{name}_bilibili_sessdata_cookie")
-    bili_jct = get_config(f"{name}_bilibili_csrf_token")
-    total_cookie = get_config(f"{name}_bilibili_total_cookie")
-    config_map[map_key] = (sessdata, bili_jct, total_cookie)
 
 # 题材分组
 group_info = {
@@ -1113,7 +1066,15 @@ def auto_upload() -> None:
       以充分利用计算资源。
     """
     global upload_log_global
+    # 读取各账号 cookie
+    base_config_map = init_config()
 
+    for uid, detail_info in base_config_map.items():
+        name = detail_info.get("name", f"user_{uid}")
+        sessdata = detail_info.get("SESSDATA", f"SESSDATA")
+        bili_jct = detail_info.get("BILI_JCT", f"user_{uid}")
+        total_cookie = detail_info.get("total_cookie", f"user_{uid}")
+        config_map[name] = (sessdata, bili_jct, total_cookie)
     temp_set: Set[str] = set()
     metadata_cache, upload_log = _load_metadata_and_log()
     upload_log_global = upload_log
