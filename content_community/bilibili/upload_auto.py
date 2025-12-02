@@ -81,7 +81,7 @@ accounts: Dict[str, str] = {
     "xiaosu": "xiaosu",
     "chabian": "chabian",
     "lin": "lin",
-    "jj": "jj",
+    # "jj": "jj",
     "hao": "hao",
     "dan": "dan",
     "ning": "ning",
@@ -152,7 +152,7 @@ group_info = {
 fun_user_list = ['dan', 'yiyi']
 
 right_now_user_list = ["qiqixiao", "jie"]
-video_recommend_user_list = ['nana', 'hong', 'jie', 'xue', 'cai', 'xiaosu', 'jun', 'dan', 'yiyi', 'qiqixiao', 'shun']
+video_recommend_user_list = ['nana', 'taoxiao', 'hong', 'jie', 'cai', 'xiaosu', 'jun', 'dan', 'ning', 'yiyi', 'qiqixiao', 'xiaoxue', 'shun', 'ping']
 
 # 错误记录
 error_user_map: Dict[str, str] = {}
