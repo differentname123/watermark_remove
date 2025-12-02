@@ -81,7 +81,7 @@ accounts: Dict[str, str] = {
     "xiaosu": "xiaosu",
     "chabian": "chabian",
     "lin": "lin",
-    # "jj": "jj",
+    "jj": "jj",
     "hao": "hao",
     "dan": "dan",
     "ning": "ning",
@@ -96,7 +96,7 @@ accounts: Dict[str, str] = {
     "dahao": "dahao",
     "xiaocai": "xiaocai",
     "shun": "shun",
-    # "qizhu": "qizhu",
+    "qizhu": "qizhu",
     "ping": "ping",
     "zhong": "zhong",
 }
@@ -149,7 +149,7 @@ group_info = {
         "lin",
     ],
 }
-fun_user_list = ['dan', 'yiyi']
+fun_user_list = []
 
 right_now_user_list = ["qiqixiao", "jie"]
 video_recommend_user_list = ['nana', 'taoxiao', 'hong', 'jie', 'cai', 'xiaosu', 'jun', 'dan', 'ning', 'yiyi', 'qiqixiao', 'xiaoxue', 'shun', 'ping']
