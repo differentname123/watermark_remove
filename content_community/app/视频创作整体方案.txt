@@ -70,3 +70,66 @@
         3.投稿后的id和原视频信息要严格保留不能够有任何的丢失问题。
         4.问题细化，每个出问题的地方一定要能够细化到具体的信息，不能够是无法溯源的(严禁出现卡死不动的情况，不能够一点进度都没有，卡得太久直接应该kill)
 
+    数据表设计：
+        video_materials(用于保存客观的视频信息):
+            video_id：表示唯一的标识，不同的视频素材有不同的id
+            status:表示当前处理状态（处理中 处理失败 处理完成）
+            error_info:表示处理失败的错误信息
+            base_info:表示视频的基础信息:
+                video_title:视频标题
+                video_desc:视频描述
+                collection_time:视频收集时间（表示这个视频是什么时候拉取的）
+                author:视频作者
+                upload_time:视频投稿时间
+                duration:视频时长
+                tags:视频标签
+                height,width:视频分辨率
+                original_url:视频链接
+                download_url:视频下载链接（云存储的地址）
+                dynamic_cover:视频动态封面链接
+                static_cover:视频静态封面链接
+                comment_list:视频评论列表（包含评论内容 点赞数量）
+                digg_count:点赞数量
+                comment_count:评论数量
+                collect_count:收藏数量
+                share_count:分享数量
+            extra_info:表示视频的额外信息（json格式存储）:
+                is_requires_text:是否需要文字增强
+                is_needs_stickers:是否需要表情包增强
+                is_needs_audio_replace:是否需要音频替换
+                is_realtime_video:是否为实时视频
+
+
+                scene_timestamp_list:场景时间戳列表。表示视频的镜头切分点
+                logical_scene_info:逻辑场景信息。表示视频划分出的不同逻辑场景及其描述
+                asr_info:表示视频的音频识别结果,主要是用于原作者声音识别
+                owner_subtitle_box_info:表示视频中作者声音的字幕框
+
+
+        publish_tasks（业务相关 包含待创作视频的配置信息）:
+            video_id_list：表示该任务所包含的视频素材id列表
+            userName：表示该任务所属的用户
+            original_url_info_list：
+                origin_url:表示该任务所包含的视频链接
+                video_id:表示该任务所包含的视频素材id
+                is_contains_creator_voice:表示该任务是否包含原作者声音
+                is_requires_text:是否需要文字增强
+                is_needs_stickers:是否需要表情包增强
+                is_needs_audio_replace:是否需要音频替换
+                is_realtime_video:是否为实时视频
+
+
+            creation_guidance_info:表示该任务的创作指导信息
+                retain_ratio:表示该任务的视频素材保留比例
+                is_need_original:是否需要原创
+                is_need_narration:是否需要增加解说
+                is_need_scene_title_and_summary:是否需要视频上的场景标题与视频摘要
+
+            new_video_script_info:表示该任务所生成的新视频剪辑方案
+            expected_publish_time:表示该任务的预计投稿时间
+
+
+        upload_info:
+            upload_id:表示唯一的标识，不同的上传有不同的id，目前是bvid
+        status:表示当前上传的处理状态（处理中 处理失败 处理完成）
+        error_info:表示处理失败的错误信息
