@@ -925,7 +925,7 @@ def process_video_batch(
 
             base_video_path_for_naming = video_path  # 保持与原逻辑一致：用最后一次的 video_path 生成产物名
         except Exception as e:
-            print(f"⚠️ 处理媒体过程中出现异常：{e} {video_id} {userName}")
+            print(f"⚠️  处理媒体过程中出现异常：{e} {video_id} {userName}")
             traceback.print_exc()
             # 替换为安全更新
             update_log_status(video_id, {"status": "error"})
