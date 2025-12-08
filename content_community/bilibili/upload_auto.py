@@ -1555,9 +1555,30 @@ def auto_upload() -> None:
     save_json(SKIPPED_CANDIDATES_FILE, user_candidate_counts)
     print(f"错误数量为{len(error_user_map)}  全部任务处理完毕。时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
 
+def clear_proxies():
+    """在当前脚本会话中临时清空HTTP/HTTPS代理环境变量。"""
+    print("--- 正在清空会话代理 ---")
+    # 定义需要被清除的代理环境变量名（包括大小写）
+    proxy_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']
+
+    cleared = False
+    for key in proxy_keys:
+        if key in os.environ:
+            # 使用 del 删除环境变量，使其在当前进程中失效
+            del os.environ[key]
+            print(f"已临时移除环境变量: {key}")
+            cleared = True
+
+    if cleared:
+        print("代理信息已在当前会话中清空。")
+    else:
+        print("无需清空，未发现代理环境变量。")
+    print("-" * 28 + "\n")
+
 
 # ---------- CLI ----------
 if __name__ == "__main__":
+    clear_proxies()
     while True:
         auto_upload()
         time.sleep(60)  # 每分钟运行一次

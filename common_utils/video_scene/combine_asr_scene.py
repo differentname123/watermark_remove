@@ -310,7 +310,7 @@ def gen_owner_asr_by_llm(video_path, has_author_voice, logger, base_prompt):
     MAX_RETRIES = 3
     RETRY_DELAY = 10  # 秒
     PROMPT_FILE_PATH = '../../content_community/app/视频分解素材_直接进行asr转录与owner识别严格.txt'
-    MODEL_NAME = "gemini-2.5-pro"
+    MODEL_NAME = "gemini-flash-latest"
 
     # --- 2. 初始化和预处理 ---
     try:
@@ -491,7 +491,7 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, base_prom
     """
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
-    model_name = "gemini-2.5-pro"
+    model_name = "gemini-flash-latest"
     need_pop_list = ['scene_start', 'scene_end', 'sequence_info', 'narrative_function']
     cut_type = 'all'
     other_prompt = ''
@@ -505,7 +505,7 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, base_prom
         cut_type = 'no_owner_voice'
         # 删除need_pop_list中的'narrative_function'
         need_pop_list.remove('narrative_function')
-        model_name = "gemini-flash-latest"
+        model_name = "gemini-flash-lite-latest"
         logger.info("使用无主人说话人版本的提示词")
         prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本纯重排场景.txt'
 
@@ -582,7 +582,9 @@ def check_logical_scene(logical_scene_info: dict, video_duration_ms: int) -> tup
         logical_scene_info.get('new_scene_info', []),
         logical_scene_info.get('deleted_scene', [])
     ]
-
+    deleted_scene = logical_scene_info.get('deleted_scene', [])
+    if len(deleted_scene) > 3:
+        return False, "检查失败：deleted_scene 中的场景数量超过3个，可能存在误操作。"
     # 1. 遍历并转换所有场景，同时进行初步检查
     for scene_list in scene_lists_to_process:
         for i, scene in enumerate(scene_list):
@@ -707,8 +709,8 @@ def gen_optimized_video_plan_llm(video_path, logger, base_prompt):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            model_name = "gemini-flash-latest"
-            # model_name = "gemini-2.5-pro"
+            model_name = "gemini-flash-lite-latest"
+            # model_name = "gemini-flash-latest"
             logger.info(f"正在生成提高生成画面 (尝试 {attempt}/{max_retries})")
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             optimized_video_plan = string_to_object(raw)
@@ -750,7 +752,7 @@ def gen_logical_scene_llm(video_path, logger, base_prompt):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            model_name = "gemini-2.5-pro"
+            model_name = "gemini-flash-latest"
             logger.info(f"正在生成逻辑性场景划分 (尝试 {attempt}/{max_retries})")
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             logical_scene_info = string_to_object(raw)
