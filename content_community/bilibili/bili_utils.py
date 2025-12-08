@@ -434,7 +434,7 @@ def check_duplicate_video(meta_data):
                 return False
             prompt = base_prompt
             prompt = f'{prompt}原始视频元数据:{douyin_info}\n目标视频列表:{result_list}'
-            raw = get_llm_content(prompt=prompt, model_name="gemini-2.5-flash")
+            raw = get_llm_content(prompt=prompt, model_name="gemini-flash-lite-latest")
             result = string_to_object(raw)
             target_bvid = result.get("bvid")
             target_value = None
