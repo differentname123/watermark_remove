@@ -17,6 +17,7 @@ import time
 import random
 
 from LLM.gemini import get_llm_content
+from LLM.gemini_cli import ask_gemini
 from common_utils.common_utils import get_config, read_json, time_to_ms, string_to_object, save_json, init_config
 
 URL_MODIFY_RELATION = "https://api.bilibili.com/x/relation/modify"
@@ -434,7 +435,10 @@ def check_duplicate_video(meta_data):
                 return False
             prompt = base_prompt
             prompt = f'{prompt}原始视频元数据:{douyin_info}\n目标视频列表:{result_list}'
-            raw = get_llm_content(prompt=prompt, model_name="gemini-flash-lite-latest")
+            # raw = get_llm_content(prompt=prompt, model_name="gemini-flash-lite-latest")
+            raw = ask_gemini(prompt=prompt)
+
+
             result = string_to_object(raw)
             target_bvid = result.get("bvid")
             target_value = None

@@ -1,3 +1,4 @@
+import functools
 import os
 import subprocess
 import json
@@ -16,7 +17,22 @@ LOCK_FILE_TEMPLATE = os.path.join(os.path.dirname(__file__), "gemini.process.loc
 # os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
 # os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
 
+def with_proxy(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
+        os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
+        try:
+            return func(*args, **kwargs)
+        finally:
+            if 'HTTP_PROXY' in os.environ:
+                del os.environ['HTTP_PROXY']
+            if 'HTTPS_PROXY' in os.environ:
+                del os.environ['HTTPS_PROXY']
 
+    return wrapper
+
+@with_proxy
 def ask_gemini(prompt, model_name='gemini-2.5-flash'):
     """
     通过调用 gemini-cli 向 Gemini 提问并返回文本结果。

@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from pathlib import Path
 
 from LLM.gemini import get_llm_content, get_llm_content_gemini_flash_video
+from LLM.gemini_cli import ask_gemini
 from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time, read_file_to_str, string_to_object, \
     timeit_print, is_valid_target_file_simple, split_and_merge_sentence, remove_last_punctuation, first_greater
 from common_utils.image_utils import save_frames_around_timestamp
@@ -536,7 +537,9 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, base_prom
         try:
             logger.info(f"正在生成新的视频脚本 (尝试 {attempt}/{max_retries})")
             # raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
-            raw = get_llm_content(prompt=full_prompt, model_name=model_name)
+            # raw = get_llm_content(prompt=full_prompt, model_name=model_name)
+
+            raw = ask_gemini(full_prompt)
 
             new_video_script = string_to_object(raw)
             check_result = check_new_video_script(new_video_script, scene_info, logger, has_author_voice)
@@ -2003,8 +2006,8 @@ if __name__ == '__main__':
     # print(check_video_integrity(video_path))
     # compress_video_in_place(video_path)
 
-    # gen_new_video_script_robus(video_path)
-    gen_new_video_robus(video_path)
+    gen_new_video_script_robus(video_path)
+    # gen_new_video_robus(video_path)
     #
     # delete_all_mp4_in_dir(base_output_dir)
     # delete_files_except(base_output_dir)
