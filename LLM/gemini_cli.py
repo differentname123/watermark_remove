@@ -8,20 +8,18 @@ from filelock import FileLock, Timeout
 
 # --- 新增部分 ---
 # 1. 定义锁文件的数量和基础名称。
-#    我们将创建 2 个锁文件，代表 2 个并发许可。
-MAX_CONCURRENT_TASKS = 2
+MAX_CONCURRENT_TASKS = 10
 LOCK_FILE_TEMPLATE = os.path.join(os.path.dirname(__file__), "gemini.process.lock.{}")
 # --- 新增部分结束 ---
-
-
-# os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
-# os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
 
 def with_proxy(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
         os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
+        os.environ['NO_PROXY'] = 'localhost,127.0.0.1'
+        os.environ['no_proxy'] = 'localhost,127.0.0.1'
+
         try:
             return func(*args, **kwargs)
         finally:

@@ -586,8 +586,14 @@ def check_logical_scene(logical_scene_info: dict, video_duration_ms: int) -> tup
         logical_scene_info.get('deleted_scene', [])
     ]
     deleted_scene = logical_scene_info.get('deleted_scene', [])
+    new_scene_info = logical_scene_info.get('new_scene_info', [])
+    # 检查 deleted_scene 中的场景数量，不能超过3个
     if len(deleted_scene) > 3:
         return False, "检查失败：deleted_scene 中的场景数量超过3个，可能存在误操作。"
+
+    # 检查 new_scene_info 中的场景数量，不能超过15个
+    if len(new_scene_info) > 15:
+        return False, "检查失败：new_scene_info 中的场景数量超过15个，可能存在误操作。"
     # 1. 遍历并转换所有场景，同时进行初步检查
     for scene_list in scene_lists_to_process:
         for i, scene in enumerate(scene_list):
@@ -713,7 +719,7 @@ def gen_optimized_video_plan_llm(video_path, logger, base_prompt):
     for attempt in range(1, max_retries + 1):
         try:
             model_name = "gemini-flash-lite-latest"
-            # model_name = "gemini-flash-latest"
+            # model_name = "gemini-flash-lite-latest"
             logger.info(f"正在生成提高生成画面 (尝试 {attempt}/{max_retries})")
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             optimized_video_plan = string_to_object(raw)
