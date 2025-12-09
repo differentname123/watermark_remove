@@ -68,7 +68,6 @@ group_info = {
         "chabian",
         "dan",
         "yiyi",
-        "yang",
         "xiaodan",
         "xiaohao",
         "xue",
@@ -100,6 +99,7 @@ group_info = {
         "zhong",
         "jj",
         "lin",
+        "yang"
     ],
 }
 fun_user_list = []

@@ -1777,6 +1777,7 @@ def gen_new_video_script(video_path, basename, params={}):
     base_prompt = gen_base_prompt(params, video_path, duration)
 
     has_author_voice = params.get('has_author_voice', False)
+    has_author_voice = False
     need_optimized_video_plan = params.get('need_optimized_video_plan', True)
     if need_optimized_video_plan:
         gen_optimized_video_plan(video_path, output_dir, logger, base_prompt)
@@ -2006,7 +2007,7 @@ def gen_new_video(video_path, basename):
 
 
 if __name__ == '__main__':
-    video_path = '7579642158345745626.mp4'
+    video_path = '7580752476308065586_process.mp4'
     # process_and_crop_video(video_path)
     # reduce_and_replace_video(video_path)
     # print(check_video_integrity(video_path))

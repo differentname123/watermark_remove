@@ -1731,7 +1731,7 @@ def fun():
                 print("检测到停止请求，退出当前任务...")
                 return  # 停止当前执行，退出
         print(
-            f"所有视频处理完成，正在保存数据..当前时间: {datetime.datetime.now().isoformat()} 共处理 {processed_count} 个视频。共找到 {len(all_found_videos)} 个视频")
+            f"所有视频处理所有完成所有，正在保存数据..当前时间: {datetime.datetime.now().isoformat()} 共处理 {processed_count} 个视频。共找到 {len(all_found_videos)} 个视频")
     except Exception as e:
         traceback.print_exc()
     finally:
