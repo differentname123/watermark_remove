@@ -18,6 +18,7 @@ import logging  # 1. 引入 logging 模块
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from pathlib import Path
 
+from LLM.TikTokDownloader.gemini_web import generate_gemini_content_managed
 from LLM.gemini import get_llm_content, get_llm_content_gemini_flash_video
 from LLM.gemini_cli import ask_gemini
 from common_utils.common_utils import read_json, time_to_ms, save_json, ms_to_time, read_file_to_str, string_to_object, \
@@ -533,13 +534,15 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, base_prom
     prompt = f"{prompt}{base_prompt}"
     full_prompt = f'{prompt}\n{scene_info}\n{other_prompt}'
     raw = ""
+    err= ""
     for attempt in range(1, max_retries + 1):
         try:
             logger.info(f"正在生成新的视频脚本 (尝试 {attempt}/{max_retries})")
             # raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             # raw = get_llm_content(prompt=full_prompt, model_name=model_name)
 
-            raw = ask_gemini(full_prompt)
+            # raw = ask_gemini(full_prompt)
+            err, raw = generate_gemini_content_managed(full_prompt)
 
             new_video_script = string_to_object(raw)
             check_result = check_new_video_script(new_video_script, scene_info, logger, has_author_voice)
@@ -551,7 +554,7 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, base_prom
                 detail_new_video_script['cut_type'] = cut_type
             return new_video_script
         except Exception as e:
-            logger.error(f"生成视频信息失败 (尝试 {attempt}/{max_retries}): {e} {raw}")
+            logger.error(f"生成视频脚本失败 (尝试 {attempt}/{max_retries}): {err} {e} {raw}")
             if 'PROHIBITED_CONTENT' in str(e): # <--- 修复在这里
                 logger.warning("检测到'PROHIBITED_CONTENT'，将终止重试。")
                 break  # 使用 break 更清晰地跳出循环
