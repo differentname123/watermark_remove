@@ -493,7 +493,7 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, base_prom
     """
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
-    model_name = "gemini-flash-latest"
+    model_name = "gemini-flash-lite-latest"
     need_pop_list = ['scene_start', 'scene_end', 'sequence_info', 'narrative_function']
     cut_type = 'all'
     other_prompt = ''
@@ -770,7 +770,6 @@ def gen_logical_scene_llm(video_path, logger, base_prompt):
             logical_scene_info = string_to_object(raw)
             check_result, check_info = check_logical_scene(logical_scene_info, video_duration_ms)
             if not check_result:
-                logger.error(f"逻辑性场景划分检查未通过: {check_info} {raw}")
                 raise ValueError(f"逻辑性场景划分检查未通过: {check_info} {raw}")
             return logical_scene_info
         except Exception as e:
