@@ -578,8 +578,12 @@ def _basic_task_checks(key: str, value: Dict[str, Any], video_id_key: str) -> Tu
     if not best_scheme:
         return True, f"⏭️ 跳过 {key}：无法选取投稿方案。"
 
-    if not check_type(value):
-        return True, f"⏭️ 跳过 {key}：userName 题材不匹配 {value.get('userName')}"
+    need_process_users = ['qizhu', 'mama', 'dahao', 'shun', 'xiaoxue', 'nana', 'hong', 'zhong']
+
+    userName = value.get("userName", "other")
+    if userName in need_process_users:
+        if not check_type(value):
+            return True, f"⏭️ 跳过 {key}：userName 题材不匹配 {value.get('userName')}"
 
     return False, ""
 
