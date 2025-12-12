@@ -18,6 +18,7 @@ import logging  # 1. 引入 logging 模块
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from pathlib import Path
 
+from LLM.TikTokDownloader.gemini_auto import generate_gemini_content_playwright
 from LLM.TikTokDownloader.gemini_web import generate_gemini_content_managed
 from LLM.gemini import get_llm_content, get_llm_content_gemini_flash_video
 from LLM.gemini_cli import ask_gemini
@@ -721,7 +722,7 @@ def gen_optimized_video_plan_llm(video_path, logger, base_prompt):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            model_name = "gemini-flash-lite-latest"
+            model_name = "gemini-flash-latest"
             # model_name = "gemini-flash-lite-latest"
             logger.info(f"正在生成提高生成画面 (尝试 {attempt}/{max_retries})")
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
@@ -766,7 +767,10 @@ def gen_logical_scene_llm(video_path, logger, base_prompt):
         try:
             model_name = "gemini-flash-latest"
             logger.info(f"正在生成逻辑性场景划分 (尝试 {attempt}/{max_retries})")
-            raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
+            # raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
+
+            error_info, raw = generate_gemini_content_playwright(full_prompt, file_path=video_path)
+
             logical_scene_info = string_to_object(raw)
             check_result, check_info = check_logical_scene(logical_scene_info, video_duration_ms)
             if not check_result:
