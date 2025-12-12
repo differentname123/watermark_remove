@@ -578,7 +578,7 @@ def _basic_task_checks(key: str, value: Dict[str, Any], video_id_key: str) -> Tu
     if not best_scheme:
         return True, f"⏭️ 跳过 {key}：无法选取投稿方案。"
 
-    need_process_users = ['qizhu', 'mama', 'dahao', 'shun', 'xiaoxue', 'nana', 'hong', 'zhong']
+    need_process_users = ['ping', 'qizhu', 'mama', 'dahao', 'shun', 'xiaoxue', 'nana', 'hong', 'zhong']
 
     userName = value.get("userName", "other")
     if userName in need_process_users:

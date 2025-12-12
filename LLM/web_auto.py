@@ -16,7 +16,7 @@ import traceback # 用于捕获更详细的异常信息
 # ==============================================================================
 # 用于保存浏览器登录状态的目录，请确保该目录可写
 # 第一次运行登录后，这里会生成包含cookies等信息的文件
-USER_DATA_DIR = r"W:\temp\taobao9"
+USER_DATA_DIR = r"W:\temp\taobao7"
 TARGET_URL = 'https://aistudio.google.com/prompts/new_chat?model=gemini-2.5-pro'
 
 # ==============================================================================
@@ -191,7 +191,7 @@ def query_google_ai_studio(prompt: str, file_path: Optional[str] = None, user_da
                     break
                 time.sleep(2)
                 print("[-] 检测到内部错误，正在重试...")
-            print("[+] 任务成功完成。")
+            print(f"[+] 任务成功任务完成任务。{file_path} {response_text[:100]}...")
 
     # [修改] 新增对页面崩溃异常的捕获
     except PageCrashedException as crash_e:
@@ -209,7 +209,7 @@ def query_google_ai_studio(prompt: str, file_path: Optional[str] = None, user_da
 
     except Exception as e:
         error_info = str(e)
-        print(f"[!] 执行过程中发生错误: {error_info}")
+        print(f"[!] 执行过程中发生错误: {error_info} {file_path}")
         # 可选：出错时截图
         if context and context.pages:
             try:
