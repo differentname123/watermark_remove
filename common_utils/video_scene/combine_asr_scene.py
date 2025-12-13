@@ -349,12 +349,15 @@ def gen_owner_asr_by_llm(video_path, has_author_voice, logger, base_prompt):
         logger.info(f"尝试生成ASR信息... (第 {attempt}/{MAX_RETRIES} 次)")
         raw_response = ""
         try:
-            # 调用大模型API
-            raw_response = get_llm_content_gemini_flash_video(
-                prompt=prompt,
-                video_path=video_path,
-                model_name=MODEL_NAME
-            )
+            # # 调用大模型API
+            # raw_response = get_llm_content_gemini_flash_video(
+            #     prompt=prompt,
+            #     video_path=video_path,
+            #     model_name=MODEL_NAME
+            # )
+            #
+            error_info, raw_response = generate_gemini_content_playwright(prompt, file_path=video_path)
+
 
             # 解析和校验
             owner_asr_info = string_to_object(raw_response)
@@ -494,7 +497,7 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, base_prom
     """
     log_file_path = os.path.join(output_dir, 'log.txt')
     logger = setup_logger(log_file_path)
-    model_name = "gemini-flash-lite-latest"
+    model_name = "gemini-flash-latest"
     need_pop_list = ['scene_start', 'scene_end', 'sequence_info', 'narrative_function']
     cut_type = 'all'
     other_prompt = ''
@@ -508,7 +511,7 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, base_prom
         cut_type = 'no_owner_voice'
         # 删除need_pop_list中的'narrative_function'
         need_pop_list.remove('narrative_function')
-        model_name = "gemini-flash-lite-latest"
+        model_name = "gemini-flash-latest"
         logger.info("使用无主人说话人版本的提示词")
         prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本纯重排场景.txt'
 
@@ -723,7 +726,7 @@ def gen_optimized_video_plan_llm(video_path, logger, base_prompt):
     for attempt in range(1, max_retries + 1):
         try:
             model_name = "gemini-flash-latest"
-            # model_name = "gemini-flash-lite-latest"
+            # model_name = "gemini-flash-latest"
             logger.info(f"正在生成提高生成画面 (尝试 {attempt}/{max_retries})")
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
             optimized_video_plan = string_to_object(raw)
@@ -1783,7 +1786,7 @@ def gen_new_video_script(video_path, basename, params={}):
     base_prompt = gen_base_prompt(params, video_path, duration)
 
     has_author_voice = params.get('has_author_voice', False)
-    has_author_voice = False
+    # has_author_voice = False
     need_optimized_video_plan = params.get('need_optimized_video_plan', True)
     if need_optimized_video_plan:
         gen_optimized_video_plan(video_path, output_dir, logger, base_prompt)

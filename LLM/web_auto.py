@@ -6,6 +6,8 @@ import argparse
 import sys
 from typing import Tuple, Optional
 from playwright.sync_api import sync_playwright, Page, expect
+from playwright.sync_api import Page, expect, Locator
+
 import time
 import datetime
 import sys
@@ -270,14 +272,66 @@ def _upload_attachment(page: Page, file_path: str):
 
 
 def _submit_prompt(page: Page, prompt: str):
-    """(内部调用) 填写并提交Prompt"""
+    """(内部调用) 填写并提交Prompt (已升级为高兼容性定位器)"""
     print("[*] 正在提交Prompt...")
-    prompt_input = page.get_by_placeholder("Start typing a prompt")
+
+    # --- 1. 定位输入框 (替换旧的 get_by_placeholder) ---
+    prompt_input: Locator | None = None
+    try:
+        # 步骤 A: 基础筛选 - 获取所有可见的 textbox 元素
+        all_textboxes = page.get_by_role("textbox").filter(has_not_text="hidden").all()
+
+        if not all_textboxes:
+            raise Exception("在页面上找不到任何可见的输入框 (role='textbox')。")
+
+        # 步骤 B: 位置筛选 - 过滤出位于页面下半部分的
+        viewport_height = page.viewport_size['height']
+        lower_half_textboxes = [
+            box for box in all_textboxes
+            if box.bounding_box()['y'] > viewport_height / 3
+        ]
+
+        if not lower_half_textboxes:
+            raise Exception("在页面的下半部分找不到任何可见的输入框。")
+
+        # 步骤 C: 智能决胜
+        if len(lower_half_textboxes) == 1:
+            prompt_input = lower_half_textboxes[0]
+        else:
+            # 优先选择 aria-label 包含关键意图词的
+            tie_breaker_keywords = re.compile("prompt|type|enter|start typing", re.IGNORECASE)
+
+            preferred_candidates = [
+                box for box in lower_half_textboxes
+                if tie_breaker_keywords.search(box.get_attribute("aria-label") or "")
+            ]
+
+            if len(preferred_candidates) == 1:
+                prompt_input = preferred_candidates[0]
+            else:
+                # 备用策略：选择最后一个
+                prompt_input = lower_half_textboxes[-1]
+
+    except Exception as e:
+        print(f"[!] 错误：定位Prompt输入框失败。 {e}")
+        # 如果你想兼容旧版，可以在这里回退到旧的定位器
+        print("[!] 尝试使用旧的 placeholder 定位器作为备用方案...")
+        prompt_input = page.get_by_placeholder("Start typing a prompt")
+
+    # --- 2. 填写Prompt (与原代码一致) ---
     expect(prompt_input).to_be_editable(timeout=15000)
     prompt_input.fill(prompt)
-    run_button = page.get_by_role("button", name="Run", exact=True)
+
+    # --- 3. 定位并点击运行按钮 (增加对 "Generate" 的兼容) ---
+    # 使用正则表达式同时匹配 "Run" 和 "Generate"
+    run_button = page.get_by_role(
+        "button",
+        name=re.compile(r"^(Run|Generate)$", re.IGNORECASE)
+    )
+
     expect(run_button).to_be_enabled(timeout=300000)
     run_button.click()
+
 
 def _scroll_page_to_bottom(page: Page, steps: int = 20, step_px: int = 1500, delay: float = 0.05):
     """不看任何容器，直接强制往下滚页面，保证滚到最底部"""
