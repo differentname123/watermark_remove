@@ -1666,7 +1666,7 @@ def fun():
         print(f"共创建 {len(commenter_map)} 个评论者实例。")
 
         interaction_data = load_processed_dict(interaction_data_file)
-        interaction_data = filter_recent_data(interaction_data, days=1)
+        interaction_data = filter_recent_data(interaction_data, days=2)
 
         UPLOAD_LOG_FILE = "../../LLM/TikTokDownloader/back_up/metadata_cache_with_uploads.json"  # 上传日志
 

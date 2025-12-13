@@ -506,7 +506,7 @@ def gen_new_video_script_llm(scene_info, output_dir, no_is_adjustable, base_prom
     retry_delay = 10
     max_retries = 3
     prompt_file_path = '../../content_community/app/视频场景生成新视频无原始视频输入增强版本.txt'
-
+    print(f"{output_dir}  has_author_voice{has_author_voice}")
     if not has_author_voice:
         cut_type = 'no_owner_voice'
         # 删除need_pop_list中的'narrative_function'
