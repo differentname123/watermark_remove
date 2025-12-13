@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 import argparse
 import sys
@@ -238,17 +239,31 @@ def query_google_ai_studio(prompt: str, file_path: Optional[str] = None, user_da
 # ==============================================================================
 
 def _upload_attachment(page: Page, file_path: str):
-    """(内部调用) 上传附件逻辑"""
+    """(内部调用) 上传附件逻辑 (两步点击均已强化，具备高兼容性)"""
     print(f"[*] 正在上传附件: {os.path.basename(file_path)}")
     click_acknowledge_if_present(page)
 
     with page.expect_file_chooser(timeout=15000) as fc_info:
-        attachment_button = page.locator('[aria-label="Insert images, videos, audio, or files"]')
+        # --- 第 1 步: 点击主附件按钮 (已强化) ---
+        best_locator = page.locator('[data-test-add-chunk-menu-button]')
+        fallback_locator = page.get_by_role(
+            "button",
+            name=re.compile(r"images, videos, files, or audio", re.IGNORECASE)
+        )
+        attachment_button = best_locator.or_(fallback_locator)
         attachment_button.click()
-        upload_option = page.get_by_role("menuitem", name="Upload a file")
+
+        # --- 第 2 步: 点击"上传文件"菜单项 (新增的强化) ---
+        # 使用正则表达式来兼容 "Upload a file" 和 "Upload File" 等多种写法
+        upload_option = page.get_by_role(
+            "menuitem",
+            name=re.compile(r"Upload (a )?file", re.IGNORECASE)
+        )
         upload_option.click()
+
     file_chooser = fc_info.value
     file_chooser.set_files(file_path)
+
     spinner = page.locator(".upload-spinner")
     expect(spinner).to_be_hidden(timeout=60000)
     print("[+] 附件上传完毕。")
@@ -300,19 +315,19 @@ def _wait_and_get_response(page: Page) -> str:
 # 程序主入口和使用示例
 # ==============================================================================
 if __name__ == '__main__':
-    login_and_save_session()
-    #
-    # # 测试文件路径
-    # test_file = r"W:\project\python_project\watermark_remove\common_utils\video_scene\test.jpg"
-    # test_prompt = "请详细描述这张图片的内容。"
-    #
-    # # 调用封装好的函数
-    # err, response = query_google_ai_studio(prompt=test_prompt, file_path=test_file)
-    #
-    # if err:
-    #     print("\n======== ❌ 失败 ========")
-    #     print(f"错误信息: {err}")
-    # else:
-    #     print("\n======== ✅ 成功 ========")
-    #     print("模型回复内容:")
-    #     print(response)
+    # login_and_save_session()
+
+    # 测试文件路径
+    test_file = r"W:\project\python_project\watermark_remove\common_utils\video_scene\test.jpg"
+    test_prompt = "请详细描述这张图片的内容。"
+
+    # 调用封装好的函数
+    err, response = query_google_ai_studio(prompt=test_prompt, file_path=test_file)
+
+    if err:
+        print("\n======== ❌ 失败 ========")
+        print(f"错误信息: {err}")
+    else:
+        print("\n======== ✅ 成功 ========")
+        print("模型回复内容:")
+        print(response)
