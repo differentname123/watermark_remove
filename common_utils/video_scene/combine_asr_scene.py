@@ -356,7 +356,7 @@ def gen_owner_asr_by_llm(video_path, has_author_voice, logger, base_prompt):
             #     model_name=MODEL_NAME
             # )
             #
-            error_info, raw_response = generate_gemini_content_playwright(prompt, file_path=video_path)
+            error_info, raw_response = generate_gemini_content_playwright(prompt, file_path=video_path, model_name="gemini-2.5-pro")
 
 
             # 解析和校验
@@ -772,7 +772,7 @@ def gen_logical_scene_llm(video_path, logger, base_prompt):
             logger.info(f"正在生成逻辑性场景划分 (尝试 {attempt}/{max_retries})")
             # raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
 
-            error_info, raw = generate_gemini_content_playwright(full_prompt, file_path=video_path)
+            error_info, raw = generate_gemini_content_playwright(full_prompt, file_path=video_path, model_name="gemini-2.5-pro")
 
             logical_scene_info = string_to_object(raw)
             check_result, check_info = check_logical_scene(logical_scene_info, video_duration_ms)

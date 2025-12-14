@@ -19,8 +19,8 @@ import traceback # 用于捕获更详细的异常信息
 # ==============================================================================
 # 用于保存浏览器登录状态的目录，请确保该目录可写
 # 第一次运行登录后，这里会生成包含cookies等信息的文件
-USER_DATA_DIR = r"W:\temp\taobao7"
-TARGET_URL = 'https://aistudio.google.com/prompts/new_chat?model=gemini-2.5-pro'
+USER_DATA_DIR = r"W:\temp\taobao2"
+TARGET_URL_BASE = 'https://aistudio.google.com/prompts/new_chat'
 
 # ==============================================================================
 # 核心功能函数
@@ -59,7 +59,7 @@ def check_for_crash_and_abort(page: Page):
         pass
 
 
-def login_and_save_session():
+def login_and_save_session(model_name: str = "gemini-2.5-pro"):
     """
     启动浏览器，让用户手动登录，并将登录会话保存到 USER_DATA_DIR。
     """
@@ -76,7 +76,8 @@ def login_and_save_session():
         )
 
         page = context.new_page()
-        page.goto(TARGET_URL)
+        target_url = f"{TARGET_URL_BASE}?model={model_name}"
+        page.goto(target_url)
 
         print("\n" + "="*60)
         print("浏览器已打开。请在浏览器窗口中手动完成登录操作。")
@@ -121,7 +122,7 @@ def click_acknowledge_if_present(page: Page):
         print("[-] 检查 'Acknowledge' 弹窗时发生意外或未找到，继续执行。")
 
 
-def query_google_ai_studio(prompt: str, file_path: Optional[str] = None, user_data_dir=USER_DATA_DIR) -> Tuple[Optional[str], Optional[str]]:
+def query_google_ai_studio(prompt: str, file_path: Optional[str] = None, user_data_dir=USER_DATA_DIR, model_name: str = "gemini-2.5-pro") -> Tuple[Optional[str], Optional[str]]:
     """
     使用已保存的登录会话启动浏览器，上传文件（可选），提交Prompt，并等待返回结果。
 
@@ -169,7 +170,8 @@ def query_google_ai_studio(prompt: str, file_path: Optional[str] = None, user_da
 
             # 3. 访问页面
             print("[*] 正在加载页面...")
-            page.goto(TARGET_URL)
+            target_url = f"{TARGET_URL_BASE}?model={model_name}"
+            page.goto(target_url)
             # time.sleep(1000)
             # [修改] 页面加载后立即检查崩溃
             check_for_crash_and_abort(page)
@@ -366,10 +368,11 @@ def _wait_and_get_response(page: Page) -> str:
 
 
 # ==============================================================================
+# ==============================================================================
 # 程序主入口和使用示例
 # ==============================================================================
 if __name__ == '__main__':
-    # login_and_save_session()
+    login_and_save_session()
 
     # 测试文件路径
     test_file = r"W:\project\python_project\watermark_remove\common_utils\video_scene\test.jpg"
