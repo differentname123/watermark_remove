@@ -74,7 +74,8 @@ group_info = {
         "ruru",
         "xiaosu",
         "shun",
-        "ping"
+        "ping",
+        "xiu"
     ],
     "sport": ["nana", "jun", "xiaomu"],
     "game": [
