@@ -725,7 +725,7 @@ def gen_optimized_video_plan_llm(video_path, logger, base_prompt):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            model_name = "gemini-flash-lite-latest"
+            model_name = "gemini-flash-latest"
             # model_name = "gemini-flash-latest"
             logger.info(f"正在生成提高生成画面 (尝试 {attempt}/{max_retries})")
             raw = get_llm_content_gemini_flash_video(prompt=full_prompt, video_path=video_path, model_name=model_name)
