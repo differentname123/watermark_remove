@@ -103,7 +103,7 @@ group_info = {
         "yang"
     ],
 }
-fun_user_list = []
+fun_user_list = ["dan", "yiyi"]
 
 right_now_user_list = ["qiqixiao", "jie"]
 video_recommend_user_list = ['nana', 'taoxiao', 'hong', 'jie', 'cai', 'xiaosu', 'jun', 'dan', 'ning', 'yiyi', 'qiqixiao', 'xiaoxue', 'shun', 'ping']
