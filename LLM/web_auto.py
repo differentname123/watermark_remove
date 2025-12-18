@@ -264,11 +264,7 @@ def query_google_ai_studio(prompt: str, file_path: Optional[str] = None, user_da
                 context = p.chromium.launch_persistent_context(
                     user_data_dir=user_data_dir,  # <-- 使用传入的参数
                     headless=False,  # 调试时建议开启 False，稳定后可改为 True
-                    args=['--disable-blink-features=AutomationControlled', '--start-maximized', '--disable-gpu',
-                          '--disk-cache-size=1',
-                          '--media-cache-size=1',
-                          '--disable-application-cache',
-                          '--disable-component-update', ],
+                    args=['--disable-blink-features=AutomationControlled', '--start-maximized'],
                     ignore_default_args=["--enable-automation"]
                 )
             except Exception as e:
@@ -281,6 +277,8 @@ def query_google_ai_studio(prompt: str, file_path: Optional[str] = None, user_da
             print("[*] 正在加载页面...")
             target_url = f"{TARGET_URL_BASE}?model={model_name}"
             # target_url = f"{TARGET_URL_BASE}?model=gemini-3-pro-preview"
+            # target_url = f"{TARGET_URL_BASE}?model=gemini-2.5-pro"
+
 
             page.goto(target_url)
             # time.sleep(1000)
@@ -483,13 +481,13 @@ def _wait_and_get_response(page: Page) -> str:
 # 程序主入口和使用示例
 # ==============================================================================
 if __name__ == '__main__':
-    login_and_save_session()
+    # login_and_save_session()
 
     # 测试文件路径
     test_file = r"W:\project\python_project\watermark_remove\common_utils\video_scene\test.jpg"
     test_prompt = "请详细描述这张图片的内容。"
 
-    # 调用封装好的函数
+    # 调用封装好的函数12
     err, response = query_google_ai_studio(prompt=test_prompt, file_path=test_file)
 
     if err:
