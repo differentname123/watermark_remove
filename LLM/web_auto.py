@@ -323,7 +323,7 @@ def query_google_ai_studio(prompt: str, file_path: Optional[str] = None, user_da
 
     except Exception as e:
         error_info = str(e)
-        print(f"[!] 执行过程中发生错误: {error_info} {file_path}")
+        print(f"[!] 执行过程中发生错误: {error_info[:1000]} {file_path}")
         # 可选：出错时截图
         if context and context.pages:
             try:
@@ -481,7 +481,7 @@ def _wait_and_get_response(page: Page) -> str:
 # 程序主入口和使用示例
 # ==============================================================================
 if __name__ == '__main__':
-    # login_and_save_session()
+    login_and_save_session()
 
     # 测试文件路径
     test_file = r"W:\project\python_project\watermark_remove\common_utils\video_scene\test.jpg"
