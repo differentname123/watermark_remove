@@ -460,7 +460,7 @@ def valid_all_api_keys():
     """
     failed_key_list = []
     success_key_list = []
-    test_model = "gemini-flash-lite-latest"
+    test_model = "gemini-3-flash-preview"
     # 这里使用 get_ordered_keys 保持原样，以便按使用频率顺序测试
     ordered_keys = api_key_manager.get_ordered_keys(model_name=test_model)
     results = {}
