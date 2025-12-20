@@ -262,9 +262,26 @@ def query_google_ai_studio(prompt: str, file_path: Optional[str] = None, user_da
             try:
                 # 启动持久化上下文，它会自动加载 user_data_dir 中的登录信息
                 context = p.chromium.launch_persistent_context(
-                    user_data_dir=user_data_dir,  # <-- 使用传入的参数
-                    headless=False,  # 调试时建议开启 False，稳定后可改为 True
-                    args=['--disable-blink-features=AutomationControlled', '--start-maximized'],
+                    user_data_dir=user_data_dir,
+                    headless=False,  # 必须保持 False 以通过反爬检测
+
+                    # 显式指定视口大小，替代 start-maximized
+                    # 因为移到屏幕外后，最大化可能失效或导致渲染布局异常
+                    viewport={'width': 1920, 'height': 1080},
+
+                    args=[
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-gpu',
+
+                        # 【核心修改点】: 将窗口位置移动到屏幕显示范围之外
+                        '--window-position=-10000,-10000',
+
+                        # 移除 '--start-maximized'，因为我们要手动控制视口大小且移出屏幕
+                        # '--start-maximized',
+
+                        '--no-sandbox',
+                        '--disable-dev-shm-usage'
+                    ],
                     ignore_default_args=["--enable-automation"]
                 )
             except Exception as e:
@@ -481,7 +498,7 @@ def _wait_and_get_response(page: Page) -> str:
 # 程序主入口和使用示例
 # ==============================================================================
 if __name__ == '__main__':
-    login_and_save_session()
+    # login_and_save_session()
 
     # 测试文件路径
     test_file = r"W:\project\python_project\watermark_remove\common_utils\video_scene\test.jpg"
