@@ -266,7 +266,9 @@ def main_task():
 
     non_mutual_followings = followings_set - followers_set - followers_fids_set
     if need_clear:
-        non_mutual_followings = followings_set - followers_set
+        mutual_friends = list(followings_set & followers_set)
+        keep_list = mutual_friends[:50]
+        non_mutual_followings = followings_set - set(keep_list)
         more_count = followers_total_count - 1000
         need_add_count = max(0, more_count - len(non_mutual_followings))
         print(f"当前粉丝数: {followers_total_count}, 需要额外添加的非互关用户数: {need_add_count}")

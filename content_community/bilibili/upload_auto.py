@@ -75,7 +75,9 @@ group_info = {
         "xiaosu",
         "shun",
         "ping",
-        "xiu"
+        "xiu",
+        "yang"
+
     ],
     "sport": ["nana", "jun", "xiaomu"],
     "game": [
@@ -99,8 +101,7 @@ group_info = {
         "dahao",
         "zhong",
         "jj",
-        "lin",
-        "yang"
+        "lin"
     ],
 }
 fun_user_list = ["dan", "yiyi"]
