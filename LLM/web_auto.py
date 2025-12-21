@@ -284,6 +284,15 @@ def query_google_ai_studio(prompt: str, file_path: Optional[str] = None, user_da
                     ],
                     ignore_default_args=["--enable-automation"]
                 )
+
+                # # 下面这个是能够看到窗口的模式
+                # context = p.chromium.launch_persistent_context(
+                #     user_data_dir=user_data_dir, # <-- 使用传入的参数
+                #     headless=False,  # 调试时建议开启 False，稳定后可改为 True
+                #     args=['--disable-blink-features=AutomationControlled', '--start-maximized', '--disable-gpu'],
+                #     ignore_default_args=["--enable-automation"]
+                # )
+                #
             except Exception as e:
                 raise Exception(f"启动浏览器失败，请检查或确认浏览器是否已关闭: {e}")
 
