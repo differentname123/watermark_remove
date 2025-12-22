@@ -277,7 +277,7 @@ def gen_final_property_replay(video_info, all_replay_info):
     raw = ""
     for attempt in range(1, max_retries + 1):
         try:
-            raw = get_llm_content(prompt=prompt, model_name="gemini-flash-latest")
+            raw = get_llm_content(prompt=prompt, model_name="gemini-flash-lite-latest")
             video_info = string_to_object(raw)
             return video_info
         except Exception as e:
@@ -792,7 +792,7 @@ if __name__ == '__main__':
     # result = format_video_data()
     # print(f"格式化结果，共 {len(result)} 行")
 
-    username_list = ['nana', 'taoxiao', 'hong', 'jie', 'cai', 'xiaosu', 'jun', 'dan', 'ning', 'yiyi', 'qiqixiao', 'xiaoxue', 'shun', 'ping']
+    username_list = ['nana', 'taoxiao', 'hong', 'jie', 'cai', 'xiaosu', 'jun', 'dan', 'ning', 'yiyi', 'qiqixiao', 'xiaoxue', 'xiu']
     while True:
         start_time = time.time()
         run_once(username_list)

@@ -12,7 +12,7 @@ from content_community.bilibili.BiliVideoCommenter import load_processed_set
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 need_clear = True
 
-total_cookie = get_config("xiu_bilibili_total_cookie")
+total_cookie = get_config("ruruxiao_bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为
@@ -307,7 +307,7 @@ def main_task():
                 #     break
 
                 delay = random.uniform(MIN_OPERATION_DELAY_SEC, MAX_OPERATION_DELAY_SEC)
-                delay = delay / 10
+                delay = delay / 20
                 logging.info(f"等待 {delay:.2f} 秒...")
                 time.sleep(delay)
 

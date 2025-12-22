@@ -1478,7 +1478,7 @@ def process_single_video(bvid, hudong_info, uid, commenter_map, today=None):
                                                         max_success_other_danmu_count)
     print(f"[{bvid}] [步骤 4/8] 其他用户弹幕线程已启动。")
 
-    max_success_comment_count = 7
+    max_success_comment_count = 5
     if uid in ['3632307990694238', '3632313749473288', '3632309148322699']:
         max_success_comment_count = 10
     comment_list = hudong_info.get('comment_list', [])
