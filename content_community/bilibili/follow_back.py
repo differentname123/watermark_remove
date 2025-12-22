@@ -307,7 +307,7 @@ def main_task():
                 #     break
 
                 delay = random.uniform(MIN_OPERATION_DELAY_SEC, MAX_OPERATION_DELAY_SEC)
-                delay = delay / 20
+                delay = delay / 30
                 logging.info(f"等待 {delay:.2f} 秒...")
                 time.sleep(delay)
 
