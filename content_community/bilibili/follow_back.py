@@ -12,7 +12,7 @@ from content_community.bilibili.BiliVideoCommenter import load_processed_set
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 need_clear = True
 
-total_cookie = get_config("ruruxiao_bilibili_total_cookie")
+total_cookie = get_config("danzhu_bilibili_total_cookie")
 FULL_COOKIE_STRING = total_cookie
 
 # 用户代理，模拟浏览器行为

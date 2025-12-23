@@ -76,7 +76,8 @@ group_info = {
         "shun",
         "ping",
         "xiu",
-        "yang"
+        "yang",
+        "danzhu"
 
     ],
     "sport": ["nana", "jun", "xiaomu"],
@@ -736,7 +737,11 @@ def _build_upload_params(
     tags_str = ",".join(tags) if isinstance(tags, list) else str(tags)
 
     dynamic = best_scheme.get("简介", {}).get("互动引导", "希望大家喜欢")
-
+    if not cover_path or not os.path.exists(cover_path):
+        error_msg = f"❌ 封面文件缺失，无法构建上传参数: {cover_path}"
+        print(error_msg)
+        # 抛出异常，通知调用者当前任务失败
+        raise FileNotFoundError(error_msg)
     upload_params = {
         "title": title,
         "description": description,
@@ -1381,10 +1386,21 @@ def auto_upload() -> None:
         updated_entry.setdefault("hudong", {})
         updated_entry["hudong"]["comment_list"] = comment_list_top30
 
-        # 构建上传参数（保持原逻辑）
-        upload_params = _build_upload_params(
-            value, best_scheme_final or {}, best_cover_path or "", final_output_path, config, userName
-        )
+        try:
+            # 构建上传参数
+            upload_params = _build_upload_params(
+                value, best_scheme_final or {}, best_cover_path or "", final_output_path, config, userName
+            )
+        except Exception as e:
+            # 捕获封面不存在或其他构建参数时的错误
+            print(f"❌ 任务 {key} 失败（参数构建错误）：{e}")
+            traceback.print_exc()
+
+            # 记录错误状态，避免下次死循环尝试
+            update_log_status(key, {"status": "error", "error_message": str(e)})
+
+            error_count += 1
+            continue  # 关键：跳过当前任务，继续处理下一个任务
 
         # 时长字符串
         try:
