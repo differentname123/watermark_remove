@@ -303,7 +303,7 @@ def get_llm_content_gemini_flash_video(
         try:
             # 日志更新以反映新的尝试逻辑
             print(
-                f"[INFO] 第 {attempt + 1}/{attempts} 次尝试。使用 Key “{key_name}” prompt length: {len(prompt)} 上传视频… {model_name}， {video_path}")
+                f"[INFO] 第 {attempt + 1}/{attempts} 次尝试。使用 Key “{key_name}” prompt length: {len(prompt)} {prompt[:50]}  上传视频… {model_name}， {video_path}")
             # 不再需要手动调用 record_success
 
             video_file = client.files.upload(file=video_path)
