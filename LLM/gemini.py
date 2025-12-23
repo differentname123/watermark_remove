@@ -335,12 +335,12 @@ def get_llm_content_gemini_flash_video(
         except Exception as e:
             if 'overloaded' in str(e) or 'An internal error has occurred' in str(e):
                 last_error = e
-                print(f"[WARN] Key “{key_name}” 调用失败：{e}，切换下一个…{video_path}")
+                print(f"[WARN] Key “{key_name}”  {model_name} {prompt[:50]} {model_name} {prompt[:50]} 调用失败：{e}，切换下一个…{video_path}")
                 time.sleep(600)
 
                 # 继续循环以检出下一个key
             else:
-                print(f"[ERROR] Key “{key_name}” 调用失败：{e}，停止尝试。 {video_path}")
+                print(f"[ERROR] Key “{key_name}” {model_name} {prompt[:50]} 调用失败：{e}，停止尝试。 {video_path}")
                 raise e  # 对于不可恢复的错误，直接抛出
         finally:
             if video_file is not None:
@@ -382,12 +382,12 @@ def get_llm_content_gemini2flash(prompt: str = '你好，Gemini！请介绍一�
         except Exception as e:
             if 'overloaded' in str(e) or 'An internal error has occurred' in str(e):
                 last_error = e
-                print(f"[WARN] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 正在尝试下一个...")
+                print(f"[WARN] 名为 '{key_name}' 的 API Key {model_name} {prompt[:50]} 调用失败: {e.__class__.__name__}. 正在尝试下一个...")
                 time.sleep(600)
 
                 continue
             else:
-                print(f"[ERROR] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 停止尝试。 {e}")
+                print(f"[ERROR] 名为 '{key_name}' 的 API Key {model_name} {prompt[:50]} 调用失败: {e.__class__.__name__}. 停止尝试。 {e}")
                 raise e
     return f"所有 API Key 均尝试失败。最后一次错误 (来自密钥 '{last_key_name}')：{last_error}"
 
@@ -423,13 +423,13 @@ def get_llm_content_sub(prompt: str = '你好，Gemini！请介绍一下你自�
             return text
         except Exception as e:
             if 'overloaded' in str(e) or 'An internal error has occurred' in str(e):
-                print(f"[WARN] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 正在尝试下一个... {e}")
+                print(f"[WARN] 名为 '{key_name}' 的 API Key {model_name} {prompt[:50]} 调用失败: {e.__class__.__name__}. 正在尝试下一个... {e}")
                 last_error = e
                 time.sleep(600)
 
                 continue
             else:
-                print(f"[ERROR] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}. 停止尝试。 {e}")
+                print(f"[ERROR] 名为 '{key_name}' 的 API Key {model_name} {prompt[:50]} 调用失败: {e.__class__.__name__}. 停止尝试。 {e}")
                 raise e
     raise last_error if last_error else Exception("所有 API Key 均尝试失败且未记录特定错误。")
 
