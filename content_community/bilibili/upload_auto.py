@@ -108,7 +108,7 @@ group_info = {
 fun_user_list = ["dan", "yiyi"]
 
 right_now_user_list = ["qiqixiao", "jie"]
-video_recommend_user_list =  ['nana', 'taoxiao', 'hong', 'jie', 'cai', 'xiaosu', 'jun', 'dan', 'ning', 'yiyi', 'qiqixiao', 'xiaoxue', 'xiu']
+video_recommend_user_list =  ['nana', 'taoxiao', 'danzhu', 'hong', 'jie', 'cai', 'xiaosu', 'jun', 'dan', 'ning', 'yiyi', 'qiqixiao', 'xiaoxue', 'xiu']
 
 # 错误记录
 error_user_map: Dict[str, str] = {}
