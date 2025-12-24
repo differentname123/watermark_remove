@@ -413,7 +413,7 @@ def gen_asr(video_path, output_dir, has_author_voice, base_prompt):
     start_time = time.time()
     speech_asr_output_file = os.path.join(output_dir, 'speech_asr_with_owner.json')
 
-    if not is_valid_target_file_simple(speech_asr_output_file, min_size_bytes=10):
+    if not is_valid_target_file_simple(speech_asr_output_file, min_size_bytes=10) or not is_valid_modification_time(speech_asr_output_file):
         owner_asr_info = gen_owner_asr_by_llm(video_path, has_author_voice, logger, base_prompt)
         # 判断owner_asr_info是否为dict
         if owner_asr_info is None:
@@ -1630,6 +1630,19 @@ def get_scene(video_path, output_dir):
 
     return kept_sorted
 
+
+def is_valid_modification_time(file_path):
+    if not os.path.exists(file_path):
+        return False
+    try:
+        mtime_timestamp = os.path.getmtime(file_path)
+        mtime_date = datetime.fromtimestamp(mtime_timestamp)
+        if mtime_date.month == 12 and 5 <= mtime_date.day <= 13:
+            return False # 时间在禁区内
+        return True # 时间有效
+    except Exception:
+        return False
+
 @timeit_print
 def gen_logical_scene(video_path, output_dir, logger, base_prompt):
     """
@@ -1638,7 +1651,7 @@ def gen_logical_scene(video_path, output_dir, logger, base_prompt):
     # sorted_scene_timestamp = get_scene(video_path, output_dir)
 
     output_file_logical_scene_info_path = os.path.join(output_dir, 'logical_scene_info.json')
-    if is_valid_target_file_simple(output_file_logical_scene_info_path, 10):
+    if is_valid_target_file_simple(output_file_logical_scene_info_path, 10) and is_valid_modification_time(output_file_logical_scene_info_path):
         logical_scene_info = read_json(output_file_logical_scene_info_path)
     else:
         logical_scene_info = gen_logical_scene_llm(video_path, logger, base_prompt)
