@@ -153,7 +153,7 @@ def preupload_video(session: requests.Session, video_path: str) -> dict:
     # upcdn=txa 是获取高速上传线路的关键
     params = {
         "probe_version": "20250923",
-        "upcdn": "anbd",  # 指定上传线路为腾讯云(推测)，这是提速的关键！
+        "upcdn": "akbd",  # 指定上传线路为腾讯云(推测)，这是提速的关键！
         "zone": "cs",  # 指定上传区域
         "name": name,
         "r": "upos",
