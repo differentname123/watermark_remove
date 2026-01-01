@@ -256,6 +256,6 @@ if __name__ == '__main__':
         step=5  # 阈值调整步长
     )
     print("\n场景信息字典已生成并打印。")
-    for key,value in scene_info_dict.items():
+    for key, value in scene_info_dict.items():
         timestamp = value[1]
-        save_frames_around_timestamp(my_video_path,timestamp,3,str(os.path.join('scenes',key)))
+        save_frames_around_timestamp(my_video_path, timestamp, 3, str(os.path.join('scenes', key)))

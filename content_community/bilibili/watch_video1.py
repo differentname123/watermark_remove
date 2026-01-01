@@ -407,7 +407,7 @@ if __name__ == "__main__":
     cookie_keys = []
     config = init_config()
     for key, value in config.items():
-        if 'junda' != value['name']:
+        if 'cai' != value['name']:
             continue
         cookie_keys.append(value['total_cookie'])
 

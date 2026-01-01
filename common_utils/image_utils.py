@@ -82,17 +82,21 @@ def annotate_clusters_on_image(image: Image.Image, clusters: list) -> Image.Imag
     return image
 
 
-
 def save_frames_around_timestamp(
-    video_path: str,
-    timestamp,
-    num_frames: int,
-    output_dir: str
-) -> None:
+        video_path: str,
+        timestamp,
+        num_frames: int,
+        output_dir: str
+):
     """
     从视频中在给定时间戳前后各截取 num_frames 帧并保存为图片。
-    输出文件命名格式：frame_{idx}.png，其中 idx 为帧在视频中的索引。
+    如果图片已存在，则跳过保存步骤，直接返回路径。
+    输出文件命名格式：frame_{timestamp_ms}.png
+    返回：保存的图片路径列表
     """
+
+    # 假设外部有 time_to_ms 函数，或者传入的 timestamp 已经是 int/float
+    # 如果没有 time_to_ms，请确保传入的是秒或毫秒并自行转换
     ts_sec = time_to_ms(timestamp) / 1000
 
     cap = cv2.VideoCapture(video_path)
@@ -101,6 +105,7 @@ def save_frames_around_timestamp(
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
     if fps <= 0 or total_frames <= 0:
         cap.release()
         raise ValueError("无法获取视频帧率或总帧数")
@@ -109,11 +114,29 @@ def save_frames_around_timestamp(
     target_idx = int(round(ts_sec * fps))
     # 计算要截取的帧索引区间
     start_idx = max(0, target_idx - num_frames)
-    end_idx   = min(total_frames - 1, target_idx + num_frames)
+    end_idx = min(total_frames - 1, target_idx + num_frames)
 
     os.makedirs(output_dir, exist_ok=True)
 
+    saved_paths = []
+
+    print(f"FPS: {fps}, 目标时间: {ts_sec}s, 截取范围: {start_idx} - {end_idx}")
+
     for idx in range(start_idx, end_idx + 1):
+        # --- 修改重点 1：先计算路径，不进行任何视频读取操作 ---
+        current_sec = idx / fps
+        current_ms = int(current_sec * 1000)
+
+        filename = f"frame_{current_ms}.png"
+        out_path = os.path.join(output_dir, filename)
+
+        # --- 修改重点 2：检查文件是否存在 ---
+        if os.path.exists(out_path):
+            # print(f"跳过已存在: {filename}") # 可选：打印日志
+            saved_paths.append(out_path)
+            continue  # 直接进入下一次循环，不执行下面的 cap.set 和 cap.read
+
+        # --- 如果文件不存在，才执行耗时的视频操作 ---
         cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
         ret, frame = cap.read()
         if not ret:
@@ -124,11 +147,15 @@ def save_frames_around_timestamp(
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         img = Image.fromarray(frame_rgb)
 
-        out_path = os.path.join(output_dir, f"frame_{idx}.png")
         img.save(out_path)
-        # print(f"已保存帧 {idx} -> {out_path}")
+
+        # 将路径加入列表
+        saved_paths.append(out_path)
+        # print(f"已保存: {filename}")
 
     cap.release()
+
+    return saved_paths
 
 def extract_frames_from_video(video_path: str, num_frames: int = 3) -> list:
     cap = cv2.VideoCapture(video_path)

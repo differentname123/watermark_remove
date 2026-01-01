@@ -468,8 +468,10 @@ if __name__ == '__main__':
     new_audio_file = audio_file.replace('.mp4', '.wav')
     extract_audio_from_video(audio_file, new_audio_file)
 
+    new_audio_file = r"W:\project\python_project\auto_video\videos\material\7563673125112696121\7563673125112696121_static_cut.mp4"
 
-    OUTPUT_FILE = f'output/{new_audio_file.split('.')[0]}_final_asr.json'
+    OUTPUT_FILE = f'{new_audio_file.split('.')[0]}_final_asr.json'
+
 
     gen_precise_asr(new_audio_file, OUTPUT_FILE)
 

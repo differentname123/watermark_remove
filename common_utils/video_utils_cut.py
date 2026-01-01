@@ -515,7 +515,7 @@ def gen_video(text, output_path, origin_video_path,keep_original_audio=False, fi
     """
     生成结尾视频（测试用），结尾语为txt
     """
-    voice_name="zh-CN-XiaoxiaoNeural"
+    voice_name = "zh-CN-XiaoxiaoNeural"
     rate = "+30%"
     pitch = '+30Hz'
     if voice_info is not None:

@@ -1,3 +1,4 @@
+import io
 import os
 import time
 import json
@@ -453,6 +454,113 @@ def get_llm_content(prompt: str = '你好，Gemini！请介绍一下你自己。
 
 
 @with_proxy
+def analyze_images_gemini(
+        prompt: str = '每张图片的内容是什么',
+        image_paths=['a.jpg'],
+        model_name="gemini-3-flash-preview"
+
+) -> str:
+    """
+    分析本地图片内容。适配新版 SDK 与 ApiKeyManager。
+    """
+    # 默认使用 flash 模型处理图片，速度快且支持多模态
+
+
+    last_error = None
+    # 尝试次数限制为 Key 的数量
+    num_available_keys = len(API_KEY_MAP)
+
+    # 1. 预先校验文件是否存在
+    valid_paths = []
+    for path in image_paths:
+        if not os.path.exists(path):
+            return f"错误: 图片文件未找到 -> {path}"
+        valid_paths.append(path)
+
+    # 2. 循环尝试 Key
+    for attempt in range(num_available_keys):
+        # 检出 Key
+        key_name = api_key_manager.checkout_key(model_name=model_name)
+        if not key_name:
+            print("[ERROR] 无法检出任何 API Key，停止尝试。")
+            break
+
+        api_key = API_KEY_MAP.get(key_name)
+        if not api_key: continue
+
+        try:
+            print(
+                f"[INFO] 正在使用名为 '{key_name}' 的 API Key 尝试分析图片... prompt length: {len(prompt)}, 图片数量: {len(valid_paths)}")
+
+            # 初始化客户端 (新版 SDK)
+            client = genai.Client(api_key=api_key)
+
+            # 构建 Prompt Parts (混合文本和图片)
+            parts = [types.Part.from_text(text=prompt),
+                     types.Part.from_text(text="下面我将以'文件名:'的格式，在每个图片前提供其名称，请据此作答。")]
+
+            for path in valid_paths:
+                # 添加文件名提示
+                parts.append(types.Part.from_text(text=f"{os.path.basename(path)}:"))
+                # 读取并添加图片 (使用 types.Part.from_pillow 以兼容不同图片格式)
+                try:
+                    # 1. 读取图片
+                    img = Image.open(path)
+
+                    # 2. 转为二进制
+                    byte_stream = io.BytesIO()
+                    # 获取格式，默认为 JPEG
+                    fmt = img.format if img.format else 'JPEG'
+                    img.save(byte_stream, format=fmt)
+                    image_bytes = byte_stream.getvalue()
+
+                    # 3. 确定 MIME 类型
+                    mime_type = f"image/{fmt.lower()}"
+                    if mime_type == "image/jpg": mime_type = "image/jpeg"
+
+                    # 4. 这里的 image_bytes 就是 raw bytes，和你发的官方示例中 b64decode 的结果类型一致
+                    parts.append(types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
+
+                except Exception as img_err:
+                    return f"读取图片失败: {path} -> {img_err}"
+
+            # 构建请求配置 (复用全局配置函数)
+            contents = [types.Content(role="user", parts=parts)]
+            config = build_generate_content_config(model_name)
+
+            # 调用模型 (复用全局安全调用函数)
+            response = safe_generate_content(
+                client=client,
+                model=model_name,
+                contents=contents,
+                config=config,
+                timeout=600
+            )
+
+            if not response.text:
+                feedback = getattr(response, 'prompt_feedback', 'No text returned')
+                print(f"[WARN] 模型返回了空响应: {feedback}")
+                return str(feedback)
+
+            return response.text
+
+        except Exception as e:
+            # 错误处理逻辑 (参考您的视频处理函数逻辑)
+            if 'overloaded' in str(e) or 'An internal error has occurred' in str(e) or '429' in str(e):
+                last_error = e
+                print(f"[WARN] 名为 '{key_name}' 的 API Key 调用失败: {e}. 正在尝试下一个...")
+                time.sleep(2)
+                continue
+            else:
+                print(f"[ERROR] 名为 '{key_name}' 的 API Key 调用失败: {e.__class__.__name__}: {e}")
+                last_error = e
+                # 遇到非网络错误继续尝试下一个 key，或者您可以选择在这里 raise e
+                continue
+
+    return f"所有 API Key 均尝试失败。最后一次错误: {last_error}"
+
+
+@with_proxy
 def valid_all_api_keys():
     """
     测试所有 API Key 的有效性。
@@ -492,7 +600,9 @@ def valid_all_api_keys():
 
 
 if __name__ == "__main__":
-    valid_all_api_keys()
+    # valid_all_api_keys()
+    data = analyze_images_gemini("每张图片中的字幕是什么，请给我返回json格式，key为文件名，value为识别到的字幕", image_paths=['a.jpg', 'a3.png'])
+    print(data)
     #
     # print("\n" + "=" * 20 + " 开始测试 " + "=" * 20)
     # print("[TEST] 正在测试 get_llm_content (这将触发第一次动态排序)")

@@ -10,6 +10,7 @@
       <excludeFolder url="file://$MODULE_DIR$/common_utils/video_scene/output" />
       <excludeFolder url="file://$MODULE_DIR$/content_community/bilibili/output" />
       <excludeFolder url="file://$MODULE_DIR$/douyin_video" />
+      <excludeFolder url="file://$MODULE_DIR$/LLM/TikTokDownloader/back_up" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.12 (watermark_remove)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
