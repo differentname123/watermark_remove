@@ -2035,9 +2035,16 @@ if __name__ == '__main__':
     # print(check_video_integrity(video_path))
     # compress_video_in_place(video_path)
 
-    gen_new_video_script_robus(video_path)
+    # gen_new_video_script_robus(video_path)
     # gen_new_video_robus(video_path)
     #
     # delete_all_mp4_in_dir(base_output_dir)
     # delete_files_except(base_output_dir)
     # backup_old_files(base_output_dir, 'speech_asr_with_owner.json')
+
+
+    time_list = [3000, 7033, 30533, 43433]
+    my_video_path = r"W:\project\python_project\auto_video\videos\material\7554023275689430318\7554023275689430318_origin.mp4"
+    for timestamp in time_list:
+        timestamp = timestamp / 1000
+        save_frames_around_timestamp(my_video_path, timestamp, 3, str(os.path.join(os.path.dirname(my_video_path), 'scenes', f"{timestamp}")))
