@@ -259,3 +259,9 @@ if __name__ == '__main__':
     for key, value in scene_info_dict.items():
         timestamp = value[1]
         save_frames_around_timestamp(my_video_path, timestamp, 3, str(os.path.join('scenes', key)))
+
+    time_list = [7033, 30533, 43433]
+    my_video_path = r"W:\project\python_project\auto_video\videos\material\7554023275689430318\7554023275689430318_static_cut.mp4"
+    for timestamp in time_list:
+        timestamp = timestamp / 1000
+        save_frames_around_timestamp(my_video_path, timestamp, 3, str(os.path.join(os.path.dirname(my_video_path), 'scenes', f"{timestamp}")))

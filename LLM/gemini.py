@@ -600,9 +600,9 @@ def valid_all_api_keys():
 
 
 if __name__ == "__main__":
-    # valid_all_api_keys()
-    data = analyze_images_gemini("每张图片中的字幕是什么，请给我返回json格式，key为文件名，value为识别到的字幕", image_paths=['a.jpg', 'a3.png'])
-    print(data)
+    valid_all_api_keys()
+    # data = analyze_images_gemini("每张图片中的字幕是什么，请给我返回json格式，key为文件名，value为识别到的字幕", image_paths=['a.jpg', 'a3.png'])
+    # print(data)
     #
     # print("\n" + "=" * 20 + " 开始测试 " + "=" * 20)
     # print("[TEST] 正在测试 get_llm_content (这将触发第一次动态排序)")
