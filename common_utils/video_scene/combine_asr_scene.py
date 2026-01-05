@@ -2035,7 +2035,7 @@ if __name__ == '__main__':
     # print(check_video_integrity(video_path))
     # compress_video_in_place(video_path)
 
-    # gen_new_video_script_robus(video_path)
+    gen_new_video_script_robus(video_path)
     # gen_new_video_robus(video_path)
     #
     # delete_all_mp4_in_dir(base_output_dir)
