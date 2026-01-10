@@ -18,7 +18,7 @@ import json
 import threading
 from queue import Queue, Empty
 
-from content_community.bilibili.bili_utils import update_bili_user_sign
+from content_community.bilibili.bili_utils import update_bili_user_sign, block_all_author
 from content_community.bilibili.get_comment import get_bilibili_comments
 from common_utils.common_utils import get_config, init_config, time_to_ms, read_json
 # 评论相关代码保留，但暂时不使用
@@ -1755,6 +1755,10 @@ def run_periodically():
 
 
 if __name__ == '__main__':
+    config_map = init_config()
+    mid_list = config_map.keys()
+    block_all_author(mid_list, action_type=6)
+
     # 启动定时任务线程
     threading.Thread(target=run_periodically, daemon=True).start()
 
